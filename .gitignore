@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+release/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor/OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Env / secrets — this app never stores secrets in the repo, but guard against
+# accidental local config files anyway.
+.env
+.env.*
+*.pem
+*.key
+
+# Stale nested duplicate from an earlier working-directory move — not part of
+# the project, not tracked.
+/wealth-manager/
