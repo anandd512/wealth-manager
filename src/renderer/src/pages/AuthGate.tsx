@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { LockKeyhole, DatabaseBackup, Upload, ScanFace } from 'lucide-react'
+import logo from '../assets/logo.png'
 import { formatDate } from '../lib/format'
 
 interface Props {
@@ -110,7 +111,7 @@ export default function AuthGate({ initialized, onUnlocked }: Props): JSX.Elemen
             <DatabaseBackup size={20} />
           </div>
           <h1>Restore from a backup</h1>
-          <p>Bring over everything from a Wealth Manager backup file made on another device.</p>
+          <p>Bring over everything from an Artha backup file made on another device.</p>
 
           <button className="btn secondary" style={{ width: '100%' }} onClick={pickImportFile} disabled={importBusy}>
             <Upload size={14} /> Choose backup file…
@@ -148,9 +149,9 @@ export default function AuthGate({ initialized, onUnlocked }: Props): JSX.Elemen
     <div className="gate">
       <div className="gate-card">
         <div className="gate-icon">
-          <LockKeyhole size={20} />
+          <img src={logo} alt="Artha" style={{ width: 56, height: 56, objectFit: 'contain' }} />
         </div>
-        <h1>{initialized ? 'Unlock Wealth Manager' : 'Set your master password'}</h1>
+        <h1>{initialized ? 'Unlock Artha' : 'Set your master password'}</h1>
         <p>
           {initialized
             ? 'Enter your master password to decrypt your local data.'

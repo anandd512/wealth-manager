@@ -13,7 +13,7 @@ async function fetchRaw(ticker: string): Promise<{ price: number | null; currenc
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}`
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (WealthManager local app)' }
+      headers: { 'User-Agent': 'Mozilla/5.0 (Artha local app)' }
     })
     if (!res.ok) {
       return { price: null, currency: null, error: `HTTP ${res.status}` }

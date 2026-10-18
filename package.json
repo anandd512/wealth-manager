@@ -1,5 +1,5 @@
 {
-  "name": "wealth-manager",
+  "name": "artha",
   "version": "0.1.0",
   "description": "Local-first personal net worth and insurance tracker",
   "main": "./out/main/index.js",
@@ -41,10 +41,13 @@
     "electron-winstaller@5.4.0": true
   },
   "build": {
-    "appId": "com.local.wealth-manager",
-    "productName": "Wealth Manager",
+    "appId": "com.local.artha",
+    "productName": "Artha",
     "win": {
       "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "createDesktopShortcut": true
     }
   }
 }

@@ -76,7 +76,7 @@ function parseBackup(sourcePath: string): {
 } {
   const buf = readFileSync(sourcePath)
   if (buf.subarray(0, MAGIC.length).toString('ascii') !== MAGIC) {
-    throw new Error('This file is not a Wealth Manager backup.')
+    throw new Error('This file is not an Artha backup.')
   }
   let offset = MAGIC.length
   const manifestLen = buf.readUInt32LE(offset)

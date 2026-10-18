@@ -23,8 +23,8 @@ export async function sendTestEmail(): Promise<void> {
   await transporter.sendMail({
     from,
     to,
-    subject: 'Wealth Manager - test email',
-    text: 'This is a test email from your Wealth Manager app. If you received this, email reminders are working.'
+    subject: 'Artha - test email',
+    text: 'This is a test email from your Artha app. If you received this, email reminders are working.'
   })
 }
 

@@ -145,7 +145,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
   ipcMain.handle(CHANNELS.authUnlockWithWindowsHello, async () => {
     const storedKey = getStoredHelloKey()
     if (!storedKey) return { ok: false, error: 'Windows Hello is not set up for this app.' }
-    const verified = await requestWindowsHelloVerification('Unlock Wealth Manager')
+    const verified = await requestWindowsHelloVerification('Unlock Artha')
     if (!verified) return { ok: false, error: 'Verification was not completed.' }
     try {
       await openDatabase(storedKey)
@@ -493,8 +493,8 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     if (!win) return { ok: false }
     const result = await dialog.showSaveDialog(win, {
       title: 'Export backup',
-      defaultPath: `wealth-manager-backup-${todayLocalDateString()}.wmbackup`,
-      filters: [{ name: 'Wealth Manager Backup', extensions: ['wmbackup'] }]
+      defaultPath: `artha-backup-${todayLocalDateString()}.wmbackup`,
+      filters: [{ name: 'Artha Backup', extensions: ['wmbackup'] }]
     })
     if (result.canceled || !result.filePath) return { ok: false }
     const info = exportBackup(result.filePath)
@@ -507,7 +507,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     const result = await dialog.showOpenDialog(win, {
       title: 'Select backup file',
       properties: ['openFile'],
-      filters: [{ name: 'Wealth Manager Backup', extensions: ['wmbackup'] }]
+      filters: [{ name: 'Artha Backup', extensions: ['wmbackup'] }]
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
@@ -524,8 +524,13 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
       cleanupTempViewFiles()
     }
     importBackup(path)
-    app.relaunch()
-    app.exit(0)
+    const win = getWindow()
+    if (win) {
+      win.reload()
+    } else {
+      app.relaunch()
+      app.exit(0)
+    }
     return { ok: true }
   })
 }

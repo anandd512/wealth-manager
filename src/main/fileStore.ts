@@ -16,7 +16,7 @@ export function documentsDir(): string {
 }
 
 function tempViewDir(): string {
-  const dir = join(app.getPath('temp'), 'wealth-manager-view')
+  const dir = join(app.getPath('temp'), 'artha-view')
   mkdirSync(dir, { recursive: true })
   return dir
 }

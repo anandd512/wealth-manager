@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import splashMp4 from './assets/splash.mp4'
+import logo from './assets/logo.png'
 import { NavLink, Route, Routes } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -31,6 +33,7 @@ const NAV_ITEMS = [
 ]
 
 export default function App(): JSX.Element {
+  const [showSplash, setShowSplash] = useState(true)
   const [status, setStatus] = useState<AuthStatus | null>(null)
 
   const refreshStatus = async (): Promise<void> => {
@@ -42,6 +45,46 @@ export default function App(): JSX.Element {
     refreshStatus()
   }, [])
 
+  // Auto-lock after 30 seconds of inactivity
+  useEffect(() => {
+    if (!status?.unlocked) return
+
+    const TIMEOUT_MS = 30_000
+    let timer: ReturnType<typeof setTimeout>
+
+    const reset = (): void => {
+      clearTimeout(timer)
+      timer = setTimeout(async () => {
+        await window.api.auth.lock()
+        refreshStatus()
+      }, TIMEOUT_MS)
+    }
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'] as const
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
+    reset()
+
+    return () => {
+      clearTimeout(timer)
+      events.forEach((e) => window.removeEventListener(e, reset))
+    }
+  }, [status?.unlocked])
+
+  if (showSplash) {
+    return (
+      <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#000' }}>
+        <video
+          src={splashMp4}
+          autoPlay
+          muted
+          playsInline
+          onEnded={() => setShowSplash(false)}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        />
+      </div>
+    )
+  }
+
   if (!status) return <div className="gate">Loading…</div>
 
   if (!status.unlocked) {
@@ -52,8 +95,7 @@ export default function App(): JSX.Element {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">W</span>
-          Wealth Manager
+          <img src={logo} alt="Artha" style={{ width: 120, height: 48, objectFit: 'contain' }} />
         </div>
         <nav>
           {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
