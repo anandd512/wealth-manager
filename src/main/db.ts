@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS credit_cards (
 CREATE TABLE IF NOT EXISTS credential_vault (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   service_name TEXT NOT NULL,
+  category TEXT,
   url TEXT,
   username TEXT,
   password TEXT,
@@ -184,6 +185,9 @@ const MIGRATION_COLUMNS: Record<string, [string, string][]> = {
   value_history: [
     ['invested_value', 'REAL'],
     ['quantity', 'REAL']
+  ],
+  credential_vault: [
+    ['category', 'TEXT']
   ]
 }
 

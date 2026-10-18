@@ -222,9 +222,24 @@ export interface CreditCard {
 
 export type CreditCardInput = Omit<CreditCard, 'id' | 'created_at' | 'last_reminder_sent'>
 
+export const VAULT_CATEGORIES = [
+  'Finance & Banking',
+  'Government & Identity',
+  'Shopping & E-commerce',
+  'Communication & Social',
+  'Content & Media',
+  'Work & Productivity',
+  'Health',
+  'Travel',
+  'Other'
+] as const
+
+export type VaultCategory = (typeof VAULT_CATEGORIES)[number]
+
 export interface VaultEntry {
   id: number
   service_name: string
+  category: VaultCategory | null
   url: string | null
   username: string | null
   password: string | null

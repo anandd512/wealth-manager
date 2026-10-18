@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Eye, EyeOff, Copy, Check, KeyRound } from 'lucide-react'
-import type { VaultEntry } from '../../../shared/types'
+import type { VaultEntry, VaultCategory } from '../../../shared/types'
+import { VAULT_CATEGORIES } from '../../../shared/types'
 import VaultEntryModal from '../components/VaultEntryModal'
 import ActionMenu from '../components/ActionMenu'
 import { ICON_EDIT, ICON_DELETE } from '../lib/actionIcons'
@@ -42,6 +43,112 @@ export default function Vault(): JSX.Element {
     setTimeout(() => setCopiedId((id) => (id === entry.id ? null : id)), 1500)
   }
 
+  const renderRows = (group: VaultEntry[]): JSX.Element[] =>
+    group.map((e) => {
+      const isRevealed = revealed.has(e.id)
+      return (
+        <tr key={e.id}>
+          <td>
+            {e.service_name}
+            {e.url && (
+              <div className="muted" style={{ fontSize: 12 }}>
+                {e.url}
+              </div>
+            )}
+          </td>
+          <td>{e.username ?? '—'}</td>
+          <td style={{ whiteSpace: 'nowrap' }}>
+            <span>{isRevealed ? e.password ?? '—' : e.password ? '••••••••' : '—'}</span>
+            {e.password && (
+              <>
+                <button
+                  className="icon-btn"
+                  style={{ marginLeft: 6 }}
+                  title={isRevealed ? 'Hide password' : 'Show password'}
+                  aria-label={isRevealed ? 'Hide password' : 'Show password'}
+                  onClick={() => toggleReveal(e.id)}
+                >
+                  {isRevealed ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+                <button
+                  className="icon-btn"
+                  title={copiedId === e.id ? 'Copied' : 'Copy password'}
+                  aria-label="Copy password"
+                  onClick={() => copyPassword(e)}
+                >
+                  {copiedId === e.id ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </>
+            )}
+          </td>
+          <td style={{ textAlign: 'right' }}>
+            <ActionMenu
+              items={[
+                {
+                  icon: ICON_EDIT,
+                  label: 'Edit',
+                  onClick: () => {
+                    setEditing(e)
+                    setShowModal(true)
+                  }
+                },
+                { icon: ICON_DELETE, label: 'Delete', danger: true, onClick: () => remove(e.id) }
+              ]}
+            />
+          </td>
+        </tr>
+      )
+    })
+
+  const renderGrouped = (all: VaultEntry[]): JSX.Element => {
+    const byCategory = new Map<string, VaultEntry[]>()
+    const categoryOrder = [...VAULT_CATEGORIES]
+    for (const e of all) {
+      const key: string = e.category ?? 'Uncategorized'
+      if (!byCategory.has(key)) byCategory.set(key, [])
+      byCategory.get(key)!.push(e)
+    }
+    const orderedKeys = [
+      ...categoryOrder.filter((c) => byCategory.has(c)),
+      ...(byCategory.has('Uncategorized') ? ['Uncategorized'] : [])
+    ] as (VaultCategory | 'Uncategorized')[]
+
+    return (
+      <>
+        {orderedKeys.map((cat) => (
+          <div key={cat} style={{ marginBottom: 24 }}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                color: 'var(--muted)',
+                marginBottom: 6,
+                paddingLeft: 2
+              }}
+            >
+              {cat}
+            </div>
+            <div className="card" style={{ padding: 0 }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Service</th>
+                    <th>Username / ID</th>
+                    <th>Password</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>{renderRows(byCategory.get(cat)!)}</tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </>
+    )
+  }
+
   return (
     <div>
       <div className="toolbar">
@@ -70,75 +177,7 @@ export default function Vault(): JSX.Element {
           <div>No logins saved yet.</div>
         </div>
       ) : (
-        <div className="card" style={{ padding: 0 }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Service</th>
-                <th>Username / ID</th>
-                <th>Password</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => {
-                const isRevealed = revealed.has(e.id)
-                return (
-                  <tr key={e.id}>
-                    <td>
-                      {e.service_name}
-                      {e.url && (
-                        <div className="muted" style={{ fontSize: 12 }}>
-                          {e.url}
-                        </div>
-                      )}
-                    </td>
-                    <td>{e.username ?? '—'}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <span>{isRevealed ? e.password ?? '—' : e.password ? '••••••••' : '—'}</span>
-                      {e.password && (
-                        <>
-                          <button
-                            className="icon-btn"
-                            style={{ marginLeft: 6 }}
-                            title={isRevealed ? 'Hide password' : 'Show password'}
-                            aria-label={isRevealed ? 'Hide password' : 'Show password'}
-                            onClick={() => toggleReveal(e.id)}
-                          >
-                            {isRevealed ? <EyeOff size={14} /> : <Eye size={14} />}
-                          </button>
-                          <button
-                            className="icon-btn"
-                            title={copiedId === e.id ? 'Copied' : 'Copy password'}
-                            aria-label="Copy password"
-                            onClick={() => copyPassword(e)}
-                          >
-                            {copiedId === e.id ? <Check size={14} /> : <Copy size={14} />}
-                          </button>
-                        </>
-                      )}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <ActionMenu
-                        items={[
-                          {
-                            icon: ICON_EDIT,
-                            label: 'Edit',
-                            onClick: () => {
-                              setEditing(e)
-                              setShowModal(true)
-                            }
-                          },
-                          { icon: ICON_DELETE, label: 'Delete', danger: true, onClick: () => remove(e.id) }
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        renderGrouped(entries)
       )}
 
       {showModal && (

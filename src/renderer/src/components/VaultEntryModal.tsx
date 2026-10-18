@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import type { VaultEntry, VaultEntryInput } from '../../../shared/types'
+import type { VaultEntry, VaultEntryInput, VaultCategory } from '../../../shared/types'
+import { VAULT_CATEGORIES } from '../../../shared/types'
 
 interface Props {
   entry: VaultEntry | null
@@ -9,6 +10,7 @@ interface Props {
 
 export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX.Element {
   const [serviceName, setServiceName] = useState(entry?.service_name ?? '')
+  const [category, setCategory] = useState<VaultCategory | ''>(entry?.category ?? '')
   const [url, setUrl] = useState(entry?.url ?? '')
   const [username, setUsername] = useState(entry?.username ?? '')
   const [password, setPassword] = useState(entry?.password ?? '')
@@ -24,6 +26,7 @@ export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX
     }
     const input: VaultEntryInput = {
       service_name: serviceName.trim(),
+      category: (category as VaultCategory) || null,
       url: url.trim() || null,
       username: username.trim() || null,
       password: password || null,
@@ -55,6 +58,20 @@ export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX
               placeholder="e.g. Zerodha, Gmail"
             />
           </div>
+          <div className="field">
+            <label>Category</label>
+            <select value={category} onChange={(e) => setCategory(e.target.value as VaultCategory | '')}>
+              <option value="">— Select category —</option>
+              {VAULT_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="form-row">
           <div className="field">
             <label>Website (optional)</label>
             <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="e.g. kite.zerodha.com" />
