@@ -1,3 +1,4 @@
+import { api } from '../lib/api'
 import { useState } from 'react'
 import type { InsurancePolicy, InsurancePolicyInput, PolicyExtraction } from '../../../shared/types'
 import { POLICY_TYPES, VEHICLE_POLICY_TYPES } from '../../../shared/insuranceTypes'
@@ -42,6 +43,8 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
   const [startDate, setStartDate] = useState(toDateInput(seed?.start_date ?? policy?.start_date))
   const [expiryDate, setExpiryDate] = useState(toDateInput(seed?.expiry_date ?? policy?.expiry_date))
   const [renewalDate, setRenewalDate] = useState(toDateInput(seed?.renewal_date ?? policy?.renewal_date))
+  const [nomineeName, setNomineeName] = useState(policy?.nominee_name ?? '')
+  const [riders, setRiders] = useState(policy?.riders ?? '')
   const [notes, setNotes] = useState(policy?.notes ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -69,12 +72,14 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
       renewal_date: renewalDate ? new Date(renewalDate).toISOString() : null,
       document_path: prefill?.storedPath ?? policy?.document_path ?? null,
       document_original_name: prefill?.originalName ?? policy?.document_original_name ?? null,
+      nominee_name: nomineeName.trim() || null,
+      riders: riders.trim() || null,
       notes: notes.trim() || null
     }
     setBusy(true)
     try {
-      if (policy) await window.api.insurance.update(policy.id, input)
-      else await window.api.insurance.create(input)
+      if (policy) await api().insurance.update(policy.id, input)
+      else await api().insurance.create(input)
       onSaved()
     } catch (e) {
       setError((e as Error).message)
@@ -94,7 +99,7 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
         )}
         {seed?.confidence_notes && (
           <div className="help-text" style={{ marginBottom: 12 }}>
-            The model's notes on this document: {seed.confidence_notes}
+            AI notes on this extraction: {seed.confidence_notes}
           </div>
         )}
 
@@ -136,6 +141,17 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
           </div>
         </div>
 
+        <div className="form-row">
+          <div className="field">
+            <label>Nominee / beneficiary (optional)</label>
+            <input value={nomineeName} onChange={e => setNomineeName(e.target.value)} placeholder="e.g. Priya Sharma" />
+          </div>
+          <div className="field">
+            <label>Riders / add-ons (optional)</label>
+            <input value={riders} onChange={e => setRiders(e.target.value)} placeholder="e.g. Critical illness, Accidental death benefit" />
+          </div>
+        </div>
+
         {isVehicle && (
           <div className="field">
             <label>Vehicle number</label>
@@ -149,7 +165,7 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
 
         <div className="form-row">
           <div className="field">
-            <label>Sum assured (₹)</label>
+            <label>Cover amount (₹)</label>
             <input value={sumAssured} onChange={(e) => setSumAssured(e.target.value)} />
           </div>
           <div className="field">

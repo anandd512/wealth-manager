@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS insurance_policies (
   policy_type TEXT,
   insurer TEXT,
   insured_name TEXT,
+  nominee_name TEXT,
   vehicle_number TEXT,
   sum_assured REAL,
   premium_amount REAL,
@@ -76,6 +77,7 @@ CREATE TABLE IF NOT EXISTS insurance_policies (
   start_date TEXT,
   expiry_date TEXT,
   renewal_date TEXT,
+  riders TEXT,
   document_path TEXT,
   document_original_name TEXT,
   last_reminder_sent TEXT,
@@ -111,6 +113,7 @@ CREATE TABLE IF NOT EXISTS credit_cards (
   expiry_year INTEGER,
   cvv TEXT,
   credit_limit REAL,
+  outstanding_balance REAL,
   statement_day INTEGER,
   last_reminder_sent TEXT,
   notes TEXT,
@@ -119,11 +122,14 @@ CREATE TABLE IF NOT EXISTS credit_cards (
 
 CREATE TABLE IF NOT EXISTS credential_vault (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entry_type TEXT NOT NULL DEFAULT 'login',
   service_name TEXT NOT NULL,
   category TEXT,
   url TEXT,
   username TEXT,
   password TEXT,
+  totp_secret TEXT,
+  password_changed_at TEXT,
   notes TEXT,
   created_at TEXT NOT NULL
 );
@@ -167,7 +173,9 @@ const MIGRATION_COLUMNS: Record<string, [string, string][]> = {
   ],
   insurance_policies: [
     ['vehicle_number', 'TEXT'],
-    ['renewal_date', 'TEXT']
+    ['renewal_date', 'TEXT'],
+    ['nominee_name', 'TEXT'],
+    ['riders', 'TEXT']
   ],
   identity_documents: [
     ['date_of_birth', 'TEXT'],
@@ -180,14 +188,18 @@ const MIGRATION_COLUMNS: Record<string, [string, string][]> = {
   ],
   credit_cards: [
     ['statement_day', 'INTEGER'],
-    ['last_reminder_sent', 'TEXT']
+    ['last_reminder_sent', 'TEXT'],
+    ['outstanding_balance', 'REAL']
   ],
   value_history: [
     ['invested_value', 'REAL'],
     ['quantity', 'REAL']
   ],
   credential_vault: [
-    ['category', 'TEXT']
+    ['category', 'TEXT'],
+    ['totp_secret', 'TEXT'],
+    ['password_changed_at', 'TEXT'],
+    ['entry_type', 'TEXT']
   ]
 }
 

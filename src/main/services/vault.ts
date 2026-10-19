@@ -17,21 +17,38 @@ export function createVaultEntry(input: VaultEntryInput): VaultEntry {
   const now = new Date().toISOString()
   const info = getDb()
     .prepare(
-      `INSERT INTO credential_vault (service_name, category, url, username, password, notes, created_at)
-       VALUES (@service_name, @category, @url, @username, @password, @notes, @created_at)`
+      `INSERT INTO credential_vault
+        (entry_type, service_name, category, url, username, password, totp_secret, password_changed_at, notes, created_at)
+       VALUES (@entry_type, @service_name, @category, @url, @username, @password, @totp_secret, @password_changed_at, @notes, @created_at)`
     )
-    .run({ ...input, created_at: now })
+    .run({
+      ...input,
+      entry_type: input.entry_type ?? 'login',
+      password_changed_at: input.password ? now : null,
+      created_at: now
+    })
   return getVaultEntry(Number(info.lastInsertRowid))!
 }
 
 export function updateVaultEntry(id: number, input: Partial<VaultEntryInput>): VaultEntry {
   const existing = getVaultEntry(id)
   if (!existing) throw new Error('Entry not found')
-  const merged = { ...existing, ...input }
+  const now = new Date().toISOString()
+  const passwordChanged = input.password !== undefined && input.password !== existing.password
+  const merged = {
+    ...existing,
+    ...input,
+    entry_type: input.entry_type ?? existing.entry_type ?? 'login',
+    password_changed_at: passwordChanged && input.password
+      ? now
+      : existing.password_changed_at
+  }
   getDb()
     .prepare(
       `UPDATE credential_vault SET
-        service_name=@service_name, category=@category, url=@url, username=@username, password=@password, notes=@notes
+        entry_type=@entry_type, service_name=@service_name, category=@category, url=@url,
+        username=@username, password=@password, totp_secret=@totp_secret,
+        password_changed_at=@password_changed_at, notes=@notes
        WHERE id=@id`
     )
     .run({ ...merged, id })

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import { Plus, Upload, IdCard, RefreshCw } from 'lucide-react'
+import { api } from '../lib/api'
+import { useEffect, useRef, useState } from 'react'
+import { Plus, Upload, IdCard, RefreshCw, Copy, Check, Eye, EyeOff } from 'lucide-react'
 import type { IdentityDocExtraction, IdentityDocument, IdentityDocType } from '../../../shared/types'
 import { DOC_TYPES, DOC_TYPE_LABELS, DOC_TYPE_EXPIRY_LABELS } from '../../../shared/identityDocTypes'
 import { getDocTypeIcon } from '../lib/typeIcons'
@@ -20,28 +21,59 @@ export default function IdentityDocuments(): JSX.Element {
   const [extracting, setExtracting] = useState(false)
   const [syncingId, setSyncingId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [copiedIdNum, setCopiedIdNum] = useState<number | null>(null)
+  const [maskedIds, setMaskedIds] = useState<Set<number>>(new Set())
+  const [undoPending, setUndoPending] = useState<{ id: number; label: string } | null>(null)
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const load = async (): Promise<void> => {
-    setDocs(await window.api.identityDocs.list())
+    setDocs(await api().identityDocs.list())
   }
 
   useEffect(() => {
     load()
   }, [])
 
-  const remove = async (id: number): Promise<void> => {
-    if (!confirm('Delete this document?')) return
-    await window.api.identityDocs.remove(id)
+  const remove = (id: number, label: string): void => {
+    setDocs((prev) => prev.filter((d) => d.id !== id))
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    setUndoPending({ id, label })
+    undoTimerRef.current = setTimeout(async () => {
+      setUndoPending(null)
+      await api().identityDocs.remove(id)
+      load()
+    }, 5000)
+  }
+
+  const undoDelete = (): void => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    setUndoPending(null)
     load()
+  }
+
+  const displayIdNumber = (d: IdentityDocument): string => {
+    if (!d.id_number) return '—'
+    if (d.doc_type === 'aadhaar' && !maskedIds.has(d.id)) {
+      const digits = d.id_number.replace(/\s/g, '')
+      return `XXXX XXXX ${digits.slice(-4)}`
+    }
+    return d.id_number
+  }
+
+  const copyIdNumber = async (doc: IdentityDocument): Promise<void> => {
+    if (!doc.id_number) return
+    await navigator.clipboard.writeText(doc.id_number)
+    setCopiedIdNum(doc.id)
+    setTimeout(() => setCopiedIdNum((id) => (id === doc.id ? null : id)), 1500)
   }
 
   const uploadAndExtract = async (): Promise<void> => {
     setError(null)
-    const path = await window.api.identityDocs.pickFile()
+    const path = await api().identityDocs.pickFile()
     if (!path) return
     setExtracting(true)
     try {
-      const result = await window.api.identityDocs.extract(path)
+      const result = await api().identityDocs.extract(path)
       setPrefill(result)
       setEditing(null)
       setShowModal(true)
@@ -56,7 +88,7 @@ export default function IdentityDocuments(): JSX.Element {
     setError(null)
     setSyncingId(doc.id)
     try {
-      const result = await window.api.identityDocs.reExtract(doc.id)
+      const result = await api().identityDocs.reExtract(doc.id)
       setPrefill(result)
       setEditing(doc)
       setShowModal(true)
@@ -119,6 +151,14 @@ export default function IdentityDocuments(): JSX.Element {
 
   return (
     <div>
+      {undoPending && (
+        <div className="undo-toast">
+          <span>"{undoPending.label}" deleted</span>
+          <button className="btn secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={undoDelete}>
+            Undo
+          </button>
+        </div>
+      )}
       <div className="toolbar">
         <h1 className="page-title" style={{ marginBottom: 0 }}>
           IDs
@@ -198,7 +238,34 @@ export default function IdentityDocuments(): JSX.Element {
                           {d.label ?? '—'}
                           {syncingId === d.id && <RefreshCw size={12} className="spin" style={{ marginLeft: 6, verticalAlign: 'middle' }} />}
                         </td>
-                        <td>{d.id_number ?? '—'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {displayIdNumber(d)}
+                          {d.doc_type === 'aadhaar' && d.id_number && (
+                            <button
+                              className="icon-btn"
+                              style={{ marginLeft: 4 }}
+                              title={maskedIds.has(d.id) ? 'Hide full number' : 'Reveal full number'}
+                              onClick={() => setMaskedIds(prev => {
+                                const next = new Set(prev)
+                                if (next.has(d.id)) next.delete(d.id)
+                                else next.add(d.id)
+                                return next
+                              })}
+                            >
+                              {maskedIds.has(d.id) ? <EyeOff size={12} /> : <Eye size={12} />}
+                            </button>
+                          )}
+                          {d.id_number && (
+                            <button
+                              className="icon-btn"
+                              style={{ marginLeft: 6 }}
+                              title={copiedIdNum === d.id ? 'Copied!' : 'Copy ID number'}
+                              onClick={() => copyIdNumber(d)}
+                            >
+                              {copiedIdNum === d.id ? <Check size={12} /> : <Copy size={12} />}
+                            </button>
+                          )}
+                        </td>
                         <td className="muted">{d.full_name ?? '—'}</td>
                         {middleColumns.map((c) => (
                           <td key={c.key} className="muted">
@@ -212,7 +279,7 @@ export default function IdentityDocuments(): JSX.Element {
                                 {formatDate(d.expiry_date)} {badgeFor(d.expiry_date)}
                               </>
                             ) : (
-                              <span className="muted">No expiry</span>
+                              <span className="badge" style={{ background: 'var(--bg-inset)', color: 'var(--text-faint)', border: '1px solid var(--border)' }}>No expiry</span>
                             )}
                           </td>
                         )}
@@ -224,13 +291,13 @@ export default function IdentityDocuments(): JSX.Element {
                                     {
                                       icon: ICON_VIEW,
                                       label: 'View',
-                                      onClick: () => window.api.identityDocs.openDocument(d.document_path!)
+                                      onClick: () => api().identityDocs.openDocument(d.document_path!)
                                     },
                                     {
                                       icon: ICON_DOWNLOAD,
                                       label: 'Download',
                                       onClick: () =>
-                                        window.api.identityDocs.downloadDocument(
+                                        api().identityDocs.downloadDocument(
                                           d.document_path!,
                                           d.document_original_name
                                         )
@@ -251,7 +318,7 @@ export default function IdentityDocuments(): JSX.Element {
                                   setShowModal(true)
                                 }
                               },
-                              { icon: ICON_DELETE, label: 'Delete', danger: true, onClick: () => remove(d.id) }
+                              { icon: ICON_DELETE, label: 'Delete', danger: true, onClick: () => remove(d.id, d.label ?? DOC_TYPE_LABELS[d.doc_type] ?? d.doc_type) }
                             ]}
                           />
                         </td>

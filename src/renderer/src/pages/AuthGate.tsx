@@ -1,19 +1,23 @@
 import { useEffect, useState } from 'react'
-import { LockKeyhole, DatabaseBackup, Upload, ScanFace } from 'lucide-react'
+import { LockKeyhole, DatabaseBackup, Upload, ScanFace, HelpCircle, RotateCcw, ArrowLeft, AlertTriangle, Eye, EyeOff } from 'lucide-react'
 import logo from '../assets/logo.png'
 import { formatDate } from '../lib/format'
+
+type Mode = 'password' | 'restore' | 'forgot-password' | 'reset-confirm'
 
 interface Props {
   initialized: boolean
   onUnlocked: () => void
+  onTakeTour: () => void
 }
 
-export default function AuthGate({ initialized, onUnlocked }: Props): JSX.Element {
+export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props): JSX.Element {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  const [showPw, setShowPw] = useState(false)
   const [helloReady, setHelloReady] = useState(false)
   const [helloBusy, setHelloBusy] = useState(false)
 
@@ -40,7 +44,7 @@ export default function AuthGate({ initialized, onUnlocked }: Props): JSX.Elemen
     onUnlocked()
   }
 
-  const [mode, setMode] = useState<'password' | 'restore'>('password')
+  const [mode, setMode] = useState<Mode>('password')
   const [importPath, setImportPath] = useState<string | null>(null)
   const [importSummary, setImportSummary] = useState<{
     exportedAt: string
@@ -49,6 +53,8 @@ export default function AuthGate({ initialized, onUnlocked }: Props): JSX.Elemen
   } | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importBusy, setImportBusy] = useState(false)
+  const [resetBusy, setResetBusy] = useState(false)
+  const [resetError, setResetError] = useState<string | null>(null)
 
   const submit = async (): Promise<void> => {
     setError(null)
@@ -96,13 +102,24 @@ export default function AuthGate({ initialized, onUnlocked }: Props): JSX.Elemen
     setImportBusy(true)
     try {
       await window.api.backup.import(importPath)
-      // The app relaunches from the main process; this line normally never runs.
     } catch (e) {
       setImportError((e as Error).message)
       setImportBusy(false)
     }
   }
 
+  const confirmReset = async (): Promise<void> => {
+    setResetBusy(true)
+    setResetError(null)
+    try {
+      await window.api.auth.resetData()
+    } catch (e) {
+      setResetError((e as Error).message)
+      setResetBusy(false)
+    }
+  }
+
+  // ── Restore from backup ──────────────────────────────────────────────────
   if (mode === 'restore') {
     return (
       <div className="gate">
@@ -145,6 +162,98 @@ export default function AuthGate({ initialized, onUnlocked }: Props): JSX.Elemen
     )
   }
 
+  // ── Forgot password ──────────────────────────────────────────────────────
+  if (mode === 'forgot-password') {
+    return (
+      <div className="gate">
+        <div className="gate-card">
+          <div className="gate-icon" style={{ background: 'var(--amber-soft)', color: 'var(--amber)' }}>
+            <HelpCircle size={20} />
+          </div>
+          <h1>Forgot your password?</h1>
+          <p>
+            Artha uses zero-knowledge encryption — your master password cannot be recovered.
+            Choose an option below.
+          </p>
+
+          <button
+            className="btn secondary"
+            style={{ width: '100%', marginBottom: 10 }}
+            onClick={() => setMode('restore')}
+          >
+            <DatabaseBackup size={14} /> Import a backup file
+          </button>
+          <p className="help-text" style={{ marginBottom: 16, textAlign: 'center' }}>
+            If you have a <code>.wmbackup</code> file from another device or an earlier export, restore it here. You'll use the password that backup was created with.
+          </p>
+
+          <button
+            className="btn danger"
+            style={{ width: '100%' }}
+            onClick={() => setMode('reset-confirm')}
+          >
+            <RotateCcw size={14} /> Reset all data &amp; start fresh
+          </button>
+          <p className="help-text" style={{ marginTop: 8, textAlign: 'center' }}>
+            Permanently deletes all local data so you can set a new master password. This cannot be undone.
+          </p>
+
+          <button
+            type="button"
+            className="btn secondary"
+            style={{ width: '100%', marginTop: 14, background: 'transparent', border: 'none' }}
+            onClick={() => setMode('password')}
+          >
+            <ArrowLeft size={14} /> Back to login
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Reset confirmation ───────────────────────────────────────────────────
+  if (mode === 'reset-confirm') {
+    return (
+      <div className="gate">
+        <div className="gate-card">
+          <div className="gate-icon" style={{ background: 'var(--red-soft)', color: 'var(--red)' }}>
+            <AlertTriangle size={20} />
+          </div>
+          <h1>Reset all data?</h1>
+          <div className="card" style={{ borderColor: 'var(--red)', marginBottom: 16 }}>
+            <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6 }}>
+              <strong>This is permanent.</strong> All your accounts, insurance policies, identity
+              documents, credit cards, passwords, and uploaded files will be erased from this
+              device. There is no undo.
+            </p>
+          </div>
+          <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>
+            After reset, the app will restart and you can set a new master password.
+          </p>
+          {resetError && <div className="error-text">{resetError}</div>}
+          <button
+            className="btn danger"
+            style={{ width: '100%', marginBottom: 10 }}
+            onClick={confirmReset}
+            disabled={resetBusy}
+          >
+            {resetBusy ? 'Wiping data…' : 'Yes, delete everything & restart'}
+          </button>
+          <button
+            type="button"
+            className="btn secondary"
+            style={{ width: '100%', background: 'transparent', border: 'none' }}
+            onClick={() => setMode('forgot-password')}
+            disabled={resetBusy}
+          >
+            <ArrowLeft size={14} /> Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Main login / first-run ───────────────────────────────────────────────
   return (
     <div className="gate">
       <div className="gate-card">
@@ -154,30 +263,54 @@ export default function AuthGate({ initialized, onUnlocked }: Props): JSX.Elemen
         <h1>{initialized ? 'Unlock Artha' : 'Set your master password'}</h1>
         <p>
           {initialized
-            ? 'Enter your master password to decrypt your local data.'
-            : 'This password encrypts your entire local database. There is no password reset — if you forget it, your data cannot be recovered. Store it somewhere safe.'}
+            ? 'Welcome back. Enter your master password to open your vault.'
+            : 'This is the only password you\'ll need to remember. It locks your entire Artha vault — accounts, cards, IDs, and passwords — so only you can open it. Store it somewhere safe; if you forget it, we can\'t help you recover it (by design).'}
         </p>
         <div className="field">
           <label>Master password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && initialized) submit()
-            }}
-            autoFocus
-          />
+          <div style={{ position: 'relative' }}>
+            <input
+              type={showPw ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && initialized) submit()
+              }}
+              autoFocus
+              style={{ paddingRight: 36 }}
+            />
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => setShowPw(v => !v)}
+              style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', width: 28, height: 28 }}
+              tabIndex={-1}
+            >
+              {showPw ? <EyeOff size={13} /> : <Eye size={13} />}
+            </button>
+          </div>
         </div>
         {!initialized && (
           <div className="field">
             <label>Confirm password</label>
-            <input
-              type="password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && submit()}
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showPw ? 'text' : 'password'}
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && submit()}
+                style={{ paddingRight: 36 }}
+              />
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => setShowPw(v => !v)}
+                style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', width: 28, height: 28 }}
+                tabIndex={-1}
+              >
+                {showPw ? <EyeOff size={13} /> : <Eye size={13} />}
+              </button>
+            </div>
           </div>
         )}
         {error && <div className="error-text">{error}</div>}
@@ -205,6 +338,26 @@ export default function AuthGate({ initialized, onUnlocked }: Props): JSX.Elemen
             <DatabaseBackup size={14} /> Restore from a backup instead
           </button>
         )}
+
+        {/* Tour + Forgot password row */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18, borderTop: '1px solid var(--border-soft)', paddingTop: 14 }}>
+          <button
+            type="button"
+            className="gate-text-btn"
+            onClick={onTakeTour}
+          >
+            ✦ Take a tour
+          </button>
+          {initialized && (
+            <button
+              type="button"
+              className="gate-text-btn"
+              onClick={() => setMode('forgot-password')}
+            >
+              Forgot password?
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

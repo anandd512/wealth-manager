@@ -26,7 +26,8 @@ const api = {
     windowsHelloEnabled: () => ipcRenderer.invoke(CHANNELS.authWindowsHelloEnabled),
     enableWindowsHello: () => ipcRenderer.invoke(CHANNELS.authEnableWindowsHello),
     disableWindowsHello: () => ipcRenderer.invoke(CHANNELS.authDisableWindowsHello),
-    unlockWithWindowsHello: () => ipcRenderer.invoke(CHANNELS.authUnlockWithWindowsHello)
+    unlockWithWindowsHello: () => ipcRenderer.invoke(CHANNELS.authUnlockWithWindowsHello),
+    resetData: () => ipcRenderer.invoke(CHANNELS.authResetData)
   },
   accounts: {
     list: () => ipcRenderer.invoke(CHANNELS.accountsList),

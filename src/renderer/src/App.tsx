@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import type { AuthStatus } from '../../shared/types'
 import AuthGate from './pages/AuthGate'
+import TourMode from './components/TourMode'
 import Dashboard from './pages/Dashboard'
 import Accounts from './pages/Accounts'
 import Insurance from './pages/Insurance'
@@ -25,16 +26,17 @@ import Settings from './pages/Settings'
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/accounts', label: 'Accounts', icon: Wallet, end: false },
+  { to: '/cards', label: 'Credit Cards', icon: CreditCardIcon, end: false },
   { to: '/insurance', label: 'Insurance', icon: ShieldCheck, end: false },
   { to: '/ids', label: 'IDs', icon: IdCard, end: false },
-  { to: '/cards', label: 'Credit Cards', icon: CreditCardIcon, end: false },
-  { to: '/vault', label: 'Logins & Passwords', icon: KeyRound, end: false },
+  { to: '/vault', label: 'Vault', icon: KeyRound, end: false },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, end: false }
 ]
 
 export default function App(): JSX.Element {
   const [showSplash, setShowSplash] = useState(true)
   const [status, setStatus] = useState<AuthStatus | null>(null)
+  const [tourMode, setTourMode] = useState(false)
 
   const refreshStatus = async (): Promise<void> => {
     const s = await window.api.auth.status()
@@ -45,11 +47,14 @@ export default function App(): JSX.Element {
     refreshStatus()
   }, [])
 
-  // Auto-lock after 30 seconds of inactivity
+  // Auto-lock after configurable period of inactivity (stored in localStorage, default 5 min)
   useEffect(() => {
     if (!status?.unlocked) return
 
-    const TIMEOUT_MS = 30_000
+    const stored = localStorage.getItem('artha_autolock_minutes')
+    const minutes = stored === 'never' ? null : Number(stored ?? '5')
+    if (!minutes) return
+    const TIMEOUT_MS = minutes * 60_000
     let timer: ReturnType<typeof setTimeout>
 
     const reset = (): void => {
@@ -70,6 +75,12 @@ export default function App(): JSX.Element {
     }
   }, [status?.unlocked])
 
+  useEffect(() => {
+    const handler = (): void => setTourMode(true)
+    window.addEventListener('artha:start-tour', handler)
+    return () => window.removeEventListener('artha:start-tour', handler)
+  }, [])
+
   if (showSplash) {
     return (
       <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#000' }}>
@@ -79,6 +90,7 @@ export default function App(): JSX.Element {
           muted
           playsInline
           onEnded={() => setShowSplash(false)}
+          onError={() => setShowSplash(false)}
           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />
       </div>
@@ -87,8 +99,18 @@ export default function App(): JSX.Element {
 
   if (!status) return <div className="gate">Loading…</div>
 
+  if (tourMode) {
+    return <TourMode onExit={() => setTourMode(false)} />
+  }
+
   if (!status.unlocked) {
-    return <AuthGate initialized={status.initialized} onUnlocked={refreshStatus} />
+    return (
+      <AuthGate
+        initialized={status.initialized}
+        onUnlocked={refreshStatus}
+        onTakeTour={() => setTourMode(true)}
+      />
+    )
   }
 
   return (

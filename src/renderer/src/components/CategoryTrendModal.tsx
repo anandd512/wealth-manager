@@ -1,3 +1,4 @@
+import { api } from '../lib/api'
 import { useEffect, useState } from 'react'
 import type { AccountCategory } from '../../../shared/types'
 import { CATEGORY_LABELS } from '../lib/categories'
@@ -13,7 +14,7 @@ export default function CategoryTrendModal({ category, onClose }: Props): JSX.El
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    window.api.accounts.categoryHistory(category).then((rows: { date: string; total: number }[]) => {
+    api().accounts.categoryHistory(category).then((rows: { date: string; total: number }[]) => {
       setData(rows)
       setLoading(false)
     })

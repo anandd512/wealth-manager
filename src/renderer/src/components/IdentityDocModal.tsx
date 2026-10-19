@@ -1,3 +1,4 @@
+import { api } from '../lib/api'
 import { useState } from 'react'
 import type {
   IdentityDocExtraction,
@@ -74,8 +75,8 @@ export default function IdentityDocModal({ doc, prefill, onClose, onSaved }: Pro
     }
     setBusy(true)
     try {
-      if (doc) await window.api.identityDocs.update(doc.id, input)
-      else await window.api.identityDocs.create(input)
+      if (doc) await api().identityDocs.update(doc.id, input)
+      else await api().identityDocs.create(input)
       onSaved()
     } catch (e) {
       setError((e as Error).message)

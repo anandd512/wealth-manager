@@ -17,6 +17,7 @@ export type AccountSubtype =
   | 'ppf'
   | 'epf'
   | 'nps'
+  | 'sgb'
   | 'bond'
   | 'physical_gold'
   | 'crypto'
@@ -112,6 +113,7 @@ export interface InsurancePolicy {
   policy_type: string | null
   insurer: string | null
   insured_name: string | null
+  nominee_name: string | null
   vehicle_number: string | null
   sum_assured: number | null
   premium_amount: number | null
@@ -119,6 +121,7 @@ export interface InsurancePolicy {
   start_date: string | null
   expiry_date: string | null
   renewal_date: string | null
+  riders: string | null
   document_path: string | null
   document_original_name: string | null
   last_reminder_sent: string | null
@@ -214,6 +217,7 @@ export interface CreditCard {
   expiry_year: number | null
   cvv: string | null
   credit_limit: number | null
+  outstanding_balance: number | null
   statement_day: number | null
   last_reminder_sent: string | null
   notes: string | null
@@ -238,16 +242,19 @@ export type VaultCategory = (typeof VAULT_CATEGORIES)[number]
 
 export interface VaultEntry {
   id: number
+  entry_type: 'login' | 'note'
   service_name: string
   category: VaultCategory | null
   url: string | null
   username: string | null
   password: string | null
+  totp_secret: string | null
+  password_changed_at: string | null
   notes: string | null
   created_at: string
 }
 
-export type VaultEntryInput = Omit<VaultEntry, 'id' | 'created_at'>
+export type VaultEntryInput = Omit<VaultEntry, 'id' | 'created_at' | 'password_changed_at'>
 
 export interface SmtpConfig {
   host: string

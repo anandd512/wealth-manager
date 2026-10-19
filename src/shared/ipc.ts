@@ -83,5 +83,7 @@ export const CHANNELS = {
   backupExport: 'backup:export',
   backupPickFile: 'backup:pickFile',
   backupSummary: 'backup:summary',
-  backupImport: 'backup:import'
+  backupImport: 'backup:import',
+
+  authResetData: 'auth:resetData'
 } as const

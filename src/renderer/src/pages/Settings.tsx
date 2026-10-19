@@ -1,3 +1,4 @@
+import { api } from '../lib/api'
 import { useEffect, useState } from 'react'
 import {
   ShieldCheck,
@@ -8,7 +9,10 @@ import {
   DatabaseBackup,
   Upload,
   Download,
-  ScanFace
+  ScanFace,
+  Timer,
+  Lock,
+  HelpCircle
 } from 'lucide-react'
 import { formatDate } from '../lib/format'
 import type {
@@ -79,6 +83,14 @@ export default function Settings(): JSX.Element {
   const [helloBusy, setHelloBusy] = useState(false)
   const [helloMsg, setHelloMsg] = useState<string | null>(null)
 
+  // Auto-lock
+  const [autoLockMinutes, setAutoLockMinutes] = useState<string>(
+    localStorage.getItem('artha_autolock_minutes') ?? '5'
+  )
+
+  // Data summary
+  const [dataSummary, setDataSummary] = useState<{ accounts: number; policies: number; identityDocs: number; cards: number; vaultEntries: number } | null>(null)
+
   // Backup & restore
   const [exportMsg, setExportMsg] = useState<string | null>(null)
   const [exportBusy, setExportBusy] = useState(false)
@@ -92,7 +104,7 @@ export default function Settings(): JSX.Element {
   const [importBusy, setImportBusy] = useState(false)
 
   const load = async (): Promise<void> => {
-    const s: AppSettings = await window.api.settings.get()
+    const s: AppSettings = await api().settings.get()
     setSettings(s)
     setDaysBefore(s.reminders.daysBefore)
     setDesktopNotifications(s.reminders.desktopNotifications)
@@ -108,11 +120,27 @@ export default function Settings(): JSX.Element {
     load()
     ;(async () => {
       const [available, enabled] = await Promise.all([
-        window.api.auth.windowsHelloAvailable(),
-        window.api.auth.windowsHelloEnabled()
+        api().auth.windowsHelloAvailable(),
+        api().auth.windowsHelloEnabled()
       ])
       setHelloAvailable(available)
       setHelloEnabled(enabled)
+    })()
+    ;(async () => {
+      const [accs, pols, ids, cards, vault] = await Promise.all([
+        api().accounts.list(),
+        api().insurance.list(),
+        api().identityDocs.list(),
+        api().creditCards.list(),
+        api().vault.list()
+      ])
+      setDataSummary({
+        accounts: accs.length,
+        policies: pols.length,
+        identityDocs: ids.length,
+        cards: cards.length,
+        vaultEntries: vault.length
+      })
     })()
   }, [])
 
@@ -121,13 +149,13 @@ export default function Settings(): JSX.Element {
     setHelloBusy(true)
     try {
       if (next) {
-        const result = await window.api.auth.enableWindowsHello()
+        const result = await api().auth.enableWindowsHello()
         if (!result.ok) {
           setHelloMsg('Could not enable Windows Hello on this device.')
           return
         }
       } else {
-        await window.api.auth.disableWindowsHello()
+        await api().auth.disableWindowsHello()
       }
       setHelloEnabled(next)
       setHelloMsg(next ? 'Windows Hello unlock enabled.' : 'Windows Hello unlock disabled.')
@@ -136,43 +164,48 @@ export default function Settings(): JSX.Element {
     }
   }
 
+  const saveAutoLock = (value: string): void => {
+    setAutoLockMinutes(value)
+    localStorage.setItem('artha_autolock_minutes', value)
+  }
+
   const saveReminders = async (): Promise<void> => {
     const r: ReminderSettings = { daysBefore, desktopNotifications, emailNotifications }
-    await window.api.settings.setReminders(r)
+    await api().settings.setReminders(r)
     setReminderSaved(true)
     setTimeout(() => setReminderSaved(false), 2000)
   }
 
   const saveCheckInSchedule = async (next: CheckInScheduleSettings): Promise<void> => {
     setCheckInSchedule(next)
-    await window.api.settings.setCheckInSchedule(next)
+    await api().settings.setCheckInSchedule(next)
     setCheckInSaved(true)
     setTimeout(() => setCheckInSaved(false), 2000)
   }
 
   const changeProvider = async (p: ExtractionProvider): Promise<void> => {
     setProvider(p)
-    await window.api.settings.setExtractionProvider(p)
+    await api().settings.setExtractionProvider(p)
   }
 
   const saveKey = async (): Promise<void> => {
-    await window.api.settings.setAnthropicKey(anthropicKey)
+    await api().settings.setAnthropicKey(anthropicKey)
     setAnthropicKey('')
     setKeyMsg('Saved and encrypted on this device.')
     load()
   }
 
   const clearKey = async (): Promise<void> => {
-    await window.api.settings.clearAnthropicKey()
+    await api().settings.clearAnthropicKey()
     setKeyMsg('API key removed.')
     load()
   }
 
   const saveOpenAi = async (): Promise<void> => {
-    await window.api.settings.setOpenAiBaseUrl(openAiBaseUrl)
-    await window.api.settings.setOpenAiModel(openAiModel)
+    await api().settings.setOpenAiBaseUrl(openAiBaseUrl)
+    await api().settings.setOpenAiModel(openAiModel)
     if (openAiKey) {
-      await window.api.settings.setOpenAiKey(openAiKey)
+      await api().settings.setOpenAiKey(openAiKey)
       setOpenAiKey('')
     }
     setOpenAiMsg('Saved.')
@@ -180,15 +213,15 @@ export default function Settings(): JSX.Element {
   }
 
   const clearOpenAiKey = async (): Promise<void> => {
-    await window.api.settings.clearOpenAiKey()
+    await api().settings.clearOpenAiKey()
     setOpenAiMsg('API key removed.')
     load()
   }
 
   const saveSmtp = async (): Promise<void> => {
-    await window.api.settings.setSmtp(smtp)
+    await api().settings.setSmtp(smtp)
     if (smtpPassword) {
-      await window.api.settings.setSmtpPassword(smtpPassword)
+      await api().settings.setSmtpPassword(smtpPassword)
       setSmtpPassword('')
     }
     setSmtpMsg('SMTP settings saved.')
@@ -199,7 +232,7 @@ export default function Settings(): JSX.Element {
     setTestBusy(true)
     setSmtpMsg(null)
     try {
-      await window.api.settings.testEmail()
+      await api().settings.testEmail()
       setSmtpMsg('Test email sent — check your inbox.')
     } catch (e) {
       setSmtpMsg(`Failed: ${(e as Error).message}`)
@@ -219,7 +252,7 @@ export default function Settings(): JSX.Element {
       setPwError('New passwords do not match.')
       return
     }
-    const result = await window.api.auth.changePassword(currentPassword, newPassword)
+    const result = await api().auth.changePassword(currentPassword, newPassword)
     if (!result.ok) {
       setPwError(result.error ?? 'Could not change password')
       return
@@ -234,7 +267,7 @@ export default function Settings(): JSX.Element {
     setExportMsg(null)
     setExportBusy(true)
     try {
-      const result = await window.api.backup.export()
+      const result = await api().backup.export()
       if (!result.ok) {
         setExportBusy(false)
         return
@@ -251,10 +284,10 @@ export default function Settings(): JSX.Element {
   const pickImportFile = async (): Promise<void> => {
     setImportError(null)
     setImportSummary(null)
-    const path = await window.api.backup.pickFile()
+    const path = await api().backup.pickFile()
     if (!path) return
     try {
-      const summary = await window.api.backup.summary(path)
+      const summary = await api().backup.summary(path)
       setImportPath(path)
       setImportSummary(summary)
     } catch (e) {
@@ -273,7 +306,7 @@ export default function Settings(): JSX.Element {
     }
     setImportBusy(true)
     try {
-      await window.api.backup.import(importPath)
+      await api().backup.import(importPath)
       // The app relaunches from the main process; this line normally never runs.
     } catch (e) {
       setImportError((e as Error).message)
@@ -286,6 +319,10 @@ export default function Settings(): JSX.Element {
   return (
     <div>
       <h1 className="page-title">Settings</h1>
+
+      <div className="settings-section-label">
+        <Lock size={12} /> Security
+      </div>
 
       <div className="card section" style={{ borderColor: 'var(--accent-dim)' }}>
         <div className="section-header">
@@ -354,6 +391,52 @@ export default function Settings(): JSX.Element {
       <div className="card section">
         <div className="section-header">
           <h2>
+            <Timer size={14} /> Auto-lock timeout
+          </h2>
+        </div>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Lock the app automatically after a period of inactivity. Takes effect on next unlock.
+        </p>
+        <div className="field" style={{ maxWidth: 240 }}>
+          <label>Lock after</label>
+          <select value={autoLockMinutes} onChange={(e) => saveAutoLock(e.target.value)}>
+            <option value="0.5">30 seconds</option>
+            <option value="1">1 minute</option>
+            <option value="5">5 minutes</option>
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="never">Never</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="settings-section-label">
+        <DatabaseBackup size={12} /> Data Management
+      </div>
+
+      {dataSummary && (
+        <div className="card section" style={{ padding: '14px 18px' }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>What's stored</div>
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+            {[
+              { label: 'Accounts', count: dataSummary.accounts },
+              { label: 'Policies', count: dataSummary.policies },
+              { label: 'Identity docs', count: dataSummary.identityDocs },
+              { label: 'Credit cards', count: dataSummary.cards },
+              { label: 'Vault entries', count: dataSummary.vaultEntries },
+            ].map(({ label, count }) => (
+              <div key={label}>
+                <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.2 }}>{count}</div>
+                <div className="muted" style={{ fontSize: 11 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="card section">
+        <div className="section-header">
+          <h2>
             <DatabaseBackup size={14} /> Backup &amp; restore
           </h2>
         </div>
@@ -390,6 +473,10 @@ export default function Settings(): JSX.Element {
             </button>
           </div>
         )}
+      </div>
+
+      <div className="settings-section-label">
+        <BellRing size={12} /> Notifications
       </div>
 
       <div className="card section">
@@ -497,6 +584,10 @@ export default function Settings(): JSX.Element {
         {checkInSaved && <span className="success-text">Saved</span>}
       </div>
 
+      <div className="settings-section-label">
+        <Sparkles size={12} /> AI & Extraction
+      </div>
+
       <div className="card section">
         <div className="section-header">
           <h2>
@@ -504,14 +595,14 @@ export default function Settings(): JSX.Element {
           </h2>
         </div>
         <p className="muted" style={{ marginTop: 0 }}>
-          Used to read uploaded insurance policy documents and extract fields automatically.
+          Artha can read your uploaded policy PDFs and loan documents and fill in the fields automatically. Requires an API key from your chosen provider.
         </p>
 
         <div className="field" style={{ maxWidth: 360 }}>
           <label>Provider</label>
           <select value={provider} onChange={(e) => changeProvider(e.target.value as ExtractionProvider)}>
             <option value="anthropic">Anthropic (Claude)</option>
-            <option value="openai">Azure AI Foundry / OpenAI-compatible</option>
+            <option value="openai">Custom AI endpoint (OpenAI-compatible)</option>
           </select>
         </div>
 
@@ -546,7 +637,7 @@ export default function Settings(): JSX.Element {
         ) : (
           <>
             <p className="help-text" style={{ marginBottom: 12 }}>
-              For a model deployed on Azure AI Foundry's OpenAI-compatible surface (URLs ending in
+              For any OpenAI-compatible endpoint — Azure AI Foundry, a local model, or any self-hosted API (URLs ending in
               <code> /openai/v1</code>). Paste the endpoint Foundry gave you — a trailing{' '}
               <code>/responses</code> is stripped automatically — and the deployment name you gave
               the model.
@@ -596,12 +687,11 @@ export default function Settings(): JSX.Element {
       <div className="card section">
         <div className="section-header">
           <h2>
-            <Mail size={14} /> Email (SMTP)
+            <Mail size={14} /> Email reminders (Gmail / Outlook)
           </h2>
         </div>
         <p className="muted" style={{ marginTop: 0 }}>
-          Use an app password from your email provider (not your main account password). For Gmail:
-          Google Account → Security → App passwords.
+          Send yourself reminders via email. Use an app password — not your main account password. For Gmail: Google Account → Security → App passwords → create one for "Artha".
         </p>
         <div className="form-row">
           <div className="field">
@@ -672,6 +762,28 @@ export default function Settings(): JSX.Element {
           {testBusy ? 'Sending…' : 'Send test email'}
         </button>
         {smtpMsg && <div className="success-text">{smtpMsg}</div>}
+      </div>
+
+      <div className="settings-section-label" style={{ marginTop: 32 }}>
+        <HelpCircle size={12} /> Help
+      </div>
+
+      <div className="card section">
+        <div className="section-header">
+          <h2>Product tour</h2>
+        </div>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Revisit the guided walkthrough to explore all of Artha's features with demo data.
+        </p>
+        <button
+          className="btn secondary"
+          onClick={() => window.dispatchEvent(new CustomEvent('artha:start-tour'))}
+        >
+          ✦ Take a tour
+        </button>
+        <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+          Your data is stored locally and encrypted. Nothing is ever sent to Artha servers.
+        </p>
       </div>
     </div>
   )

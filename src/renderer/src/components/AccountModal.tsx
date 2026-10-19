@@ -1,3 +1,4 @@
+import { api } from '../lib/api'
 import { useEffect, useState } from 'react'
 import { Upload, Plus, X } from 'lucide-react'
 import type {
@@ -131,11 +132,11 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
 
   const uploadSchedule = async (): Promise<void> => {
     setScheduleError(null)
-    const path = await window.api.accounts.pickDocument()
+    const path = await api().accounts.pickDocument()
     if (!path) return
     setScheduleExtracting(true)
     try {
-      const result = await window.api.accounts.extractLoanSchedule(path)
+      const result = await api().accounts.extractLoanSchedule(path)
       applyScheduleExtraction(result.extraction, result.storedPath, result.originalName)
     } catch (e) {
       setScheduleError((e as Error).message)
@@ -149,7 +150,7 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
     setScheduleError(null)
     setScheduleExtracting(true)
     try {
-      const result = await window.api.accounts.reExtractLoanSchedule(account.id)
+      const result = await api().accounts.reExtractLoanSchedule(account.id)
       applyScheduleExtraction(result.extraction, result.storedPath, result.originalName)
     } catch (e) {
       setScheduleError((e as Error).message)
@@ -214,8 +215,8 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
     setBusy(true)
     try {
       const saved = account
-        ? await window.api.accounts.update(account.id, input)
-        : await window.api.accounts.create(input)
+        ? await api().accounts.update(account.id, input)
+        : await api().accounts.create(input)
       onSaved(saved)
     } catch (e) {
       setError((e as Error).message)
@@ -339,7 +340,7 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
                     type="button"
                     className="btn secondary small"
                     style={{ marginLeft: 6 }}
-                    onClick={() => window.api.accounts.openDocument(documentPath)}
+                    onClick={() => api().accounts.openDocument(documentPath)}
                   >
                     <ICON_VIEW size={13} /> View
                   </button>
@@ -347,7 +348,7 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
                     type="button"
                     className="btn secondary small"
                     style={{ marginLeft: 6 }}
-                    onClick={() => window.api.accounts.downloadDocument(documentPath, documentOriginalName)}
+                    onClick={() => api().accounts.downloadDocument(documentPath, documentOriginalName)}
                   >
                     <ICON_DOWNLOAD size={13} /> Download
                   </button>

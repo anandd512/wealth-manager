@@ -1,3 +1,4 @@
+import { api } from '../lib/api'
 import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { Account, ValueHistoryRow } from '../../../shared/types'
@@ -37,7 +38,7 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
   const showExtraColumn = showInvestedValue || showQuantity
 
   const loadEntries = async (): Promise<void> => {
-    setEntries(await window.api.accounts.history(account.id))
+    setEntries(await api().accounts.history(account.id))
   }
 
   useEffect(() => {
@@ -69,7 +70,7 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
     }
     setBusy(true)
     try {
-      const saved = await window.api.accounts.checkIn(account.id, date, num, investedNum, quantityNum)
+      const saved = await api().accounts.checkIn(account.id, date, num, investedNum, quantityNum)
       onSaved(account.current_value, saved)
     } catch (e) {
       setError((e as Error).message)
@@ -112,7 +113,7 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
     }
     setEntriesBusy(true)
     try {
-      await window.api.accounts.updateValueHistory(editingId, editDate, num, investedNum, quantityNum)
+      await api().accounts.updateValueHistory(editingId, editDate, num, investedNum, quantityNum)
       setEditingId(null)
       await loadEntries()
       onChanged()
@@ -125,7 +126,7 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
 
   const removeEntry = async (id: number): Promise<void> => {
     if (!confirm('Delete this entry?')) return
-    await window.api.accounts.deleteValueHistory(id)
+    await api().accounts.deleteValueHistory(id)
     await loadEntries()
     onChanged()
   }
@@ -133,7 +134,7 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" style={{ width: 620 }} onClick={(e) => e.stopPropagation()}>
-        <h2>Check-in value</h2>
+        <h2>Update value</h2>
         <p className="help-text" style={{ marginBottom: 14 }}>
           Log {account.name}'s value as of a specific date. Re-checking in on the same date
           corrects that entry rather than adding a duplicate. The account's current value is
@@ -146,7 +147,7 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div className="field">
-            <label>Value (₹)</label>
+            <label>New value (₹)</label>
             <input value={value} onChange={(e) => setValue(e.target.value)} />
           </div>
         </div>

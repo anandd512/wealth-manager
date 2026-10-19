@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { api } from '../lib/api'
+import { useEffect, useRef, useState } from 'react'
 import { Plus, Upload, ShieldCheck, RefreshCw } from 'lucide-react'
 import type { InsurancePolicy, PolicyExtraction } from '../../../shared/types'
 import { POLICY_TYPE_LABELS } from '../../../shared/insuranceTypes'
@@ -20,28 +21,41 @@ export default function Insurance(): JSX.Element {
   const [extracting, setExtracting] = useState(false)
   const [syncingId, setSyncingId] = useState<number | null>(null)
   const [extractError, setExtractError] = useState<string | null>(null)
+  const [undoPending, setUndoPending] = useState<{ id: number; label: string } | null>(null)
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const load = async (): Promise<void> => {
-    setPolicies(await window.api.insurance.list())
+    setPolicies(await api().insurance.list())
   }
 
   useEffect(() => {
     load()
   }, [])
 
-  const remove = async (id: number): Promise<void> => {
-    if (!confirm('Delete this policy?')) return
-    await window.api.insurance.remove(id)
+  const remove = (id: number, label: string): void => {
+    setPolicies((prev) => prev.filter((p) => p.id !== id))
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    setUndoPending({ id, label })
+    undoTimerRef.current = setTimeout(async () => {
+      setUndoPending(null)
+      await api().insurance.remove(id)
+      load()
+    }, 5000)
+  }
+
+  const undoDelete = (): void => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    setUndoPending(null)
     load()
   }
 
   const uploadAndExtract = async (): Promise<void> => {
     setExtractError(null)
-    const path = await window.api.insurance.pickFile()
+    const path = await api().insurance.pickFile()
     if (!path) return
     setExtracting(true)
     try {
-      const result = await window.api.insurance.extract(path)
+      const result = await api().insurance.extract(path)
       setPrefill(result)
       setEditing(null)
       setShowModal(true)
@@ -56,7 +70,7 @@ export default function Insurance(): JSX.Element {
     setExtractError(null)
     setSyncingId(policy.id)
     try {
-      const result = await window.api.insurance.reExtract(policy.id)
+      const result = await api().insurance.reExtract(policy.id)
       setPrefill(result)
       setEditing(policy)
       setShowModal(true)
@@ -78,6 +92,14 @@ export default function Insurance(): JSX.Element {
 
   return (
     <div>
+      {undoPending && (
+        <div className="undo-toast">
+          <span>"{undoPending.label}" deleted</span>
+          <button className="btn secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={undoDelete}>
+            Undo
+          </button>
+        </div>
+      )}
       <div className="toolbar">
         <h1 className="page-title" style={{ marginBottom: 0 }}>
           Insurance
@@ -112,8 +134,7 @@ export default function Insurance(): JSX.Element {
         <div className="card empty-state">
           <ShieldCheck size={30} />
           <div>
-            No policies yet. Upload a policy PDF or photo and the model will extract the policy
-            number, type, insured person, premium, and dates for you to review.
+            No policies yet. Upload a PDF and AI reads the policy number, cover amount, premium, and dates for you to review — or add one manually.
           </div>
         </div>
       ) : (
@@ -125,6 +146,7 @@ export default function Insurance(): JSX.Element {
                 <th>Policy number</th>
                 <th>Insurer</th>
                 <th>Insured</th>
+                <th>Nominee</th>
                 <th>Premium</th>
                 <th>Expiry</th>
                 <th>Renewal</th>
@@ -153,6 +175,9 @@ export default function Insurance(): JSX.Element {
                         <div style={{ fontSize: 12 }}>Vehicle: {p.vehicle_number}</div>
                       )}
                     </td>
+                    <td className="muted">
+                      {p.nominee_name ?? '—'}
+                    </td>
                     <td>
                       {p.premium_amount != null ? formatCurrency(p.premium_amount) : '—'}
                       {p.premium_frequency ? <span className="muted"> /{p.premium_frequency}</span> : ''}
@@ -175,13 +200,13 @@ export default function Insurance(): JSX.Element {
                                 {
                                   icon: ICON_VIEW,
                                   label: 'View',
-                                  onClick: () => window.api.insurance.openDocument(p.document_path!)
+                                  onClick: () => api().insurance.openDocument(p.document_path!)
                                 },
                                 {
                                   icon: ICON_DOWNLOAD,
                                   label: 'Download',
                                   onClick: () =>
-                                    window.api.insurance.downloadDocument(
+                                    api().insurance.downloadDocument(
                                       p.document_path!,
                                       p.document_original_name
                                     )
@@ -202,7 +227,7 @@ export default function Insurance(): JSX.Element {
                               setShowModal(true)
                             }
                           },
-                          { icon: ICON_DELETE, label: 'Delete', danger: true, onClick: () => remove(p.id) }
+                          { icon: ICON_DELETE, label: 'Delete', danger: true, onClick: () => remove(p.id, p.policy_number ?? p.insurer ?? 'Policy') }
                         ]}
                       />
                     </td>

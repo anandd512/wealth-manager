@@ -1,6 +1,6 @@
 import { app, ipcMain, dialog, shell, BrowserWindow } from 'electron'
-import { writeFileSync, readFileSync } from 'fs'
-import { basename } from 'path'
+import { writeFileSync, readFileSync, unlinkSync, existsSync, rmSync } from 'fs'
+import { basename, join } from 'path'
 import { CHANNELS } from '../shared/ipc'
 import type {
   AccountInput,
@@ -115,6 +115,25 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     closeDatabase()
     cleanupTempViewFiles()
     return { ok: true }
+  })
+
+  ipcMain.handle(CHANNELS.authResetData, () => {
+    try {
+      stopScheduler()
+      closeDatabase()
+      cleanupTempViewFiles()
+      const userData = app.getPath('userData')
+      const authPath = join(userData, 'auth.json')
+      const dbPath = join(userData, 'wealth.db.enc')
+      if (existsSync(authPath)) unlinkSync(authPath)
+      if (existsSync(dbPath)) unlinkSync(dbPath)
+      const docsPath = join(userData, 'documents')
+      if (existsSync(docsPath)) rmSync(docsPath, { recursive: true, force: true })
+      app.relaunch()
+      app.exit(0)
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
   })
 
   ipcMain.handle(CHANNELS.authChangePassword, (_e, currentPassword: string, newPassword: string) => {

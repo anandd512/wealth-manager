@@ -1,3 +1,4 @@
+import { api } from '../lib/api'
 import { useEffect, useState } from 'react'
 import type { Account, ValueHistoryRow } from '../../../shared/types'
 import { formatCurrency, formatDate } from '../lib/format'
@@ -17,7 +18,7 @@ export default function AccountTrendModal({ account, onClose }: Props): JSX.Elem
   const showExtraColumn = showInvestedValue || showQuantity
 
   useEffect(() => {
-    window.api.accounts.history(account.id).then(setEntries)
+    api().accounts.history(account.id).then(setEntries)
   }, [account.id])
 
   const chartData = entries.map((e) => ({ date: e.recorded_at, value: e.value }))

@@ -1,3 +1,4 @@
+import { api } from '../lib/api'
 import { useState } from 'react'
 import type { CreditCard, CreditCardInput } from '../../../shared/types'
 
@@ -28,6 +29,7 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
   const [statementDay, setStatementDay] = useState(
     card?.statement_day != null ? String(card.statement_day) : ''
   )
+  const [outstandingBalance, setOutstandingBalance] = useState(card?.outstanding_balance != null ? String(card.outstanding_balance) : '')
   const [notes, setNotes] = useState(card?.notes ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -52,13 +54,14 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
       expiry_year: expiryYear ? Number(expiryYear) : null,
       cvv: cvv.trim() || null,
       credit_limit: creditLimit ? Number(creditLimit) : null,
+      outstanding_balance: outstandingBalance ? Number(outstandingBalance) : null,
       statement_day: statementDay ? Number(statementDay) : null,
       notes: notes.trim() || null
     }
     setBusy(true)
     try {
-      if (card) await window.api.creditCards.update(card.id, input)
-      else await window.api.creditCards.create(input)
+      if (card) await api().creditCards.update(card.id, input)
+      else await api().creditCards.create(input)
       onSaved()
     } catch (e) {
       setError((e as Error).message)
@@ -131,6 +134,14 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
           <div className="field">
             <label>Credit limit (₹, optional)</label>
             <input value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="field">
+            <label>Outstanding balance (₹, optional)</label>
+            <input value={outstandingBalance} onChange={e => setOutstandingBalance(e.target.value)} placeholder="Current amount owed" />
+            <div className="help-text">The amount you currently owe on this card. Used to calculate credit utilisation.</div>
           </div>
         </div>
 

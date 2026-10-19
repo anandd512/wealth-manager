@@ -18,9 +18,9 @@ export function createCreditCard(input: CreditCardInput): CreditCard {
     .prepare(
       `INSERT INTO credit_cards
         (nickname, network, issuer, card_number, name_on_card, expiry_month, expiry_year,
-         cvv, credit_limit, statement_day, notes, created_at)
+         cvv, credit_limit, outstanding_balance, statement_day, notes, created_at)
        VALUES (@nickname, @network, @issuer, @card_number, @name_on_card, @expiry_month, @expiry_year,
-               @cvv, @credit_limit, @statement_day, @notes, @created_at)`
+               @cvv, @credit_limit, @outstanding_balance, @statement_day, @notes, @created_at)`
     )
     .run({ ...input, created_at: now })
   return getCreditCard(Number(info.lastInsertRowid))!
@@ -35,7 +35,8 @@ export function updateCreditCard(id: number, input: Partial<CreditCardInput>): C
       `UPDATE credit_cards SET
         nickname=@nickname, network=@network, issuer=@issuer, card_number=@card_number,
         name_on_card=@name_on_card, expiry_month=@expiry_month, expiry_year=@expiry_year,
-        cvv=@cvv, credit_limit=@credit_limit, statement_day=@statement_day, notes=@notes
+        cvv=@cvv, credit_limit=@credit_limit, outstanding_balance=@outstanding_balance,
+        statement_day=@statement_day, notes=@notes
        WHERE id=@id`
     )
     .run({ ...merged, id })
