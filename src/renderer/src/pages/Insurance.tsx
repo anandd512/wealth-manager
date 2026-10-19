@@ -83,7 +83,7 @@ export default function Insurance(): JSX.Element {
 
   const badgeFor = (date: string | null): JSX.Element => {
     const d = daysUntil(date)
-    if (d === null) return <span className="badge neutral">No date</span>
+    if (d === null) return <span className="badge neutral">Not set</span>
     if (d < 0) return <span className="badge danger">Expired</span>
     if (d <= 15) return <span className="badge danger">{d} days</span>
     if (d <= 45) return <span className="badge warn">{d} days</span>
@@ -117,7 +117,7 @@ export default function Insurance(): JSX.Element {
             <Plus size={14} /> Add manually
           </button>
           <button className="btn" onClick={uploadAndExtract} disabled={extracting}>
-            <Upload size={14} /> {extracting ? 'Reading document…' : 'Upload policy document'}
+            <Upload size={14} /> {extracting ? 'Reading document…' : 'Extract with AI'}
           </button>
         </div>
       </div>
@@ -125,7 +125,7 @@ export default function Insurance(): JSX.Element {
       {(extracting || syncingId !== null) && (
         <div className="syncing-banner">
           <RefreshCw size={15} className="spin" />
-          {syncingId !== null ? 'Re-reading document and updating fields…' : 'Reading document…'}
+          {syncingId !== null ? 'Updating from document…' : 'Reading document…'}
         </div>
       )}
       {extractError && <div className="error-text section">{extractError}</div>}
@@ -180,7 +180,9 @@ export default function Insurance(): JSX.Element {
                     </td>
                     <td>
                       {p.premium_amount != null ? formatCurrency(p.premium_amount) : '—'}
-                      {p.premium_frequency ? <span className="muted"> /{p.premium_frequency}</span> : ''}
+                      {p.premium_frequency ? (
+                        <span className="muted"> / {({'monthly':'month','quarterly':'quarter','half-yearly':'6 mo','yearly':'year','single':'one-time'} as Record<string,string>)[p.premium_frequency] ?? p.premium_frequency}</span>
+                      ) : ''}
                     </td>
                     <td className="muted">{formatDate(p.expiry_date)}</td>
                     <td>
@@ -213,7 +215,7 @@ export default function Insurance(): JSX.Element {
                                 },
                                 {
                                   icon: ICON_SYNC,
-                                  label: syncingId === p.id ? 'Syncing…' : 'Sync',
+                                  label: syncingId === p.id ? 'Updating…' : 'Update from document',
                                   onClick: () => resync(p)
                                 }
                               ]

@@ -18,19 +18,23 @@ const BREAKDOWN_LABELS: Record<string, string> = {
   fixed_deposits: 'Fixed Deposits'
 }
 
-function computeDelta(history: NetWorthSnapshot[]): { diff: number; pct: number } | null {
+function computeDelta(history: NetWorthSnapshot[], range: '1M' | '3M' | '6M' | '1Y' | 'All'): { diff: number; pct: number; label: string } | null {
   if (history.length < 2) return null
   const latest = history[history.length - 1]
   const latestTime = new Date(latest.snapshot_date).getTime()
-  const targetTime = latestTime - 30 * 24 * 60 * 60 * 1000
+  const rangeDays: Record<string, number> = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 }
+  const rangeLabels: Record<string, string> = { '1M': '30 days', '3M': '3 months', '6M': '6 months', '1Y': '1 year', 'All': 'all time' }
   let baseline = history[0]
-  for (const h of history) {
-    if (new Date(h.snapshot_date).getTime() <= targetTime) baseline = h
+  if (range !== 'All') {
+    const targetTime = latestTime - rangeDays[range] * 24 * 60 * 60 * 1000
+    for (const h of history) {
+      if (new Date(h.snapshot_date).getTime() <= targetTime) baseline = h
+    }
   }
   if (baseline.snapshot_date === latest.snapshot_date) return null
   const diff = latest.net_worth - baseline.net_worth
   const pct = baseline.net_worth !== 0 ? (diff / Math.abs(baseline.net_worth)) * 100 : 0
-  return { diff, pct }
+  return { diff, pct, label: rangeLabels[range] }
 }
 
 const RANGE_DAYS: Record<string, number> = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 }
@@ -79,14 +83,14 @@ export default function Dashboard(): JSX.Element {
     return chartData.filter((d) => new Date(d.date).getTime() >= cutoff)
   })()
 
-  const delta = computeDelta(history)
+  const delta = computeDelta(history, chartRange)
   const isEmpty = totals.totalAssets === 0 && totals.totalLiabilities === 0
 
   // Financial health score
   const debtRatio = totals.totalAssets > 0 ? totals.totalLiabilities / totals.totalAssets : 0
   const hasInsurance = insurancePolicies.length > 0
   const healthScore = [debtRatio < 0.4, hasInsurance, totals.netWorth > 0].filter(Boolean).length
-  const healthLabel = healthScore === 3 ? 'Healthy' : healthScore === 2 ? 'On track' : 'Needs attention'
+  const healthLabel = healthScore === 3 ? 'Healthy' : healthScore === 2 ? 'On track' : 'Room to grow'
   const healthColor = healthScore === 3 ? 'var(--green)' : healthScore === 2 ? 'var(--amber)' : 'var(--red)'
 
   const RANGE_BUTTONS: Array<'1M' | '3M' | '6M' | '1Y' | 'All'> = ['1M', '3M', '6M', '1Y', 'All']
@@ -100,7 +104,7 @@ export default function Dashboard(): JSX.Element {
           <div style={{ textAlign: 'center', marginBottom: 28 }}>
             <Landmark size={36} style={{ color: 'var(--accent)', marginBottom: 12 }} />
             <h2 style={{ margin: '0 0 8px', fontSize: 20 }}>Welcome to Artha</h2>
-            <p className="muted" style={{ margin: 0 }}>Start by adding your financial data — everything is encrypted locally on your device.</p>
+            <p className="muted" style={{ margin: 0 }}>Add your first account — a bank balance, investment, or loan — and your net worth will appear here.</p>
           </div>
           <div className="setup-checklist-grid">
             <Link to="/accounts" className="setup-checklist-item" style={{ outline: '2px solid var(--accent)', outlineOffset: -2 }}>
@@ -160,7 +164,7 @@ export default function Dashboard(): JSX.Element {
                   {delta.diff >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
                   {delta.diff >= 0 ? '+' : ''}
                   {formatCurrency(delta.diff)} ({delta.pct >= 0 ? '+' : ''}
-                  {delta.pct.toFixed(1)}%) vs. 30 days ago
+                  {delta.pct.toFixed(1)}%) vs. {delta.label}
                 </div>
               )}
               {totals.totalAssets > 0 && (
@@ -210,7 +214,7 @@ export default function Dashboard(): JSX.Element {
                 {soonExpiring.length > 0 && (
                   <div style={{ marginTop: 10, padding: '7px 10px', background: 'var(--amber-soft)', borderRadius: 7, fontSize: 12, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 6 }}>
                     <AlertTriangle size={13} />
-                    {soonExpiring.length} polic{soonExpiring.length === 1 ? 'y' : 'ies'} renewing within 90 days — check the Insurance page.
+                    {soonExpiring.length} polic{soonExpiring.length === 1 ? 'y' : 'ies'} renewing within 90 days — <Link to="/insurance" style={{ color: 'var(--amber)', textDecoration: 'underline' }}>see your insurance →</Link>
                   </div>
                 )}
               </div>
@@ -324,7 +328,7 @@ export default function Dashboard(): JSX.Element {
               <h2>Upcoming actions</h2>
             </div>
             {upcoming.length === 0 ? (
-              <div className="muted">Nothing needs your attention right now.</div>
+              <div className="muted">You're all caught up! ✓</div>
             ) : (
               <table>
                 <thead>

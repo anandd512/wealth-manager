@@ -170,7 +170,7 @@ export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props)
           <div className="gate-icon" style={{ background: 'var(--amber-soft)', color: 'var(--amber)' }}>
             <HelpCircle size={20} />
           </div>
-          <h1>Forgot your password?</h1>
+          <h1>Forgot your password</h1>
           <p>
             Artha uses zero-knowledge encryption — your master password cannot be recovered.
             Choose an option below.
@@ -237,7 +237,7 @@ export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props)
             onClick={confirmReset}
             disabled={resetBusy}
           >
-            {resetBusy ? 'Wiping data…' : 'Yes, delete everything & restart'}
+            {resetBusy ? 'Resetting…' : 'Yes, delete everything & restart'}
           </button>
           <button
             type="button"
@@ -246,7 +246,7 @@ export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props)
             onClick={() => setMode('forgot-password')}
             disabled={resetBusy}
           >
-            <ArrowLeft size={14} /> Cancel
+            <ArrowLeft size={14} /> Back
           </button>
         </div>
       </div>
@@ -264,7 +264,10 @@ export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props)
         <p>
           {initialized
             ? 'Welcome back. Enter your master password to open your vault.'
-            : 'This is the only password you\'ll need to remember. It locks your entire Artha vault — accounts, cards, IDs, and passwords — so only you can open it. Store it somewhere safe; if you forget it, we can\'t help you recover it (by design).'}
+            : 'This is the one password that unlocks everything — your accounts, cards, IDs, and saved passwords.'}
+        </p>
+        <p className="help-text" style={{ marginTop: -8, marginBottom: 12 }}>
+          Keep it somewhere safe. There's no recovery if it's forgotten — that's what keeps Artha private.
         </p>
         <div className="field">
           <label>Master password</label>
@@ -315,7 +318,7 @@ export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props)
         )}
         {error && <div className="error-text">{error}</div>}
         <button className="btn" style={{ width: '100%', marginTop: 8 }} onClick={submit} disabled={busy}>
-          {busy ? 'Please wait…' : initialized ? 'Unlock' : 'Create & unlock'}
+          {busy ? (initialized ? 'Opening…' : 'Creating…') : initialized ? 'Unlock' : 'Create my vault'}
         </button>
         {initialized && helloReady && (
           <button
@@ -335,7 +338,7 @@ export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props)
             style={{ width: '100%', marginTop: 10 }}
             onClick={() => setMode('restore')}
           >
-            <DatabaseBackup size={14} /> Restore from a backup instead
+            <DatabaseBackup size={14} /> Restore from backup
           </button>
         )}
 

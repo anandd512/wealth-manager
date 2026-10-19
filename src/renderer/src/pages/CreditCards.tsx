@@ -105,14 +105,13 @@ export default function CreditCards(): JSX.Element {
       </div>
 
       <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
-        Card numbers show only the last 4 digits. CVV is masked by default — click the eye icon to
-        reveal it.
+        Only the last 4 digits are shown. CVV is hidden by default — tap the eye to reveal.
       </p>
 
       {cards.length === 0 ? (
         <div className="card empty-state">
           <CreditCardGlyph size={30} />
-          <div>No cards added yet.</div>
+          <div>Add your credit cards to track payment dates and never pay a late fee.</div>
         </div>
       ) : (
         <div className="card" style={{ padding: 0 }}>
@@ -159,7 +158,7 @@ export default function CreditCards(): JSX.Element {
                       )}
                     </td>
                     <td className="muted">
-                      {c.statement_day != null ? `${ordinal(c.statement_day)} of month` : '—'}
+                      {c.statement_day != null ? ordinal(c.statement_day) : '—'}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <ActionMenu

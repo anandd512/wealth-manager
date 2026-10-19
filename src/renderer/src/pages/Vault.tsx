@@ -7,54 +7,6 @@ import VaultEntryModal from '../components/VaultEntryModal'
 import ActionMenu from '../components/ActionMenu'
 import { ICON_EDIT, ICON_DELETE } from '../lib/actionIcons'
 
-async function computeTotp(base32: string): Promise<string> {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
-  const s = base32.toUpperCase().replace(/[^A-Z2-7]/g, '')
-  let bits = 0, val = 0
-  const bytes: number[] = []
-  for (const c of s) {
-    val = (val << 5) | chars.indexOf(c)
-    bits += 5
-    if (bits >= 8) { bytes.push((val >> (bits - 8)) & 0xff); bits -= 8 }
-  }
-  const key = await crypto.subtle.importKey('raw', new Uint8Array(bytes), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign'])
-  const T = Math.floor(Date.now() / 30000)
-  const tb = new Uint8Array(8)
-  let t = T
-  for (let i = 7; i >= 0; i--) { tb[i] = t & 0xff; t = Math.floor(t / 256) }
-  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, tb))
-  const off = sig[19] & 0xf
-  const code = ((sig[off] & 0x7f) << 24 | sig[off+1] << 16 | sig[off+2] << 8 | sig[off+3]) % 1000000
-  return String(code).padStart(6, '0')
-}
-
-function TotpCell({ secret }: { secret: string }): JSX.Element {
-  const [code, setCode] = useState('......')
-  const [copied, setCopied] = useState(false)
-  useEffect(() => {
-    let cancelled = false
-    const refresh = async (): Promise<void> => {
-      const c = await computeTotp(secret)
-      if (!cancelled) setCode(c)
-    }
-    refresh()
-    const id = setInterval(refresh, 1000)
-    return () => { cancelled = true; clearInterval(id) }
-  }, [secret])
-  const copy = async (): Promise<void> => {
-    await navigator.clipboard.writeText(code)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8 }}>
-      <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: 'var(--accent)', letterSpacing: 2 }}>{code}</span>
-      <button className="icon-btn" onClick={copy} title="Copy TOTP code">
-        {copied ? <Check size={12} /> : <Copy size={12} />}
-      </button>
-    </span>
-  )
-}
 
 export default function Vault(): JSX.Element {
   const [entries, setEntries] = useState<VaultEntry[]>([])
@@ -116,12 +68,10 @@ export default function Vault(): JSX.Element {
   const renderRows = (group: VaultEntry[]): JSX.Element[] =>
     group.map((e) => {
       const isRevealed = revealed.has(e.id)
-      const isNote = e.entry_type === 'note'
       return (
         <tr key={e.id}>
           <td>
             <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-              {isNote && <span style={{ marginRight: 4 }}>📝</span>}
               {e.service_name}
             </span>
             {e.url && (
@@ -140,40 +90,36 @@ export default function Vault(): JSX.Element {
           </td>
           <td>{e.username ?? '—'}</td>
           <td style={{ whiteSpace: 'nowrap' }}>
-            {isNote ? (
-              <span className="muted">—</span>
-            ) : (
-              <>
-                <span>{isRevealed ? e.password ?? '—' : e.password ? '••••••••' : '—'}</span>
-                {e.password && (
-                  <>
-                    <button
-                      className="icon-btn"
-                      style={{ marginLeft: 6 }}
-                      title={isRevealed ? 'Hide password' : 'Show password'}
-                      aria-label={isRevealed ? 'Hide password' : 'Show password'}
-                      onClick={() => toggleReveal(e.id)}
-                    >
-                      {isRevealed ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                    <button
-                      className="icon-btn"
-                      title={copiedId === e.id ? 'Copied' : 'Copy password'}
-                      aria-label="Copy password"
-                      onClick={() => copyPassword(e)}
-                    >
-                      {copiedId === e.id ? <Check size={14} /> : <Copy size={14} />}
-                    </button>
-                    {e.password_changed_at && (() => {
-                      const days = Math.floor((Date.now() - new Date(e.password_changed_at!).getTime()) / 86400000)
-                      const color = days > 365 ? 'var(--red)' : days > 180 ? 'var(--amber)' : 'var(--text-faint)'
-                      return <span style={{ fontSize: 10, color, marginLeft: 4 }}>{days}d</span>
-                    })()}
-                  </>
-                )}
-                {e.totp_secret && <TotpCell secret={e.totp_secret} />}
-              </>
-            )}
+            <>
+              <span>{isRevealed ? e.password ?? '—' : e.password ? '••••••••' : '—'}</span>
+              {e.password && (
+                <>
+                  <button
+                    className="icon-btn"
+                    style={{ marginLeft: 6 }}
+                    title={isRevealed ? 'Hide password' : 'Show password'}
+                    aria-label={isRevealed ? 'Hide password' : 'Show password'}
+                    onClick={() => toggleReveal(e.id)}
+                  >
+                    {isRevealed ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                  <button
+                    className="icon-btn"
+                    title={copiedId === e.id ? 'Copied' : 'Copy password'}
+                    aria-label="Copy password"
+                    onClick={() => copyPassword(e)}
+                  >
+                    {copiedId === e.id ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                  {e.password_changed_at && (() => {
+                    const days = Math.floor((Date.now() - new Date(e.password_changed_at!).getTime()) / 86400000)
+                    const color = days > 365 ? 'var(--red)' : days > 180 ? 'var(--amber)' : 'var(--text-faint)'
+                    const ageLabel = days < 30 ? `${days}d` : days < 365 ? `${Math.floor(days / 30)} mo` : `${Math.floor(days / 365)} yr`
+                    return <span style={{ fontSize: 10, color, marginLeft: 4 }}>{ageLabel}</span>
+                  })()}
+                </>
+              )}
+            </>
           </td>
           <td style={{ textAlign: 'right' }}>
             <ActionMenu
@@ -246,7 +192,7 @@ export default function Vault(): JSX.Element {
                 <thead>
                   <tr>
                     <th>Service</th>
-                    <th>Username / ID</th>
+                    <th>Username</th>
                     <th>Password</th>
                     <th></th>
                   </tr>
@@ -307,7 +253,7 @@ export default function Vault(): JSX.Element {
       {entries.length === 0 ? (
         <div className="card empty-state">
           <KeyRound size={30} />
-          <div>No logins saved yet.</div>
+          <div>Your vault is empty. Add a login to get started.</div>
         </div>
       ) : (
         renderGrouped(entries)

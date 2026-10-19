@@ -688,7 +688,7 @@ function GuidePanel({ step, total, onNext, onPrev, onExit, onWatchDemo }: GuideP
             <Icon size={15} />
           </div>
           <div>
-            <div style={{ fontSize: 10, color: 'var(--text-faint)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Step {step + 1} of {total}</div>
+            <div style={{ fontSize: 10, color: 'var(--text-faint)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Step {step} of {total - 1}</div>
             <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{current.title}</div>
           </div>
         </div>

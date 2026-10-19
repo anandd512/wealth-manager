@@ -99,7 +99,7 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
         )}
         {seed?.confidence_notes && (
           <div className="help-text" style={{ marginBottom: 12 }}>
-            AI notes on this extraction: {seed.confidence_notes}
+            AI flagged this: {seed.confidence_notes}
           </div>
         )}
 

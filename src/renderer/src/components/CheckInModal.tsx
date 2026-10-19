@@ -1,5 +1,5 @@
 import { api } from '../lib/api'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { Account, ValueHistoryRow } from '../../../shared/types'
 import { CHECKIN_INVESTED_VALUE_SUBTYPES, CHECKIN_QUANTITY_SUBTYPES } from '../lib/categories'
@@ -32,6 +32,8 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
   const [entriesError, setEntriesError] = useState<string | null>(null)
   const [entriesBusy, setEntriesBusy] = useState(false)
   const [entriesOpen, setEntriesOpen] = useState(false)
+  const [deletingHistoryId, setDeletingHistoryId] = useState<number | null>(null)
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const showInvestedValue = CHECKIN_INVESTED_VALUE_SUBTYPES.includes(account.subtype)
   const showQuantity = CHECKIN_QUANTITY_SUBTYPES.includes(account.subtype)
@@ -124,11 +126,22 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
     }
   }
 
-  const removeEntry = async (id: number): Promise<void> => {
-    if (!confirm('Delete this entry?')) return
-    await api().accounts.deleteValueHistory(id)
-    await loadEntries()
-    onChanged()
+  const removeEntry = (id: number): void => {
+    setEntries((prev) => prev.filter((r) => r.id !== id))
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current)
+    setDeletingHistoryId(id)
+    deleteTimerRef.current = setTimeout(async () => {
+      setDeletingHistoryId(null)
+      await api().accounts.deleteValueHistory(id)
+      await loadEntries()
+      onChanged()
+    }, 5000)
+  }
+
+  const undoDeleteEntry = (): void => {
+    if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current)
+    setDeletingHistoryId(null)
+    loadEntries()
   }
 
   return (
@@ -136,9 +149,9 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
       <div className="modal" style={{ width: 620 }} onClick={(e) => e.stopPropagation()}>
         <h2>Update value</h2>
         <p className="help-text" style={{ marginBottom: 14 }}>
-          Log {account.name}'s value as of a specific date. Re-checking in on the same date
-          corrects that entry rather than adding a duplicate. The account's current value is
-          always taken from whichever check-in is most recent.
+          Log {account.name}'s value as of a specific date. Logging the same date again updates
+          that entry, not adds a new one. The account's current value always comes from the most
+          recent check-in.
         </p>
 
         <div className="form-row">
@@ -194,6 +207,12 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
               {entriesOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
               Past entries ({entries.length})
             </button>
+            {deletingHistoryId !== null && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, padding: '6px 10px', background: 'var(--bg-inset)', borderRadius: 6, fontSize: 13 }}>
+                <span className="muted">Entry deleted.</span>
+                <button className="btn secondary small" onClick={undoDeleteEntry}>Undo</button>
+              </div>
+            )}
             {entriesOpen && (
             <div
               style={{ marginTop: 10, maxHeight: 240, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}

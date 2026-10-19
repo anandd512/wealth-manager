@@ -171,16 +171,13 @@ export default function Accounts(): JSX.Element {
       {linkedAssetSuggestion && (
         <div className="card section" style={{ borderColor: 'var(--accent)' }}>
           <strong>
-            Add the {linkedAssetSuggestion.subtype === 'home_loan' ? 'home' : 'car'} as an asset
-            too?
+            You added a {linkedAssetSuggestion.subtype === 'home_loan' ? 'home loan' : 'car loan'} — add the {linkedAssetSuggestion.subtype === 'home_loan' ? 'home' : 'car'} as an asset too?
           </strong>
           <p className="muted" style={{ marginTop: 4, marginBottom: 10 }}>
-            "{linkedAssetSuggestion.name}" is only recorded as a loan (liability) right now. Add
-            its current value as an asset too — otherwise your net worth is understated by what
-            it's actually worth.
+            "{linkedAssetSuggestion.name}" is only recorded as a liability right now. Adding the asset value too keeps your net worth accurate.
           </p>
           <button className="btn secondary small" onClick={addLinkedAsset}>
-            + Add as asset
+            Add as asset
           </button>
           <button
             className="btn secondary small"
@@ -211,8 +208,8 @@ export default function Accounts(): JSX.Element {
                 <span className="section-total">{formatCurrency(total)}</span>
                 <button
                   className="icon-btn"
-                  title="View historical trend"
-                  aria-label="View historical trend"
+                  title="View trend"
+                  aria-label="View trend"
                   onClick={() => setCategoryTrend(cat)}
                 >
                   <ICON_TREND size={16} />
@@ -288,8 +285,8 @@ export default function Accounts(): JSX.Element {
                                   <button
                                     className="icon-btn"
                                     style={{ marginRight: 6 }}
-                                    title="View historical trend"
-                                    aria-label="View historical trend"
+                                    title="View trend"
+                                    aria-label="View trend"
                                     onClick={() => setTrendTarget(a)}
                                   >
                                     <ICON_TREND size={15} />
@@ -300,7 +297,7 @@ export default function Accounts(): JSX.Element {
                                         ? [
                                             {
                                               icon: ICON_SYNC,
-                                              label: refreshingId === a.id ? 'Syncing…' : 'Sync',
+                                              label: refreshingId === a.id ? 'Refreshing price…' : 'Refresh price',
                                               onClick: () => refreshPrice(a.id)
                                             }
                                           ]
@@ -309,7 +306,7 @@ export default function Accounts(): JSX.Element {
                                         ? [
                                             {
                                               icon: ICON_SYNC,
-                                              label: 'Sync',
+                                              label: 'Update from document',
                                               onClick: () => openLoanSync(a)
                                             }
                                           ]
@@ -408,8 +405,8 @@ export default function Accounts(): JSX.Element {
                             <button
                               className="icon-btn"
                               style={{ marginRight: 6 }}
-                              title="View historical trend"
-                              aria-label="View historical trend"
+                              title="View trend"
+                              aria-label="View trend"
                               onClick={() => setTrendTarget(a)}
                             >
                               <ICON_TREND size={15} />
@@ -420,7 +417,7 @@ export default function Accounts(): JSX.Element {
                                   ? [
                                       {
                                         icon: ICON_SYNC,
-                                        label: refreshingId === a.id ? 'Syncing…' : 'Sync',
+                                        label: refreshingId === a.id ? 'Refreshing price…' : 'Refresh price',
                                         onClick: () => refreshPrice(a.id)
                                       }
                                     ]
@@ -429,7 +426,7 @@ export default function Accounts(): JSX.Element {
                                   ? [
                                       {
                                         icon: ICON_SYNC,
-                                        label: 'Sync',
+                                        label: 'Update from document',
                                         onClick: () => openLoanSync(a)
                                       }
                                     ]

@@ -119,7 +119,7 @@ export default function IdentityDocuments(): JSX.Element {
     }
     if (docType === 'voter_id') {
       return [
-        { key: 'constituency', header: 'Assembly Constituency', render: (d) => d.constituency ?? '—' },
+        { key: 'constituency', header: 'Constituency', render: (d) => d.constituency ?? '—' },
         { key: 'voter_serial_number', header: 'Serial Number', render: (d) => d.voter_serial_number ?? '—' }
       ]
     }
@@ -129,7 +129,7 @@ export default function IdentityDocuments(): JSX.Element {
         { key: 'vehicle_model', header: 'Vehicle Model', render: (d) => d.vehicle_model ?? '—' },
         {
           key: 'insurance_valid_upto',
-          header: 'Insurance Valid Upto',
+          header: 'Insurance expires',
           render: (d) => (d.insurance_valid_upto ? formatDate(d.insurance_valid_upto) : '—')
         }
       ]
@@ -137,7 +137,7 @@ export default function IdentityDocuments(): JSX.Element {
     return [
       {
         key: 'dob',
-        header: 'DOB',
+        header: 'Date of birth',
         render: (d) => (d.date_of_birth ? formatDate(d.date_of_birth) : '—')
       }
     ]
@@ -161,7 +161,7 @@ export default function IdentityDocuments(): JSX.Element {
       )}
       <div className="toolbar">
         <h1 className="page-title" style={{ marginBottom: 0 }}>
-          IDs
+          Identity
         </h1>
         <div>
           <button
@@ -182,15 +182,13 @@ export default function IdentityDocuments(): JSX.Element {
       </div>
 
       <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
-        Keep Aadhaar, PAN, Passport, and other IDs in one place. Upload a document and the model
-        will extract the details for you to review. Files are encrypted on disk with the same key
-        as the rest of your data and only decrypted when you view or download them.
+        Keep Aadhaar, PAN, Passport, and other IDs in one place. Upload a document and AI reads it and fills in the details for you to review. Files are encrypted on disk with the same key as the rest of your data and only decrypted when you view or download them.
       </p>
 
       {(extracting || syncingId !== null) && (
         <div className="syncing-banner">
           <RefreshCw size={15} className="spin" />
-          {syncingId !== null ? 'Re-reading document and updating fields…' : 'Reading document…'}
+          {syncingId !== null ? 'Updating from document…' : 'Reading document…'}
         </div>
       )}
       {error && <div className="error-text section">{error}</div>}
@@ -198,7 +196,7 @@ export default function IdentityDocuments(): JSX.Element {
       {docs.length === 0 ? (
         <div className="card empty-state">
           <IdCard size={30} />
-          <div>No ID documents added yet.</div>
+          <div>Your IDs, all in one secure place. Add your first one to get started.</div>
         </div>
       ) : (
         typeOrder.map((docType) => {
@@ -304,7 +302,7 @@ export default function IdentityDocuments(): JSX.Element {
                                     },
                                     {
                                       icon: ICON_SYNC,
-                                      label: syncingId === d.id ? 'Syncing…' : 'Sync',
+                                      label: syncingId === d.id ? 'Updating…' : 'Update from document',
                                       onClick: () => resync(d)
                                     }
                                   ]

@@ -459,7 +459,7 @@ export default function Settings(): JSX.Element {
 
       {dataSummary && (
         <div className="card section" style={{ padding: '14px 18px' }}>
-          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>What's stored</div>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Your data at a glance</div>
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
             {[
               { label: 'Accounts', count: dataSummary.accounts },
@@ -530,7 +530,7 @@ export default function Settings(): JSX.Element {
         </div>
         <div className="form-row">
           <div className="field">
-            <label>Remind me this many days before expiry</label>
+            <label>Remind me this many days before</label>
             <input
               type="number"
               min={1}
@@ -628,13 +628,13 @@ export default function Settings(): JSX.Element {
       </div>
 
       <div className="settings-section-label">
-        <Sparkles size={12} /> AI & Extraction
+        <Sparkles size={12} /> AI Document Reading
       </div>
 
       <div className="card section">
         <div className="section-header">
           <h2>
-            <Sparkles size={14} /> Document extraction
+            <Sparkles size={14} /> Auto-fill from documents
           </h2>
         </div>
         <p className="muted" style={{ marginTop: 0 }}>
@@ -824,9 +824,6 @@ export default function Settings(): JSX.Element {
         >
           ✦ Take a tour
         </button>
-        <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
-          Your data is stored locally and encrypted. Nothing is ever sent to Artha servers.
-        </p>
       </div>
     </div>
   )
