@@ -147,7 +147,6 @@ function DemoAccountModal({ onDone }: { onDone: () => void }): JSX.Element {
   const [phase, setPhase] = useState<'idle' | 'typing' | 'done'>('idle')
   const [fi, setFi] = useState(0)
   const [typed, setTyped] = useState(ACC_DEMO.map(() => ''))
-  const doneRef = useRef(false)
 
   // Start typing after mount
   useEffect(() => {
@@ -186,13 +185,6 @@ function DemoAccountModal({ onDone }: { onDone: () => void }): JSX.Element {
     setTimeout(tick, 120)
   }, [phase])
 
-  useEffect(() => {
-    if (phase === 'done' && !doneRef.current) {
-      doneRef.current = true
-      setTimeout(onDone, 1400)
-    }
-  }, [phase, onDone])
-
   return (
     <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
       <div className="modal">
@@ -218,14 +210,13 @@ function DemoAccountModal({ onDone }: { onDone: () => void }): JSX.Element {
           </div>
         ))}
         <div className="modal-actions">
-          <button className="btn secondary" onClick={onDone}>Skip</button>
-          <button
-            className="btn"
-            style={phase === 'done' ? { background: 'var(--green)', boxShadow: '0 4px 14px rgba(62,207,142,0.35)' } : {}}
-            disabled={phase !== 'done'}
-          >
-            {phase === 'done' ? <><Check size={14} /> Saved</> : 'Save'}
-          </button>
+          {phase === 'done' ? (
+            <button className="btn" style={{ background: 'var(--green)', boxShadow: '0 4px 14px rgba(62,207,142,0.35)' }} onClick={onDone}>
+              <Check size={14} /> Close demo
+            </button>
+          ) : (
+            <button className="btn" disabled>Save</button>
+          )}
         </div>
       </div>
     </div>
@@ -246,24 +237,14 @@ interface AIModalProps {
 function DemoAIModalBase({ title, fileName, fields, onDone }: AIModalProps): JSX.Element {
   const [phase, setPhase] = useState<AIPhase>('file_select')
 
-  const handleFileSelect = (): void => setPhase('file_selected')
+  const handleFileSelect = (): void => {
+    // Simulate file picker: brief delay then show file as selected
+    setTimeout(() => setPhase('file_selected'), 350)
+  }
   const handleExtract = (): void => {
     setPhase('extracting')
     setTimeout(() => setPhase('done'), 2200)
   }
-
-  // Auto-drive through the phases
-  useEffect(() => {
-    const t1 = setTimeout(handleFileSelect, 1200)           // auto-pick file after 1.2s
-    const t2 = setTimeout(handleExtract, 1200 + 800)        // auto-extract 0.8s later
-    return () => { clearTimeout(t1); clearTimeout(t2) }
-  }, [])
-
-  useEffect(() => {
-    if (phase !== 'done') return
-    const t = setTimeout(onDone, 3000)
-    return () => clearTimeout(t)
-  }, [phase, onDone])
 
   return (
     <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
@@ -332,8 +313,13 @@ function DemoAIModalBase({ title, fileName, fields, onDone }: AIModalProps): JSX
         </div>
 
         <div className="modal-actions">
-          <button className="btn secondary" onClick={onDone}>Skip demo</button>
-          <button className="btn" disabled={phase !== 'done'}>Save</button>
+          {phase === 'done' ? (
+            <button className="btn" style={{ background: 'var(--green)' }} onClick={onDone}>
+              <Check size={14} /> Close demo
+            </button>
+          ) : (
+            <button className="btn" disabled>Save</button>
+          )}
         </div>
       </div>
     </div>
@@ -401,7 +387,6 @@ function DemoCreditCardModal({ onDone }: { onDone: () => void }): JSX.Element {
   const [phase, setPhase] = useState<'idle' | 'typing' | 'done'>('idle')
   const [fi, setFi] = useState(0)
   const [typed, setTyped] = useState(CARD_DEMO.map(() => ''))
-  const doneRef = useRef(false)
 
   useEffect(() => {
     const t = setTimeout(() => setPhase('typing'), 500)
@@ -433,13 +418,6 @@ function DemoCreditCardModal({ onDone }: { onDone: () => void }): JSX.Element {
     setTimeout(tick, 120)
   }, [phase])
 
-  useEffect(() => {
-    if (phase === 'done' && !doneRef.current) {
-      doneRef.current = true
-      setTimeout(onDone, 1400)
-    }
-  }, [phase, onDone])
-
   return (
     <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
       <div className="modal">
@@ -467,14 +445,13 @@ function DemoCreditCardModal({ onDone }: { onDone: () => void }): JSX.Element {
           ))}
         </div>
         <div className="modal-actions">
-          <button className="btn secondary" onClick={onDone}>Skip</button>
-          <button
-            className="btn"
-            style={phase === 'done' ? { background: 'var(--green)', boxShadow: '0 4px 14px rgba(62,207,142,0.35)' } : {}}
-            disabled={phase !== 'done'}
-          >
-            {phase === 'done' ? <><Check size={14} /> Saved</> : 'Save'}
-          </button>
+          {phase === 'done' ? (
+            <button className="btn" style={{ background: 'var(--green)', boxShadow: '0 4px 14px rgba(62,207,142,0.35)' }} onClick={onDone}>
+              <Check size={14} /> Close demo
+            </button>
+          ) : (
+            <button className="btn" disabled>Save</button>
+          )}
         </div>
       </div>
     </div>
@@ -496,7 +473,6 @@ function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
   const [fi, setFi] = useState(0)
   const [typed, setTyped] = useState(VAULT_DEMO.map(() => ''))
   const [showPass, setShowPass] = useState(false)
-  const doneRef = useRef(false)
 
   useEffect(() => {
     const t = setTimeout(() => setPhase('typing'), 500)
@@ -534,13 +510,6 @@ function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
     }
     setTimeout(tick, 120)
   }, [phase])
-
-  useEffect(() => {
-    if (phase === 'done' && !doneRef.current) {
-      doneRef.current = true
-      setTimeout(onDone, 1400)
-    }
-  }, [phase, onDone])
 
   return (
     <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
@@ -580,14 +549,13 @@ function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
           </div>
         ))}
         <div className="modal-actions">
-          <button className="btn secondary" onClick={onDone}>Skip</button>
-          <button
-            className="btn"
-            style={phase === 'done' ? { background: 'var(--green)', boxShadow: '0 4px 14px rgba(62,207,142,0.35)' } : {}}
-            disabled={phase !== 'done'}
-          >
-            {phase === 'done' ? <><Check size={14} /> Saved</> : 'Save'}
-          </button>
+          {phase === 'done' ? (
+            <button className="btn" style={{ background: 'var(--green)', boxShadow: '0 4px 14px rgba(62,207,142,0.35)' }} onClick={onDone}>
+              <Check size={14} /> Close demo
+            </button>
+          ) : (
+            <button className="btn" disabled>Save</button>
+          )}
         </div>
       </div>
     </div>
@@ -829,34 +797,11 @@ function TourInnerApp({ step, onNext, onPrev, onExit }: InnerProps): JSX.Element
     setActiveDemo(current.demoKey ?? null)
   }
 
-  const handleDemoAccountDone = (): void => {
-    setActiveDemo(null)
-    // After manual demo, auto-advance to AI step if next step is 'ai'
-    const nextKey = STEPS[step + 1]?.key
-    if (nextKey === 'ai') {
-      setTimeout(() => onNext(), 300)
-    }
-  }
-
-  const handleDemoAIDone = (): void => {
-    setActiveDemo(null)
-    setTimeout(() => onNext(), 300)
-  }
-
-  const handleDemoInsuranceAIDone = (): void => {
-    setActiveDemo(null)
-    setTimeout(() => onNext(), 300)
-  }
-
-  const handleDemoCardDone = (): void => {
-    setActiveDemo(null)
-    setTimeout(() => onNext(), 300)
-  }
-
-  const handleDemoVaultDone = (): void => {
-    setActiveDemo(null)
-    setTimeout(() => onNext(), 300)
-  }
+  const handleDemoAccountDone = (): void => setActiveDemo(null)
+  const handleDemoAIDone = (): void => setActiveDemo(null)
+  const handleDemoInsuranceAIDone = (): void => setActiveDemo(null)
+  const handleDemoCardDone = (): void => setActiveDemo(null)
+  const handleDemoVaultDone = (): void => setActiveDemo(null)
 
   const isOverlayStep = current.route === null
 

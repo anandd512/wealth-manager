@@ -12,7 +12,9 @@ import {
   ScanFace,
   Timer,
   Lock,
-  HelpCircle
+  HelpCircle,
+  Moon,
+  Sun
 } from 'lucide-react'
 import { formatDate } from '../lib/format'
 import type {
@@ -87,6 +89,18 @@ export default function Settings(): JSX.Element {
   const [autoLockMinutes, setAutoLockMinutes] = useState<string>(
     localStorage.getItem('artha_autolock_minutes') ?? '5'
   )
+
+  // Appearance
+  const [theme, setTheme] = useState<'dark' | 'light'>(
+    () => (localStorage.getItem('artha_theme') as 'dark' | 'light') ?? 'dark'
+  )
+
+  const toggleTheme = (next: 'dark' | 'light'): void => {
+    setTheme(next)
+    localStorage.setItem('artha_theme', next)
+    if (next === 'light') document.body.classList.add('light-mode')
+    else document.body.classList.remove('light-mode')
+  }
 
   // Data summary
   const [dataSummary, setDataSummary] = useState<{ accounts: number; policies: number; identityDocs: number; cards: number; vaultEntries: number } | null>(null)
@@ -319,6 +333,35 @@ export default function Settings(): JSX.Element {
   return (
     <div>
       <h1 className="page-title">Settings</h1>
+
+      <div className="settings-section-label">
+        <Moon size={12} /> Appearance
+      </div>
+
+      <div className="card section">
+        <div className="section-header">
+          <h2>Theme</h2>
+        </div>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Choose between dark and light mode. Default is dark.
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className={`btn ${theme === 'dark' ? '' : 'secondary'}`}
+            onClick={() => toggleTheme('dark')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <Moon size={13} /> Dark
+          </button>
+          <button
+            className={`btn ${theme === 'light' ? '' : 'secondary'}`}
+            onClick={() => toggleTheme('light')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <Sun size={13} /> Light
+          </button>
+        </div>
+      </div>
 
       <div className="settings-section-label">
         <Lock size={12} /> Security

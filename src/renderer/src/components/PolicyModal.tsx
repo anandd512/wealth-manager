@@ -112,7 +112,7 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
               </option>
               {POLICY_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>
-                  {t.icon} {t.label}
+                  {t.label}
                 </option>
               ))}
             </select>

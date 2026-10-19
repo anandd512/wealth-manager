@@ -1421,3 +1421,48 @@ label {
   background: var(--bg-card-hover);
   border-color: var(--border);
 }
+
+/* ─── Light mode ─────────────────────────────────────────────────────────── */
+body.light-mode {
+  --bg: #f3f5fb;
+  --bg-elev: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #eef1fa;
+  --bg-inset: #eaecf5;
+  --border: #d6dce9;
+  --border-soft: #e4e8f3;
+  --text: #181e30;
+  --text-dim: #4a5470;
+  --text-faint: #8390aa;
+  --accent-soft: rgba(91, 141, 239, 0.1);
+  --green-soft: rgba(62, 207, 142, 0.1);
+  --red-soft: rgba(240, 97, 107, 0.1);
+  --amber-soft: rgba(232, 177, 79, 0.12);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.07);
+  --shadow-md: 0 4px 16px -2px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 12px 32px -6px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+body.light-mode input,
+body.light-mode select,
+body.light-mode textarea {
+  background: #fff;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+body.light-mode input:focus,
+body.light-mode select:focus,
+body.light-mode textarea:focus {
+  border-color: var(--accent);
+}
+
+body.light-mode .modal {
+  background: #fff;
+  border-color: var(--border-soft);
+}
+
+body.light-mode .tour-guide-panel {
+  background: #fff;
+  border-color: var(--border-soft);
+}

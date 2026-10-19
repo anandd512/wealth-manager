@@ -2,7 +2,7 @@ import { api } from '../lib/api'
 import { useEffect, useRef, useState } from 'react'
 import { Plus, Eye, EyeOff, CreditCard as CreditCardGlyph, Check, X } from 'lucide-react'
 import type { CreditCard, UpcomingItem } from '../../../shared/types'
-import { formatCurrency, formatDate } from '../lib/format'
+
 import CreditCardModal from '../components/CreditCardModal'
 import ActionMenu from '../components/ActionMenu'
 import { ICON_EDIT, ICON_DELETE } from '../lib/actionIcons'
@@ -125,10 +125,7 @@ export default function CreditCards(): JSX.Element {
                 <th>Number</th>
                 <th>Expiry</th>
                 <th>CVV</th>
-                <th>Limit</th>
-                <th>Utilisation</th>
                 <th>Statement date</th>
-                <th>Due date</th>
                 <th></th>
               </tr>
             </thead>
@@ -162,37 +159,7 @@ export default function CreditCards(): JSX.Element {
                       )}
                     </td>
                     <td className="muted">
-                      {c.credit_limit != null ? formatCurrency(c.credit_limit) : '—'}
-                    </td>
-                    <td>
-                      {c.credit_limit && c.outstanding_balance != null ? (
-                        (() => {
-                          const pct = Math.round((c.outstanding_balance / c.credit_limit) * 100)
-                          const color = pct >= 75 ? 'var(--red)' : pct >= 40 ? 'var(--amber)' : 'var(--green)'
-                          return (
-                            <span style={{ color, fontWeight: 600 }}>
-                              {pct}%
-                              <div style={{ width: 50, height: 4, background: 'var(--border)', borderRadius: 2, marginTop: 2 }}>
-                                <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: color, borderRadius: 2 }} />
-                              </div>
-                            </span>
-                          )
-                        })()
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td className="muted">
                       {c.statement_day != null ? `${ordinal(c.statement_day)} of month` : '—'}
-                    </td>
-                    <td>
-                      {due ? (
-                        <span className={`badge ${due.daysLeft <= 5 ? 'danger' : 'warn'}`}>
-                          {formatDate(due.dueDate)}
-                        </span>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <ActionMenu

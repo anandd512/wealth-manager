@@ -81,6 +81,13 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('artha:start-tour', handler)
   }, [])
 
+  // Apply saved theme on mount
+  useEffect(() => {
+    const theme = localStorage.getItem('artha_theme') ?? 'dark'
+    if (theme === 'light') document.body.classList.add('light-mode')
+    else document.body.classList.remove('light-mode')
+  }, [])
+
   if (showSplash) {
     return (
       <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#000' }}>
