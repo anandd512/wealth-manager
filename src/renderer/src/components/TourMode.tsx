@@ -255,27 +255,26 @@ interface AIModalProps {
   fields: Record<string, string>
   onDone: () => void
   buttonLabel: string
+  buttonHint: string
 }
 
-function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, onDone, buttonLabel }: AIModalProps): JSX.Element {
+function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, onDone, buttonLabel, buttonHint }: AIModalProps): JSX.Element {
   const [phase, setPhase] = useState<AIPhase>('button')
   const [highlightedFile, setHighlightedFile] = useState<string | null>(null)
   const [clickFlash, setClickFlash] = useState(false)
 
   useEffect(() => {
-    // Phase 'button': pulse for 700ms, then flash click, then open picker
-    const t0 = setTimeout(() => setPhase('picker'), 1200)
-    // Picker phase: highlight file, then proceed through extraction
-    const t1 = setTimeout(() => setHighlightedFile(fileName), 2200)
-    const t2 = setTimeout(() => { setPhase('file_selected'); setHighlightedFile(null) }, 3100)
-    const t3 = setTimeout(() => setPhase('extracting'), 3400)
-    const t4 = setTimeout(() => setPhase('done'), 5600)
+    const t0 = setTimeout(() => setPhase('picker'), 1800)
+    const t1 = setTimeout(() => setHighlightedFile(fileName), 2800)
+    const t2 = setTimeout(() => { setPhase('file_selected'); setHighlightedFile(null) }, 3700)
+    const t3 = setTimeout(() => setPhase('extracting'), 4000)
+    const t4 = setTimeout(() => setPhase('done'), 6200)
     return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
   }, [])
 
   useEffect(() => {
-    const tf = setTimeout(() => setClickFlash(true), 800)
-    const tf2 = setTimeout(() => setClickFlash(false), 1100)
+    const tf = setTimeout(() => setClickFlash(true), 1400)
+    const tf2 = setTimeout(() => setClickFlash(false), 1700)
     return () => { clearTimeout(tf); clearTimeout(tf2) }
   }, [])
 
@@ -293,36 +292,45 @@ function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, on
     btnText:   '#e8e8e8',
   }
 
-  return (
-    <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
-      {/* Button phase — shows the toolbar button being clicked */}
-      {phase === 'button' && (
-        <div style={{
-          position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100
-        }}>
+  if (phase === 'button') {
+    // Show the real page unobscured — only overlay a coach mark near the toolbar button
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'none' }}>
+        {/* Tooltip + arrow anchored top-right, pointing at the toolbar button */}
+        <div style={{ position: 'absolute', top: 56, right: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+          {/* Upward-pointing arrow */}
+          <div style={{ width: 0, height: 0, borderLeft: '7px solid transparent', borderRight: '7px solid transparent', borderBottom: '9px solid var(--accent)', alignSelf: 'center', marginRight: 6 }} />
+          {/* Tooltip card */}
           <div style={{
-            background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12,
-            padding: '28px 36px', textAlign: 'center', boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
-            minWidth: 340,
+            background: 'var(--bg-card)', border: '1px solid var(--accent)', borderRadius: 10,
+            padding: '12px 16px', fontSize: 13, lineHeight: 1.6,
+            boxShadow: '0 8px 28px rgba(0,0,0,0.45)', maxWidth: 260,
           }}>
-            <p style={{ margin: '0 0 20px', fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-              Click <strong style={{ color: 'var(--text)' }}>{buttonLabel}</strong> to upload your PDF and let AI read it automatically
-            </p>
-            <button
-              className="btn tour-pulse-btn"
-              style={{
-                transform: clickFlash ? 'scale(0.95)' : 'scale(1)',
-                boxShadow: clickFlash ? 'none' : undefined,
-                transition: 'transform 80ms, box-shadow 80ms',
-                pointerEvents: 'none',
-              }}
-            >
-              <Upload size={14} /> {buttonLabel}
-            </button>
+            <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--text)' }}>{buttonHint}</div>
+            <div style={{ color: 'var(--text-dim)', fontSize: 12 }}>
+              AI reads the PDF and fills every field instantly — no typing.
+            </div>
           </div>
         </div>
-      )}
+        {/* Pulsing button replica at the exact toolbar-right position */}
+        <div style={{ position: 'absolute', top: 14, right: 20, pointerEvents: 'none' }}>
+          <button
+            className="btn tour-pulse-btn"
+            style={{
+              transform: clickFlash ? 'scale(0.95)' : 'scale(1)',
+              opacity: clickFlash ? 0.75 : 1,
+              transition: 'transform 80ms, opacity 80ms',
+            }}
+          >
+            <Upload size={14} /> {buttonLabel}
+          </button>
+        </div>
+      </div>
+    )
+  }
 
+  return (
+    <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
       {/* Windows 11-style file open dialog */}
       {phase === 'picker' && (
         <div style={{
@@ -518,7 +526,8 @@ function DemoAIModal({ onDone }: { onDone: () => void }): JSX.Element {
       pickerFiles={LOAN_PICKER_FILES}
       fields={AI_LOAN_FIELDS}
       onDone={onDone}
-      buttonLabel="Update from document"
+      buttonLabel="Add account"
+      buttonHint="On the Accounts page, click Add account — then choose 'Upload loan schedule' to let AI read your PDF"
     />
   )
 }
@@ -544,6 +553,7 @@ function DemoInsuranceAIModal({ onDone }: { onDone: () => void }): JSX.Element {
       fields={AI_INSURANCE_FIELDS}
       onDone={onDone}
       buttonLabel="Extract with AI"
+      buttonHint="Click Extract with AI in the Insurance page toolbar"
     />
   )
 }
