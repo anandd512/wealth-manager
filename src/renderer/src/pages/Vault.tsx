@@ -220,33 +220,33 @@ export default function Vault(): JSX.Element {
         <h1 className="page-title" style={{ marginBottom: 0 }}>
           Vault
         </h1>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-faint)', pointerEvents: 'none' }} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search…"
-              style={{ paddingLeft: 30, width: 200 }}
-            />
-          </div>
-          <select value={sortBy} onChange={e => setSortBy(e.target.value as 'name' | 'recent')} style={{ fontSize: 12, padding: '4px 8px' }}>
-            <option value="name">A → Z</option>
-            <option value="recent">Recently added</option>
-          </select>
-          <button
-            className="btn"
-            onClick={() => {
-              setEditing(null)
-              setShowModal(true)
-            }}
-          >
-            <Plus size={14} /> Add login
-          </button>
+        <button
+          className="btn"
+          onClick={() => {
+            setEditing(null)
+            setShowModal(true)
+          }}
+        >
+          <Plus size={14} /> Add login
+        </button>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, marginTop: -4 }}>
+        <div style={{ position: 'relative' }}>
+          <Search size={14} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-faint)', pointerEvents: 'none' }} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search…"
+            style={{ paddingLeft: 30, width: 200 }}
+          />
         </div>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value as 'name' | 'recent')} style={{ fontSize: 12, padding: '4px 8px' }}>
+          <option value="name">A → Z</option>
+          <option value="recent">Recently added</option>
+        </select>
       </div>
 
-      <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
+      <p className="muted" style={{ marginBottom: 20 }}>
         Passwords are masked by default and protected by your master password. Clipboard clears automatically after 30 seconds.
       </p>
 

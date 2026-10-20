@@ -226,7 +226,7 @@ function DemoAccountModal({ onDone }: { onDone: () => void }): JSX.Element {
 
 // ─── Shared AI demo modal (accounts loan schedule + insurance policy) ─────────
 
-type AIPhase = 'picker' | 'file_selected' | 'extracting' | 'done'
+type AIPhase = 'button' | 'picker' | 'file_selected' | 'extracting' | 'done'
 
 // Fictional demo files for the Windows-style file picker
 const LOAN_PICKER_FILES = [
@@ -254,18 +254,29 @@ interface AIModalProps {
   pickerFiles: { name: string; date: string; type: string }[]
   fields: Record<string, string>
   onDone: () => void
+  buttonLabel: string
 }
 
-function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, onDone }: AIModalProps): JSX.Element {
-  const [phase, setPhase] = useState<AIPhase>('picker')
+function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, onDone, buttonLabel }: AIModalProps): JSX.Element {
+  const [phase, setPhase] = useState<AIPhase>('button')
   const [highlightedFile, setHighlightedFile] = useState<string | null>(null)
+  const [clickFlash, setClickFlash] = useState(false)
 
   useEffect(() => {
-    const t1 = setTimeout(() => setHighlightedFile(fileName), 1000)
-    const t2 = setTimeout(() => { setPhase('file_selected'); setHighlightedFile(null) }, 1900)
-    const t3 = setTimeout(() => setPhase('extracting'), 2200)
-    const t4 = setTimeout(() => setPhase('done'), 4400)
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
+    // Phase 'button': pulse for 700ms, then flash click, then open picker
+    const t0 = setTimeout(() => setPhase('picker'), 1200)
+    // Picker phase: highlight file, then proceed through extraction
+    const t1 = setTimeout(() => setHighlightedFile(fileName), 2200)
+    const t2 = setTimeout(() => { setPhase('file_selected'); setHighlightedFile(null) }, 3100)
+    const t3 = setTimeout(() => setPhase('extracting'), 3400)
+    const t4 = setTimeout(() => setPhase('done'), 5600)
+    return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
+  }, [])
+
+  useEffect(() => {
+    const tf = setTimeout(() => setClickFlash(true), 800)
+    const tf2 = setTimeout(() => setClickFlash(false), 1100)
+    return () => { clearTimeout(tf); clearTimeout(tf2) }
   }, [])
 
   // Windows 11 dark-mode file dialog colours (hardcoded, not app theme)
@@ -284,6 +295,34 @@ function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, on
 
   return (
     <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
+      {/* Button phase — shows the toolbar button being clicked */}
+      {phase === 'button' && (
+        <div style={{
+          position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100
+        }}>
+          <div style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12,
+            padding: '28px 36px', textAlign: 'center', boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+            minWidth: 340,
+          }}>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: 'var(--text-dim)', lineHeight: 1.6 }}>
+              Click <strong style={{ color: 'var(--text)' }}>{buttonLabel}</strong> to upload your PDF and let AI read it automatically
+            </p>
+            <button
+              className="btn tour-pulse-btn"
+              style={{
+                transform: clickFlash ? 'scale(0.95)' : 'scale(1)',
+                boxShadow: clickFlash ? 'none' : undefined,
+                transition: 'transform 80ms, box-shadow 80ms',
+                pointerEvents: 'none',
+              }}
+            >
+              <Upload size={14} /> {buttonLabel}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Windows 11-style file open dialog */}
       {phase === 'picker' && (
         <div style={{
@@ -390,7 +429,7 @@ function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, on
       )}
 
       {/* Main form modal */}
-      {phase !== 'picker' && (
+      {phase !== 'picker' && phase !== 'button' && (
         <div className="modal">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <h2 style={{ margin: 0 }}>{title}</h2>
@@ -479,6 +518,7 @@ function DemoAIModal({ onDone }: { onDone: () => void }): JSX.Element {
       pickerFiles={LOAN_PICKER_FILES}
       fields={AI_LOAN_FIELDS}
       onDone={onDone}
+      buttonLabel="Update from document"
     />
   )
 }
@@ -503,6 +543,7 @@ function DemoInsuranceAIModal({ onDone }: { onDone: () => void }): JSX.Element {
       pickerFiles={INSURANCE_PICKER_FILES}
       fields={AI_INSURANCE_FIELDS}
       onDone={onDone}
+      buttonLabel="Extract with AI"
     />
   )
 }
@@ -690,6 +731,16 @@ function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
                 <div style={{ height: '100%', borderRadius: 2, width: '80%', background: 'var(--green)', transition: 'width 300ms' }} />
               </div>
             )}
+            {f.key === 'p' && typed[i].length > 0 && (
+              <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
+                {['Uppercase', 'Numbers', 'Symbols'].map(opt => (
+                  <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-faint)', cursor: 'default' }}>
+                    <input type="checkbox" readOnly checked style={{ pointerEvents: 'none', width: 12, height: 12 }} />
+                    {opt}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         ))}
         <div className="modal-actions">
@@ -745,7 +796,7 @@ function OverlayWelcome({ onNext }: { onNext: () => void }): JSX.Element {
 function OverlaySecurity({ onNext }: { onNext: () => void }): JSX.Element {
   const items = [
     { label: 'Encryption', value: 'AES-256-GCM', color: 'var(--accent)' },
-    { label: 'Key derivation', value: 'scrypt (N=32768, r=8)', color: 'var(--green)' },
+    { label: 'Key derivation', value: 'scrypt — brute force resistant', color: 'var(--green)' },
     { label: 'Storage', value: '100% local — no cloud sync', color: 'var(--green)' },
     { label: 'Auto-lock', value: '5 minutes of inactivity', color: 'var(--text-dim)' },
     { label: 'Biometrics', value: 'Windows Hello supported', color: 'var(--text-dim)' },

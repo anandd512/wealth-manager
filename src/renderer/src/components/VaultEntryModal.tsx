@@ -10,22 +10,33 @@ interface Props {
   onSaved: () => void
 }
 
-function generatePassword(length = 16): string {
-  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
-  const lower = 'abcdefghijkmnpqrstuvwxyz'
-  const digits = '23456789'
+interface GenOptions {
+  upper: boolean
+  lower: boolean
+  numbers: boolean
+  symbols: boolean
+}
+
+function generatePassword(length = 16, opts: GenOptions = { upper: true, lower: true, numbers: true, symbols: true }): string {
+  const upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+  const lower   = 'abcdefghijkmnpqrstuvwxyz'
+  const digits  = '23456789'
   const special = '!@#$%&*'
-  const all = upper + lower + digits + special
-  const arr = new Uint8Array(length)
+  const pools: string[] = []
+  if (opts.upper)   pools.push(upper)
+  if (opts.lower)   pools.push(lower)
+  if (opts.numbers) pools.push(digits)
+  if (opts.symbols) pools.push(special)
+  if (pools.length === 0) pools.push(lower)
+  const all = pools.join('')
+  const arr = new Uint8Array(Math.max(length, pools.length + 1))
   crypto.getRandomValues(arr)
-  // Ensure at least one of each type
-  let pw = [
-    upper[arr[0] % upper.length],
-    lower[arr[1] % lower.length],
-    digits[arr[2] % digits.length],
-    special[arr[3] % special.length],
-    ...Array.from({ length: length - 4 }, (_, i) => all[arr[4 + i] % all.length])
-  ]
+  // One guaranteed character from each enabled pool
+  let pw = pools.map((pool, i) => pool[arr[i] % pool.length])
+  // Fill the rest
+  for (let i = pools.length; i < length; i++) {
+    pw.push(all[arr[i] % all.length])
+  }
   // Shuffle
   for (let i = pw.length - 1; i > 0; i--) {
     const j = arr[i % arr.length] % (i + 1)
@@ -56,6 +67,7 @@ export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX
   const [notes, setNotes] = useState(entry?.notes ?? '')
   const [showPw, setShowPw] = useState(false)
   const [pwLength, setPwLength] = useState(16)
+  const [genOpts, setGenOpts] = useState<GenOptions>({ upper: true, lower: true, numbers: true, symbols: true })
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -123,7 +135,7 @@ export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX
 
         <div className="form-row">
           <div className="field">
-            <label>Username / ID</label>
+            <label>Username</label>
             <input value={username} onChange={(e) => setUsername(e.target.value)} />
           </div>
           <div className="field">
@@ -161,16 +173,34 @@ export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX
               )
             })()}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
-              <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>Length: {pwLength}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-faint)', flexShrink: 0 }}>Length: {pwLength}</span>
               <input
-                type="range" min={12} max={32} value={pwLength}
+                type="range" min={8} max={32} value={pwLength}
                 onChange={e => setPwLength(Number(e.target.value))}
-                style={{ width: 80 }}
+                style={{ width: 70 }}
               />
-              <button type="button" className="btn secondary" style={{ padding: '3px 10px', fontSize: 11 }}
-                onClick={() => { setPassword(generatePassword(pwLength)); setShowPw(true) }}>
+              <button type="button" className="btn secondary" style={{ padding: '3px 10px', fontSize: 11, marginLeft: 'auto' }}
+                onClick={() => { setPassword(generatePassword(pwLength, genOpts)); setShowPw(true) }}>
                 Generate
               </button>
+            </div>
+            <div style={{ display: 'flex', gap: 12, marginTop: 5, flexWrap: 'wrap' }}>
+              {([
+                { key: 'upper',   label: 'A–Z' },
+                { key: 'lower',   label: 'a–z' },
+                { key: 'numbers', label: '0–9' },
+                { key: 'symbols', label: '!@#' },
+              ] as { key: keyof GenOptions; label: string }[]).map(({ key, label }) => (
+                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-faint)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={genOpts[key]}
+                    onChange={e => setGenOpts(prev => ({ ...prev, [key]: e.target.checked }))}
+                    style={{ width: 12, height: 12 }}
+                  />
+                  {label}
+                </label>
+              ))}
             </div>
           </div>
         </div>
