@@ -1,6 +1,6 @@
 import { api } from '../lib/api'
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Upload, ShieldCheck, RefreshCw } from 'lucide-react'
+import { Plus, Upload, ShieldCheck, RefreshCw, HelpCircle } from 'lucide-react'
 import type { InsurancePolicy, PolicyExtraction } from '../../../shared/types'
 import { POLICY_TYPE_LABELS } from '../../../shared/insuranceTypes'
 import { getPolicyTypeIcon } from '../lib/typeIcons'
@@ -23,6 +23,7 @@ export default function Insurance(): JSX.Element {
   const [extractError, setExtractError] = useState<string | null>(null)
   const [undoPending, setUndoPending] = useState<{ id: number; label: string } | null>(null)
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [showSecondary, setShowSecondary] = useState(false)
 
   const load = async (): Promise<void> => {
     setPolicies(await api().insurance.list())
@@ -90,6 +91,26 @@ export default function Insurance(): JSX.Element {
     return <span className="badge ok">{d} days</span>
   }
 
+  const getStatus = (policy: InsurancePolicy): { label: string; color: string } | null => {
+    if (!policy.renewal_date) return null
+    const days = Math.floor((new Date(policy.renewal_date).getTime() - Date.now()) / 86400000)
+    if (days < 0) return { label: 'Lapsed', color: 'var(--red)' }
+    if (days <= 90) return { label: `Renews in ${days}d`, color: '#e8b14f' }
+    return { label: 'Active', color: 'var(--green)' }
+  }
+
+  const frequencyLabel = (freq: string | null): string => {
+    if (!freq) return '/yr' // TODO: add premium_frequency to policy if missing
+    const map: Record<string, string> = {
+      monthly: '/mo',
+      quarterly: '/qtr',
+      'half-yearly': '/6mo',
+      yearly: '/yr',
+      single: 'one-time'
+    }
+    return map[freq] ?? `/${freq}`
+  }
+
   return (
     <div>
       {undoPending && (
@@ -104,10 +125,18 @@ export default function Insurance(): JSX.Element {
         <h1 className="page-title" style={{ marginBottom: 0 }}>
           Insurance
         </h1>
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {policies.length > 0 && (
+            <button
+              className="btn secondary"
+              style={{ fontSize: 11, padding: '4px 10px' }}
+              onClick={() => setShowSecondary((s) => !s)}
+            >
+              {showSecondary ? 'Fewer columns' : 'More columns'}
+            </button>
+          )}
           <button
             className="btn secondary"
-            style={{ marginRight: 8 }}
             onClick={() => {
               setEditing(null)
               setPrefill(null)
@@ -116,8 +145,13 @@ export default function Insurance(): JSX.Element {
           >
             <Plus size={14} /> Add manually
           </button>
-          <button className="btn" onClick={uploadAndExtract} disabled={extracting}>
-            <Upload size={14} /> {extracting ? 'Reading document…' : 'Extract with AI'}
+          <button
+            className="btn"
+            onClick={uploadAndExtract}
+            disabled={extracting}
+            title="Upload a PDF and AI fills the details automatically"
+          >
+            <Upload size={14} /> {extracting ? 'Reading document…' : 'Add via PDF (AI)'}
           </button>
         </div>
       </div>
@@ -143,19 +177,36 @@ export default function Insurance(): JSX.Element {
             <thead>
               <tr>
                 <th>Type</th>
-                <th>Policy number</th>
+                {showSecondary && <th>Policy No.</th>}
                 <th>Insurer</th>
                 <th>Insured</th>
-                <th>Nominee</th>
+                {showSecondary && <th>Nominee</th>}
                 <th>Premium</th>
-                <th>Expiry</th>
-                <th>Renewal</th>
+                {showSecondary && (
+                  <th title="Last day your policy provides cover">
+                    Expiry{' '}
+                    <HelpCircle
+                      size={11}
+                      style={{ verticalAlign: 'middle' }}
+                      title="Last day your policy provides cover"
+                    />
+                  </th>
+                )}
+                <th title="Date your premium is due for renewal">
+                  Renewal{' '}
+                  <HelpCircle
+                    size={11}
+                    style={{ verticalAlign: 'middle' }}
+                    title="Date your premium is due for renewal"
+                  />
+                </th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {policies.map((p) => {
                 const TypeIcon = getPolicyTypeIcon(p.policy_type)
+                const status = getStatus(p)
                 return (
                   <tr key={p.id} style={syncingId === p.id ? { opacity: 0.55 } : undefined}>
                     <td>
@@ -166,25 +217,40 @@ export default function Insurance(): JSX.Element {
                         {POLICY_TYPE_LABELS[p.policy_type ?? ''] ?? p.policy_type ?? '—'}
                         {syncingId === p.id && <RefreshCw size={12} className="spin" style={{ marginLeft: 6, verticalAlign: 'middle' }} />}
                       </span>
+                      {status && (
+                        <div style={{ fontSize: 10, color: status.color, fontWeight: 600 }}>
+                          {status.label}
+                        </div>
+                      )}
                     </td>
-                    <td>{p.policy_number ?? '—'}</td>
+                    {showSecondary && <td>{p.policy_number ?? '—'}</td>}
                     <td className="muted">{p.insurer ?? '—'}</td>
                     <td className="muted">
                       {p.insured_name ?? '—'}
+                      {p.additional_insured && (
+                        <div
+                          style={{ fontSize: 11, color: 'var(--text-faint)' }}
+                          title={p.additional_insured}
+                        >
+                          +{p.additional_insured.split(',').filter(Boolean).length} more
+                        </div>
+                      )}
                       {p.vehicle_number && (
                         <div style={{ fontSize: 12 }}>Vehicle: {p.vehicle_number}</div>
                       )}
                     </td>
-                    <td className="muted">
-                      {p.nominee_name ?? '—'}
-                    </td>
+                    {showSecondary && (
+                      <td className="muted">{p.nominee_name ?? '—'}</td>
+                    )}
                     <td>
                       {p.premium_amount != null ? formatCurrency(p.premium_amount) : '—'}
-                      {p.premium_frequency ? (
-                        <span className="muted"> / {({'monthly':'month','quarterly':'quarter','half-yearly':'6 mo','yearly':'year','single':'one-time'} as Record<string,string>)[p.premium_frequency] ?? p.premium_frequency}</span>
-                      ) : ''}
+                      <span style={{ fontSize: 10, color: 'var(--text-faint)', marginLeft: 3 }}>
+                        {frequencyLabel(p.premium_frequency)}
+                      </span>
                     </td>
-                    <td className="muted">{formatDate(p.expiry_date)}</td>
+                    {showSecondary && (
+                      <td className="muted">{formatDate(p.expiry_date)}</td>
+                    )}
                     <td>
                       {p.renewal_date ? (
                         <>

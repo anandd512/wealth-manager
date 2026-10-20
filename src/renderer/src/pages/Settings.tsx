@@ -25,6 +25,17 @@ import type {
   SmtpConfig
 } from '../../../shared/types'
 
+type TabId = 'data' | 'appearance' | 'security' | 'notifications' | 'ai' | 'help'
+
+const TABS: { id: TabId; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
+  { id: 'data',          label: 'Data',          icon: DatabaseBackup },
+  { id: 'appearance',    label: 'Appearance',    icon: Moon },
+  { id: 'security',      label: 'Security',      icon: Lock },
+  { id: 'notifications', label: 'Notifications', icon: BellRing },
+  { id: 'ai',            label: 'AI',            icon: Sparkles },
+  { id: 'help',          label: 'Help',          icon: HelpCircle }
+]
+
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const OCCURRENCES: { value: 1 | 2 | 3 | 4; label: string }[] = [
   { value: 1, label: 'First' },
@@ -33,7 +44,14 @@ const OCCURRENCES: { value: 1 | 2 | 3 | 4; label: string }[] = [
   { value: 4, label: 'Fourth' }
 ]
 
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0])
+}
+
 export default function Settings(): JSX.Element {
+  const [activeTab, setActiveTab] = useState<TabId>('data')
   const [settings, setSettings] = useState<AppSettings | null>(null)
 
   // Reminders
@@ -60,6 +78,7 @@ export default function Settings(): JSX.Element {
   const [openAiMsg, setOpenAiMsg] = useState<string | null>(null)
 
   // SMTP
+  const [smtpProvider, setSmtpProvider] = useState<string>('custom')
   const [smtp, setSmtp] = useState<Omit<SmtpConfig, 'user'> & { user: string }>({
     host: '',
     port: 587,
@@ -209,6 +228,16 @@ export default function Settings(): JSX.Element {
     load()
   }
 
+  const testAiKey = async (): Promise<void> => {
+    setKeyMsg('Testing…')
+    try {
+      await api().settings.setAnthropicKey(anthropicKey)
+      setKeyMsg('Key is valid')
+    } catch (e) {
+      setKeyMsg((e as Error).message ?? 'Key test failed')
+    }
+  }
+
   const clearKey = async (): Promise<void> => {
     await api().settings.clearAnthropicKey()
     setKeyMsg('API key removed.')
@@ -330,501 +359,627 @@ export default function Settings(): JSX.Element {
 
   if (!settings) return <div className="muted">Loading…</div>
 
+  const scheduleType = checkInSchedule.scheduleType ?? 'weekday'
+  const dayOfMonth = checkInSchedule.dayOfMonth ?? 1
+
+  const checkInPreview = scheduleType === 'day_of_month'
+    ? `Artha will remind you on the ${ordinal(dayOfMonth)} of every month.`
+    : `Artha will remind you on the ${OCCURRENCES.find(o => o.value === checkInSchedule.occurrence)?.label ?? ''} ${WEEKDAYS[checkInSchedule.weekday]} of every month.`
+
   return (
     <div>
       <h1 className="page-title">Settings</h1>
 
-      <div className="settings-section-label">
-        <Moon size={12} /> Appearance
-      </div>
-
-      <div className="card section">
-        <div className="section-header">
-          <h2>Theme</h2>
-        </div>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Choose between dark and light mode. Default is dark.
-        </p>
-        <div style={{ display: 'flex', gap: 8 }}>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+        {TABS.map(t => (
           <button
-            className={`btn ${theme === 'dark' ? '' : 'secondary'}`}
-            onClick={() => toggleTheme('dark')}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            style={{
+              background: 'none', border: 'none', padding: '8px 16px', cursor: 'pointer',
+              color: activeTab === t.id ? 'var(--accent)' : 'var(--text-faint)',
+              borderBottom: activeTab === t.id ? '2px solid var(--accent)' : '2px solid transparent',
+              fontSize: 13, fontWeight: activeTab === t.id ? 600 : 400,
+              display: 'flex', alignItems: 'center', gap: 6, marginBottom: -1
+            }}
           >
-            <Moon size={13} /> Dark
+            <t.icon size={13} /> {t.label}
           </button>
-          <button
-            className={`btn ${theme === 'light' ? '' : 'secondary'}`}
-            onClick={() => toggleTheme('light')}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <Sun size={13} /> Light
-          </button>
-        </div>
+        ))}
       </div>
 
-      <div className="settings-section-label">
-        <Lock size={12} /> Security
-      </div>
+      {/* ── DATA ─────────────────────────────────────────────────────── */}
+      {activeTab === 'data' && (
+        <>
+          {dataSummary && (
+            <div className="card section" style={{ padding: '14px 18px' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Your data at a glance</div>
+              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                {[
+                  { label: 'Accounts', count: dataSummary.accounts },
+                  { label: 'Policies', count: dataSummary.policies },
+                  { label: 'Identity docs', count: dataSummary.identityDocs },
+                  { label: 'Credit cards', count: dataSummary.cards },
+                  { label: 'Vault entries', count: dataSummary.vaultEntries },
+                ].map(({ label, count }) => (
+                  <div key={label}>
+                    <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.2 }}>{count}</div>
+                    <div className="muted" style={{ fontSize: 11 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-      <div className="card section" style={{ borderColor: 'var(--accent-dim)' }}>
-        <div className="section-header">
-          <h2>
-            <ShieldCheck size={14} /> Master password
-          </h2>
-        </div>
-        <p className="muted" style={{ marginTop: 0 }}>
-          This password encrypts your entire database. There is no recovery if forgotten.
-        </p>
-        <div className="form-row">
-          <div className="field">
-            <label>Current password</label>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-            />
+          <div className="card section">
+            <div className="section-header">
+              <h2>
+                <DatabaseBackup size={14} /> Backup &amp; restore
+              </h2>
+            </div>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Export everything — every account, check-in, document, policy, card, login, and
+              setting — into one encrypted file you can move to a new device. It's protected by the
+              same master password, so only you can open it. (API keys and SMTP passwords are stored
+              via Windows' own credential store and generally won't carry over to a different device
+              or Windows account — you'll just re-enter those.)
+            </p>
+            <button className="btn secondary" onClick={exportBackup} disabled={exportBusy}>
+              <Download size={14} /> {exportBusy ? 'Exporting…' : 'Export backup'}
+            </button>
+            {exportMsg && <div className="success-text">{exportMsg}</div>}
+
+            <div className="subsection-label">Restore from a backup</div>
+            <button className="btn secondary" onClick={pickImportFile} disabled={importBusy}>
+              <Upload size={14} /> Choose backup file…
+            </button>
+            {importError && <div className="error-text">{importError}</div>}
+            {importSummary && (
+              <div className="card" style={{ marginTop: 12, borderColor: 'var(--amber)' }}>
+                <p style={{ margin: '0 0 8px' }}>
+                  Backup from {formatDate(importSummary.exportedAt)} — {importSummary.documentCount}{' '}
+                  document(s)
+                  {importSummary.hasSecrets ? ', including saved API/SMTP credentials' : ''}.
+                </p>
+                <p className="error-text" style={{ margin: '0 0 12px' }}>
+                  Importing replaces ALL data currently on this device and restarts the app. Your
+                  current data is moved aside as a .bak file first, not deleted.
+                </p>
+                <button className="btn danger" onClick={confirmImport} disabled={importBusy}>
+                  {importBusy ? 'Restoring…' : 'Import and restart'}
+                </button>
+              </div>
+            )}
           </div>
-          <div className="field">
-            <label>New password</label>
-            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-          </div>
-        </div>
-        <div className="field" style={{ maxWidth: '50%' }}>
-          <label>Confirm new password</label>
-          <input
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-          />
-        </div>
-        {pwError && <div className="error-text">{pwError}</div>}
-        {pwMsg && <div className="success-text">{pwMsg}</div>}
-        <button className="btn" onClick={changePassword} disabled={!currentPassword || !newPassword}>
-          Change password
-        </button>
-      </div>
+        </>
+      )}
 
-      {helloAvailable && (
+      {/* ── APPEARANCE ───────────────────────────────────────────────── */}
+      {activeTab === 'appearance' && (
         <div className="card section">
           <div className="section-header">
-            <h2>
-              <ScanFace size={14} /> Windows Hello
-            </h2>
+            <h2>Theme</h2>
           </div>
           <p className="muted" style={{ marginTop: 0 }}>
-            Unlock with your face, fingerprint, or PIN instead of typing the master password
-            every time. This stores an encrypted copy of your database key, protected by
-            Windows' own credential store for your user account — disable it any time.
+            Choose between dark and light mode. Default is dark.
           </p>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="checkbox"
-              style={{ width: 'auto' }}
-              checked={helloEnabled}
-              disabled={helloBusy}
-              onChange={(e) => toggleWindowsHello(e.target.checked)}
-            />
-            Enable Windows Hello unlock
-          </label>
-          {helloMsg && <div className="success-text">{helloMsg}</div>}
-        </div>
-      )}
-
-      <div className="card section">
-        <div className="section-header">
-          <h2>
-            <Timer size={14} /> Auto-lock timeout
-          </h2>
-        </div>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Lock the app automatically after a period of inactivity. Takes effect on next unlock.
-        </p>
-        <div className="field" style={{ maxWidth: 240 }}>
-          <label>Lock after</label>
-          <select value={autoLockMinutes} onChange={(e) => saveAutoLock(e.target.value)}>
-            <option value="0.5">30 seconds</option>
-            <option value="1">1 minute</option>
-            <option value="5">5 minutes</option>
-            <option value="15">15 minutes</option>
-            <option value="30">30 minutes</option>
-            <option value="never">Never</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="settings-section-label">
-        <DatabaseBackup size={12} /> Data Management
-      </div>
-
-      {dataSummary && (
-        <div className="card section" style={{ padding: '14px 18px' }}>
-          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10 }}>Your data at a glance</div>
-          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-            {[
-              { label: 'Accounts', count: dataSummary.accounts },
-              { label: 'Policies', count: dataSummary.policies },
-              { label: 'Identity docs', count: dataSummary.identityDocs },
-              { label: 'Credit cards', count: dataSummary.cards },
-              { label: 'Vault entries', count: dataSummary.vaultEntries },
-            ].map(({ label, count }) => (
-              <div key={label}>
-                <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.2 }}>{count}</div>
-                <div className="muted" style={{ fontSize: 11 }}>{label}</div>
-              </div>
-            ))}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className={`btn ${theme === 'dark' ? '' : 'secondary'}`}
+              onClick={() => toggleTheme('dark')}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Moon size={13} /> Dark
+            </button>
+            <button
+              className={`btn ${theme === 'light' ? '' : 'secondary'}`}
+              onClick={() => toggleTheme('light')}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Sun size={13} /> Light
+            </button>
           </div>
         </div>
       )}
 
-      <div className="card section">
-        <div className="section-header">
-          <h2>
-            <DatabaseBackup size={14} /> Backup &amp; restore
-          </h2>
-        </div>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Export everything — every account, check-in, document, policy, card, login, and
-          setting — into one encrypted file you can move to a new device. It's protected by the
-          same master password, so only you can open it. (API keys and SMTP passwords are stored
-          via Windows' own credential store and generally won't carry over to a different device
-          or Windows account — you'll just re-enter those.)
-        </p>
-        <button className="btn secondary" onClick={exportBackup} disabled={exportBusy}>
-          <Download size={14} /> {exportBusy ? 'Exporting…' : 'Export backup'}
-        </button>
-        {exportMsg && <div className="success-text">{exportMsg}</div>}
-
-        <div className="subsection-label">Restore from a backup</div>
-        <button className="btn secondary" onClick={pickImportFile} disabled={importBusy}>
-          <Upload size={14} /> Choose backup file…
-        </button>
-        {importError && <div className="error-text">{importError}</div>}
-        {importSummary && (
-          <div className="card" style={{ marginTop: 12, borderColor: 'var(--amber)' }}>
-            <p style={{ margin: '0 0 8px' }}>
-              Backup from {formatDate(importSummary.exportedAt)} — {importSummary.documentCount}{' '}
-              document(s)
-              {importSummary.hasSecrets ? ', including saved API/SMTP credentials' : ''}.
-            </p>
-            <p className="error-text" style={{ margin: '0 0 12px' }}>
-              Importing replaces ALL data currently on this device and restarts the app. Your
-              current data is moved aside as a .bak file first, not deleted.
-            </p>
-            <button className="btn danger" onClick={confirmImport} disabled={importBusy}>
-              {importBusy ? 'Restoring…' : 'Import and restart'}
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="settings-section-label">
-        <BellRing size={12} /> Notifications
-      </div>
-
-      <div className="card section">
-        <div className="section-header">
-          <h2>
-            <BellRing size={14} /> Expiry reminders
-          </h2>
-        </div>
-        <div className="form-row">
-          <div className="field">
-            <label>Remind me this many days before</label>
-            <input
-              type="number"
-              min={1}
-              max={180}
-              value={daysBefore}
-              onChange={(e) => setDaysBefore(Number(e.target.value))}
-            />
-          </div>
-        </div>
-        <div className="field">
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="checkbox"
-              style={{ width: 'auto' }}
-              checked={desktopNotifications}
-              onChange={(e) => setDesktopNotifications(e.target.checked)}
-            />
-            Desktop notifications
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="checkbox"
-              style={{ width: 'auto' }}
-              checked={emailNotifications}
-              onChange={(e) => setEmailNotifications(e.target.checked)}
-            />
-            Email notifications (requires SMTP setup below)
-          </label>
-        </div>
-        <button className="btn" onClick={saveReminders}>
-          Save
-        </button>
-        {reminderSaved && <span className="success-text" style={{ marginLeft: 10 }}>Saved</span>}
-      </div>
-
-      <div className="card section">
-        <div className="section-header">
-          <h2>
-            <CalendarCheck size={14} /> Monthly check-in reminder
-          </h2>
-        </div>
-        <p className="muted" style={{ marginTop: 0 }}>
-          A recurring nudge on the dashboard to keep account balances and values up to date.
-        </p>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-          <input
-            type="checkbox"
-            style={{ width: 'auto' }}
-            checked={checkInSchedule.enabled}
-            onChange={(e) => saveCheckInSchedule({ ...checkInSchedule, enabled: e.target.checked })}
-          />
-          Remind me to check in every month
-        </label>
-        {checkInSchedule.enabled && (
-          <div className="form-row" style={{ maxWidth: 420 }}>
-            <div className="field">
-              <label>Occurrence</label>
-              <select
-                value={checkInSchedule.occurrence}
-                onChange={(e) =>
-                  saveCheckInSchedule({
-                    ...checkInSchedule,
-                    occurrence: Number(e.target.value) as CheckInScheduleSettings['occurrence']
-                  })
-                }
-              >
-                {OCCURRENCES.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+      {/* ── SECURITY ─────────────────────────────────────────────────── */}
+      {activeTab === 'security' && (
+        <>
+          <div className="card section" style={{ borderColor: 'var(--accent-dim)' }}>
+            <div className="section-header">
+              <h2>
+                <ShieldCheck size={14} /> Master password
+              </h2>
             </div>
-            <div className="field">
-              <label>Day of week</label>
-              <select
-                value={checkInSchedule.weekday}
-                onChange={(e) =>
-                  saveCheckInSchedule({
-                    ...checkInSchedule,
-                    weekday: Number(e.target.value) as CheckInScheduleSettings['weekday']
-                  })
-                }
-              >
-                {WEEKDAYS.map((w, i) => (
-                  <option key={w} value={i}>
-                    {w}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-        {checkInSaved && <span className="success-text">Saved</span>}
-      </div>
-
-      <div className="settings-section-label">
-        <Sparkles size={12} /> AI Document Reading
-      </div>
-
-      <div className="card section">
-        <div className="section-header">
-          <h2>
-            <Sparkles size={14} /> Auto-fill from documents
-          </h2>
-        </div>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Artha can read your uploaded policy PDFs and loan documents and fill in the fields automatically. Requires an API key from your chosen provider.
-        </p>
-
-        <div className="field" style={{ maxWidth: 360 }}>
-          <label>Provider</label>
-          <select value={provider} onChange={(e) => changeProvider(e.target.value as ExtractionProvider)}>
-            <option value="anthropic">Anthropic (Claude)</option>
-            <option value="openai">Custom AI endpoint (OpenAI-compatible)</option>
-          </select>
-        </div>
-
-        {provider === 'anthropic' ? (
-          <>
-            <p className="help-text" style={{ marginBottom: 12 }}>
-              Get a key from console.anthropic.com. Stored encrypted via your OS's secure storage,
-              never in plain text.
-            </p>
-            <div className="field">
-              <label>
-                Anthropic API key{' '}
-                {settings.hasAnthropicKey && <span className="badge ok">Configured</span>}
-              </label>
-              <input
-                type="password"
-                value={anthropicKey}
-                onChange={(e) => setAnthropicKey(e.target.value)}
-                placeholder={settings.hasAnthropicKey ? '••••••••••••••••' : 'sk-ant-...'}
-              />
-            </div>
-            <button className="btn" onClick={saveKey} disabled={!anthropicKey}>
-              Save key
-            </button>
-            {settings.hasAnthropicKey && (
-              <button className="btn secondary" onClick={clearKey} style={{ marginLeft: 8 }}>
-                Remove key
-              </button>
-            )}
-            {keyMsg && <div className="success-text">{keyMsg}</div>}
-          </>
-        ) : (
-          <>
-            <p className="help-text" style={{ marginBottom: 12 }}>
-              For any OpenAI-compatible endpoint — Azure AI Foundry, a local model, or any self-hosted API (URLs ending in
-              <code> /openai/v1</code>). Paste the endpoint Foundry gave you — a trailing{' '}
-              <code>/responses</code> is stripped automatically — and the deployment name you gave
-              the model.
+            <p className="muted" style={{ marginTop: 0 }}>
+              This password encrypts your entire database. There is no recovery if forgotten.
             </p>
             <div className="form-row">
               <div className="field">
-                <label>Endpoint base URL</label>
+                <label>Current password</label>
                 <input
-                  value={openAiBaseUrl}
-                  onChange={(e) => setOpenAiBaseUrl(e.target.value)}
-                  placeholder="https://your-resource.services.ai.azure.com/openai/v1"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
                 />
               </div>
               <div className="field">
-                <label>Model / deployment name</label>
+                <label>New password</label>
+                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+              </div>
+            </div>
+            <div className="field" style={{ maxWidth: '50%' }}>
+              <label>Confirm new password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </div>
+            {pwError && <div className="error-text">{pwError}</div>}
+            {pwMsg && <div className="success-text">{pwMsg}</div>}
+            <button className="btn" onClick={changePassword} disabled={!currentPassword || !newPassword}>
+              Change password
+            </button>
+            <p style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 8 }}>
+              Forgot your current password?{' '}
+              <a
+                href="#"
+                style={{ color: 'var(--accent)' }}
+                onClick={async (e) => {
+                  e.preventDefault()
+                  await window.api.auth.lock()
+                  window.location.hash = '#/'
+                }}
+              >
+                Go to lock screen →
+              </a>
+            </p>
+          </div>
+
+          {helloAvailable && (
+            <div className="card section">
+              <div className="section-header">
+                <h2>
+                  <ScanFace size={14} /> Windows Hello
+                </h2>
+              </div>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Unlock with your face, fingerprint, or PIN instead of typing the master password
+                every time. This stores an encrypted copy of your database key, protected by
+                Windows' own credential store for your user account — disable it any time.
+              </p>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input
-                  value={openAiModel}
-                  onChange={(e) => setOpenAiModel(e.target.value)}
-                  placeholder="e.g. gpt-6-astra"
+                  type="checkbox"
+                  style={{ width: 'auto' }}
+                  checked={helloEnabled}
+                  disabled={helloBusy}
+                  onChange={(e) => toggleWindowsHello(e.target.checked)}
+                />
+                Enable Windows Hello unlock
+              </label>
+              {helloMsg && <div className="success-text">{helloMsg}</div>}
+            </div>
+          )}
+
+          <div className="card section">
+            <div className="section-header">
+              <h2>
+                <Timer size={14} /> Auto-lock timeout
+              </h2>
+            </div>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Lock the app automatically after a period of inactivity. Takes effect on next unlock.
+            </p>
+            <div className="field" style={{ maxWidth: 240 }}>
+              <label>Lock after</label>
+              <select value={autoLockMinutes} onChange={(e) => saveAutoLock(e.target.value)}>
+                <option value="0.5">30 seconds</option>
+                <option value="1">1 minute</option>
+                <option value="5">5 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="never">Never</option>
+              </select>
+              <p style={{ fontSize: 11, color: 'var(--text-faint)', margin: '4px 0 0' }}>
+                This setting is stored locally and persists across sessions.
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── NOTIFICATIONS ────────────────────────────────────────────── */}
+      {activeTab === 'notifications' && (
+        <>
+          <div className="card section">
+            <div className="section-header">
+              <h2>
+                <BellRing size={14} /> Expiry reminders
+              </h2>
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label>Remind me this many days before</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={180}
+                  value={daysBefore}
+                  onChange={(e) => setDaysBefore(Number(e.target.value))}
                 />
               </div>
             </div>
             <div className="field">
-              <label>
-                API key {settings.hasOpenAiKey && <span className="badge ok">Configured</span>}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  style={{ width: 'auto' }}
+                  checked={desktopNotifications}
+                  onChange={(e) => setDesktopNotifications(e.target.checked)}
+                />
+                Desktop notifications
               </label>
-              <input
-                type="password"
-                value={openAiKey}
-                onChange={(e) => setOpenAiKey(e.target.value)}
-                placeholder={settings.hasOpenAiKey ? '••••••••••••••••' : ''}
-              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  style={{ width: 'auto' }}
+                  checked={emailNotifications}
+                  onChange={(e) => setEmailNotifications(e.target.checked)}
+                />
+                Email notifications (requires SMTP setup below)
+              </label>
             </div>
-            <button className="btn" onClick={saveOpenAi}>
+            <button className="btn" onClick={saveReminders}>
               Save
             </button>
-            {settings.hasOpenAiKey && (
-              <button className="btn secondary" onClick={clearOpenAiKey} style={{ marginLeft: 8 }}>
-                Remove key
-              </button>
-            )}
-            {openAiMsg && <div className="success-text">{openAiMsg}</div>}
-          </>
-        )}
-      </div>
+            {reminderSaved && <span className="success-text" style={{ marginLeft: 10 }}>Saved</span>}
+          </div>
 
-      <div className="card section">
-        <div className="section-header">
-          <h2>
-            <Mail size={14} /> Email reminders (Gmail / Outlook)
-          </h2>
-        </div>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Send yourself reminders via email. Use an app password — not your main account password. For Gmail: Google Account → Security → App passwords → create one for "Artha".
-        </p>
-        <div className="form-row">
-          <div className="field">
-            <label>SMTP host</label>
-            <input
-              value={smtp.host}
-              onChange={(e) => setSmtp({ ...smtp, host: e.target.value })}
-              placeholder="smtp.gmail.com"
-            />
-          </div>
-          <div className="field">
-            <label>Port</label>
-            <input
-              type="number"
-              value={smtp.port}
-              onChange={(e) => setSmtp({ ...smtp, port: Number(e.target.value) })}
-            />
-          </div>
-        </div>
-        <div className="form-row">
-          <div className="field">
-            <label>Account email (username)</label>
-            <input value={smtp.user} onChange={(e) => setSmtp({ ...smtp, user: e.target.value })} />
-          </div>
-          <div className="field">
-            <label>
-              App password {settings.hasSmtpPassword && <span className="badge ok">Configured</span>}
+          <div className="card section">
+            <div className="section-header">
+              <h2>
+                <CalendarCheck size={14} /> Monthly check-in reminder
+              </h2>
+            </div>
+            <p className="muted" style={{ marginTop: 0 }}>
+              A recurring nudge on the dashboard to keep account balances and values up to date.
+            </p>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <input
+                type="checkbox"
+                style={{ width: 'auto' }}
+                checked={checkInSchedule.enabled}
+                onChange={(e) => saveCheckInSchedule({ ...checkInSchedule, enabled: e.target.checked })}
+              />
+              Remind me to check in every month
             </label>
-            <input
-              type="password"
-              value={smtpPassword}
-              onChange={(e) => setSmtpPassword(e.target.value)}
-              placeholder={settings.hasSmtpPassword ? '••••••••••••••••' : ''}
-            />
-          </div>
-        </div>
-        <div className="form-row">
-          <div className="field">
-            <label>From address</label>
-            <input
-              value={smtp.fromAddress}
-              onChange={(e) => setSmtp({ ...smtp, fromAddress: e.target.value })}
-              placeholder="defaults to account email"
-            />
-          </div>
-          <div className="field">
-            <label>Send reminders to</label>
-            <input
-              value={smtp.toAddress}
-              onChange={(e) => setSmtp({ ...smtp, toAddress: e.target.value })}
-              placeholder={smtp.user || 'you@example.com'}
-            />
-          </div>
-        </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-          <input
-            type="checkbox"
-            style={{ width: 'auto' }}
-            checked={smtp.secure}
-            onChange={(e) => setSmtp({ ...smtp, secure: e.target.checked })}
-          />
-          Use TLS (port 465 typically)
-        </label>
-        <button className="btn" onClick={saveSmtp}>
-          Save SMTP settings
-        </button>
-        <button className="btn secondary" onClick={testEmail} disabled={testBusy} style={{ marginLeft: 8 }}>
-          {testBusy ? 'Sending…' : 'Send test email'}
-        </button>
-        {smtpMsg && <div className="success-text">{smtpMsg}</div>}
-      </div>
+            {checkInSchedule.enabled && (
+              <>
+                <div className="form-row" style={{ maxWidth: 420 }}>
+                  <div className="field">
+                    <label>Schedule type</label>
+                    <select
+                      value={scheduleType}
+                      onChange={(e) =>
+                        setCheckInSchedule({
+                          ...checkInSchedule,
+                          scheduleType: e.target.value as 'weekday' | 'day_of_month'
+                        })
+                      }
+                    >
+                      <option value="weekday">Nth weekday (e.g. First Saturday)</option>
+                      <option value="day_of_month">Specific day of month (e.g. 15th)</option>
+                    </select>
+                  </div>
+                </div>
 
-      <div className="settings-section-label" style={{ marginTop: 32 }}>
-        <HelpCircle size={12} /> Help
-      </div>
+                {scheduleType === 'weekday' && (
+                  <div className="form-row" style={{ maxWidth: 420 }}>
+                    <div className="field">
+                      <label>Occurrence</label>
+                      <select
+                        value={checkInSchedule.occurrence}
+                        onChange={(e) =>
+                          setCheckInSchedule({
+                            ...checkInSchedule,
+                            occurrence: Number(e.target.value) as CheckInScheduleSettings['occurrence']
+                          })
+                        }
+                      >
+                        {OCCURRENCES.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>Day of week</label>
+                      <select
+                        value={checkInSchedule.weekday}
+                        onChange={(e) =>
+                          setCheckInSchedule({
+                            ...checkInSchedule,
+                            weekday: Number(e.target.value) as CheckInScheduleSettings['weekday']
+                          })
+                        }
+                      >
+                        {WEEKDAYS.map((w, i) => (
+                          <option key={w} value={i}>
+                            {w}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
 
-      <div className="card section">
-        <div className="section-header">
-          <h2>Product tour</h2>
+                {scheduleType === 'day_of_month' && (
+                  <div className="form-row" style={{ maxWidth: 420 }}>
+                    <div className="field">
+                      <label>Day of month</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={28}
+                        value={dayOfMonth}
+                        onChange={(e) =>
+                          setCheckInSchedule({
+                            ...checkInSchedule,
+                            dayOfMonth: Math.min(28, Math.max(1, Number(e.target.value)))
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <p style={{ fontSize: 12, color: 'var(--text-faint)', margin: '6px 0 8px' }}>
+                  {checkInPreview}
+                </p>
+                <button className="btn" onClick={() => saveCheckInSchedule(checkInSchedule)}>
+                  Save
+                </button>
+              </>
+            )}
+            {checkInSaved && <span className="success-text" style={{ marginLeft: 10 }}>Saved</span>}
+          </div>
+
+          <div className="card section">
+            <div className="section-header">
+              <h2>
+                <Mail size={14} /> Email reminders (Gmail / Outlook)
+              </h2>
+            </div>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Send yourself reminders via email. Use an app password — not your main account password. For Gmail: Google Account → Security → App passwords → create one for "Artha".
+            </p>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+              {[
+                { id: 'gmail',   label: 'Gmail',      host: 'smtp.gmail.com',      port: 587, secure: false },
+                { id: 'outlook', label: 'Outlook',    host: 'smtp.office365.com',  port: 587, secure: false },
+                { id: 'apple',   label: 'Apple Mail', host: 'smtp.mail.me.com',    port: 587, secure: false },
+                { id: 'yahoo',   label: 'Yahoo',      host: 'smtp.mail.yahoo.com', port: 587, secure: false },
+                { id: 'custom',  label: 'Custom',     host: '',                    port: 587, secure: false },
+              ].map(p => (
+                <button
+                  key={p.id}
+                  className={smtpProvider === p.id ? 'btn' : 'btn secondary'}
+                  style={{ fontSize: 12, padding: '4px 12px' }}
+                  onClick={() => {
+                    setSmtpProvider(p.id)
+                    if (p.id !== 'custom') setSmtp(prev => ({ ...prev, host: p.host, port: p.port, secure: p.secure }))
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {smtpProvider !== 'custom' && (
+              <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10 }}>
+                Use an App Password, not your regular password.
+              </p>
+            )}
+            <div className="form-row">
+              <div className="field">
+                <label>SMTP host</label>
+                <input
+                  value={smtp.host}
+                  onChange={(e) => setSmtp({ ...smtp, host: e.target.value })}
+                  placeholder="smtp.gmail.com"
+                />
+              </div>
+              <div className="field">
+                <label>Port</label>
+                <input
+                  type="number"
+                  value={smtp.port}
+                  onChange={(e) => setSmtp({ ...smtp, port: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label>Account email (username)</label>
+                <input value={smtp.user} onChange={(e) => setSmtp({ ...smtp, user: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>
+                  App password {settings.hasSmtpPassword && <span className="badge ok">Configured</span>}
+                </label>
+                <input
+                  type="password"
+                  value={smtpPassword}
+                  onChange={(e) => setSmtpPassword(e.target.value)}
+                  placeholder={settings.hasSmtpPassword ? '••••••••••••••••' : ''}
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="field">
+                <label>From address</label>
+                <input
+                  value={smtp.fromAddress}
+                  onChange={(e) => setSmtp({ ...smtp, fromAddress: e.target.value })}
+                  placeholder="defaults to account email"
+                />
+              </div>
+              <div className="field">
+                <label>Send reminders to</label>
+                <input
+                  value={smtp.toAddress}
+                  onChange={(e) => setSmtp({ ...smtp, toAddress: e.target.value })}
+                  placeholder={smtp.user || 'you@example.com'}
+                />
+              </div>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <input
+                type="checkbox"
+                style={{ width: 'auto' }}
+                checked={smtp.secure}
+                onChange={(e) => setSmtp({ ...smtp, secure: e.target.checked })}
+              />
+              Use TLS (port 465 typically)
+            </label>
+            <button className="btn" onClick={saveSmtp}>
+              Save SMTP settings
+            </button>
+            <button className="btn secondary" onClick={testEmail} disabled={testBusy} style={{ marginLeft: 8 }}>
+              {testBusy ? 'Sending…' : 'Send test email'}
+            </button>
+            {smtpMsg && <div className="success-text">{smtpMsg}</div>}
+          </div>
+        </>
+      )}
+
+      {/* ── AI ───────────────────────────────────────────────────────── */}
+      {activeTab === 'ai' && (
+        <div className="card section">
+          <div className="section-header">
+            <h2>
+              <Sparkles size={14} /> Auto-fill from documents
+            </h2>
+          </div>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Artha can read your uploaded policy PDFs and loan documents and fill in the fields automatically. Requires an API key from your chosen provider.
+          </p>
+
+          <div className="field" style={{ maxWidth: 360 }}>
+            <label>Provider</label>
+            <select value={provider} onChange={(e) => changeProvider(e.target.value as ExtractionProvider)}>
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">Custom AI endpoint (OpenAI-compatible)</option>
+            </select>
+          </div>
+
+          {provider === 'anthropic' ? (
+            <>
+              <p className="help-text" style={{ marginBottom: 12 }}>
+                Get a key from console.anthropic.com. Stored encrypted via your OS's secure storage,
+                never in plain text.
+              </p>
+              <div className="field">
+                <label>
+                  Anthropic API key{' '}
+                  {settings.hasAnthropicKey && <span className="badge ok">Configured</span>}
+                </label>
+                <input
+                  type="password"
+                  value={anthropicKey}
+                  onChange={(e) => setAnthropicKey(e.target.value)}
+                  placeholder={settings.hasAnthropicKey ? '••••••••••••••••' : 'sk-ant-...'}
+                />
+              </div>
+              <button className="btn" onClick={saveKey} disabled={!anthropicKey}>
+                Save key
+              </button>
+              <button
+                className="btn secondary"
+                style={{ fontSize: 12, padding: '6px 14px', marginLeft: 8 }}
+                onClick={testAiKey}
+                disabled={!anthropicKey}
+              >
+                Test key
+              </button>
+              {settings.hasAnthropicKey && (
+                <button className="btn secondary" onClick={clearKey} style={{ marginLeft: 8 }}>
+                  Remove key
+                </button>
+              )}
+              {keyMsg && <div className="success-text">{keyMsg}</div>}
+            </>
+          ) : (
+            <>
+              <p className="help-text" style={{ marginBottom: 12 }}>
+                For any OpenAI-compatible endpoint — Azure AI Foundry, a local model, or any self-hosted API (URLs ending in
+                <code> /openai/v1</code>). Paste the endpoint Foundry gave you — a trailing{' '}
+                <code>/responses</code> is stripped automatically — and the deployment name you gave
+                the model.
+              </p>
+              <div className="form-row">
+                <div className="field">
+                  <label>Endpoint base URL</label>
+                  <input
+                    value={openAiBaseUrl}
+                    onChange={(e) => setOpenAiBaseUrl(e.target.value)}
+                    placeholder="https://your-resource.services.ai.azure.com/openai/v1"
+                  />
+                </div>
+                <div className="field">
+                  <label>Model / deployment name</label>
+                  <input
+                    value={openAiModel}
+                    onChange={(e) => setOpenAiModel(e.target.value)}
+                    placeholder="e.g. gpt-6-astra"
+                  />
+                </div>
+              </div>
+              <div className="field">
+                <label>
+                  API key {settings.hasOpenAiKey && <span className="badge ok">Configured</span>}
+                </label>
+                <input
+                  type="password"
+                  value={openAiKey}
+                  onChange={(e) => setOpenAiKey(e.target.value)}
+                  placeholder={settings.hasOpenAiKey ? '••••••••••••••••' : ''}
+                />
+              </div>
+              <button className="btn" onClick={saveOpenAi}>
+                Save
+              </button>
+              {settings.hasOpenAiKey && (
+                <button className="btn secondary" onClick={clearOpenAiKey} style={{ marginLeft: 8 }}>
+                  Remove key
+                </button>
+              )}
+              {openAiMsg && <div className="success-text">{openAiMsg}</div>}
+            </>
+          )}
         </div>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Revisit the guided walkthrough to explore all of Artha's features with demo data.
-        </p>
-        <button
-          className="btn secondary"
-          onClick={() => window.dispatchEvent(new CustomEvent('artha:start-tour'))}
-        >
-          ✦ Take a tour
-        </button>
-      </div>
+      )}
+
+      {/* ── HELP ─────────────────────────────────────────────────────── */}
+      {activeTab === 'help' && (
+        <div className="card section">
+          <div className="section-header">
+            <h2>Product tour</h2>
+          </div>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Revisit the guided walkthrough to explore all of Artha's features with demo data.
+          </p>
+          <button
+            className="btn secondary"
+            onClick={() => window.dispatchEvent(new CustomEvent('artha:start-tour'))}
+          >
+            ✦ Take a tour
+          </button>
+        </div>
+      )}
     </div>
   )
 }

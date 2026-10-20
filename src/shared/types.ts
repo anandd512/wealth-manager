@@ -58,6 +58,9 @@ export interface Account {
   loan_start_date: string | null
   document_path: string | null
   document_original_name: string | null
+  purchase_price: number | null
+  purchase_date: string | null  // YYYY-MM-DD ISO string
+  ownership_pct: number | null
   last_updated: string
   notes: string | null
   created_at: string
@@ -113,6 +116,7 @@ export interface InsurancePolicy {
   policy_type: string | null
   insurer: string | null
   insured_name: string | null
+  additional_insured: string | null
   nominee_name: string | null
   vehicle_number: string | null
   sum_assured: number | null
@@ -139,6 +143,7 @@ export interface PolicyExtraction {
   policy_type: InsurancePolicyType | null
   insurer: string | null
   insured_name: string | null
+  additional_insured: string | null
   vehicle_number: string | null
   sum_assured: number | null
   premium_amount: number | null
@@ -273,12 +278,16 @@ export interface ReminderSettings {
 
 export type ExtractionProvider = 'anthropic' | 'openai'
 
-// A monthly "Nth weekday" rule, e.g. occurrence=1, weekday=6 is "the first Saturday
-// of every month". weekday follows Date#getDay (0 = Sunday .. 6 = Saturday).
+// A monthly schedule rule.
+// scheduleType 'weekday' (default when undefined): Nth weekday, e.g. occurrence=1, weekday=6
+//   is "the first Saturday of every month". weekday follows Date#getDay (0=Sunday..6=Saturday).
+// scheduleType 'day_of_month': a fixed day number (1-28) every month.
 export interface CheckInScheduleSettings {
   enabled: boolean
   occurrence: 1 | 2 | 3 | 4
   weekday: 0 | 1 | 2 | 3 | 4 | 5 | 6
+  scheduleType?: 'weekday' | 'day_of_month'
+  dayOfMonth?: number // 1-28, used when scheduleType === 'day_of_month'
 }
 
 export interface AppSettings {

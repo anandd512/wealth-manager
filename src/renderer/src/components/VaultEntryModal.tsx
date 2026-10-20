@@ -1,5 +1,5 @@
 import { api } from '../lib/api'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import type { VaultEntry, VaultEntryInput, VaultCategory } from '../../../shared/types'
 import { VAULT_CATEGORIES } from '../../../shared/types'
@@ -45,17 +45,18 @@ function generatePassword(length = 16, opts: GenOptions = { upper: true, lower: 
   return pw.join('')
 }
 
-function passwordStrength(pw: string): { score: number; label: string; color: string } {
-  if (!pw) return { score: 0, label: '', color: 'transparent' }
+const getStrength = (pw: string): { score: 0|1|2|3|4; label: string; color: string } => {
+  if (!pw) return { score: 0, label: '', color: '' }
   let score = 0
   if (pw.length >= 8) score++
   if (pw.length >= 12) score++
   if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++
   if (/[0-9]/.test(pw)) score++
   if (/[^A-Za-z0-9]/.test(pw)) score++
-  const labels = ['', 'Weak', 'Fair', 'Good', 'Strong', 'Very strong']
-  const colors = ['transparent', 'var(--red)', 'var(--amber)', 'var(--amber)', 'var(--green)', 'var(--green)']
-  return { score, label: labels[score] ?? 'Strong', color: colors[score] ?? 'var(--green)' }
+  score = Math.min(score, 4) as 0|1|2|3|4
+  const labels = ['', 'Weak', 'Fair', 'Good', 'Strong']
+  const colors = ['', 'var(--red)', '#e8b14f', 'var(--accent)', 'var(--green)']
+  return { score: score as 0|1|2|3|4, label: labels[score], color: colors[score] }
 }
 
 export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX.Element {
@@ -70,6 +71,12 @@ export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX
   const [genOpts, setGenOpts] = useState<GenOptions>({ upper: true, lower: true, numbers: true, symbols: true })
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
 
   const submit = async (): Promise<void> => {
     setError(null)
@@ -160,15 +167,13 @@ export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX
               </div>
             </div>
             {password && (() => {
-              const s = passwordStrength(password)
+              const s = getStrength(password)
               return (
-                <div style={{ marginTop: 6 }}>
-                  <div style={{ display: 'flex', gap: 3, marginBottom: 3 }}>
-                    {[1,2,3,4,5].map(i => (
-                      <div key={i} style={{ height: 3, flex: 1, borderRadius: 2, background: i <= s.score ? s.color : 'var(--border)' }} />
-                    ))}
-                  </div>
-                  <div style={{ fontSize: 11, color: s.color }}>{s.label}</div>
+                <div style={{ display: 'flex', gap: 3, alignItems: 'center', marginTop: 4 }}>
+                  {[1,2,3,4].map(i => (
+                    <div key={i} style={{ flex: 1, height: 3, borderRadius: 999, background: i <= s.score ? s.color : 'var(--border)', transition: 'background 200ms' }} />
+                  ))}
+                  <span style={{ fontSize: 10, color: s.color, marginLeft: 4, minWidth: 36 }}>{s.label}</span>
                 </div>
               )
             })()}

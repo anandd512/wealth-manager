@@ -1,5 +1,5 @@
 import { api } from '../lib/api'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { CreditCard, CreditCardInput } from '../../../shared/types'
 
 interface Props {
@@ -22,7 +22,6 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
   const [expiryYear, setExpiryYear] = useState(
     card?.expiry_year != null ? String(card.expiry_year) : ''
   )
-  const [cvv, setCvv] = useState(card?.cvv ?? '')
   const [creditLimit, setCreditLimit] = useState(
     card?.credit_limit != null ? String(card.credit_limit) : ''
   )
@@ -33,6 +32,12 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
   const [notes, setNotes] = useState(card?.notes ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
 
   const submit = async (): Promise<void> => {
     setError(null)
@@ -52,7 +57,7 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
       name_on_card: nameOnCard.trim() || null,
       expiry_month: expiryMonth ? Number(expiryMonth) : null,
       expiry_year: expiryYear ? Number(expiryYear) : null,
-      cvv: cvv.trim() || null,
+      cvv: null,
       credit_limit: creditLimit ? Number(creditLimit) : null,
       outstanding_balance: outstandingBalance ? Number(outstandingBalance) : null,
       statement_day: statementDay ? Number(statementDay) : null,
@@ -74,12 +79,6 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>{card ? 'Edit card' : 'Add credit card'}</h2>
-        <div className="help-text" style={{ marginBottom: 14 }}>
-          Storing your CVV means anyone who unlocks this app with your master password can see it.
-          It's protected the same way as everything else here, but consider leaving it blank if
-          you'd rather not keep it on file.
-        </div>
-
         <div className="form-row">
           <div className="field">
             <label>Label</label>
@@ -127,10 +126,6 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
         </div>
 
         <div className="form-row">
-          <div className="field">
-            <label>CVV</label>
-            <input value={cvv} onChange={(e) => setCvv(e.target.value)} />
-          </div>
           <div className="field">
             <label>Credit limit (₹, optional)</label>
             <input value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} />

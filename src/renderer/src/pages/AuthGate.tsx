@@ -44,6 +44,12 @@ export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props)
     onUnlocked()
   }
 
+  useEffect(() => {
+    if (helloReady && !helloBusy) {
+      unlockWithHello()
+    }
+  }, [helloReady])
+
   const [mode, setMode] = useState<Mode>('password')
   const [importPath, setImportPath] = useState<string | null>(null)
   const [importSummary, setImportSummary] = useState<{
@@ -187,6 +193,9 @@ export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props)
             If you have a <code>.wmbackup</code> file from another device or an earlier export, restore it here. You'll use the password that backup was created with.
           </p>
 
+          <div style={{ border: '1px solid var(--red)', borderRadius: 'var(--radius)', background: 'rgba(239,91,91,0.08)', padding: '10px 12px', color: 'var(--red)', fontSize: 12.5, lineHeight: 1.55, marginBottom: 10 }}>
+            <strong>Warning:</strong> This will permanently delete all your data. This cannot be undone.
+          </div>
           <button
             className="btn danger"
             style={{ width: '100%' }}
@@ -194,9 +203,6 @@ export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props)
           >
             <RotateCcw size={14} /> Reset all data &amp; start fresh
           </button>
-          <p className="help-text" style={{ marginTop: 8, textAlign: 'center' }}>
-            Permanently deletes all local data so you can set a new master password. This cannot be undone.
-          </p>
 
           <button
             type="button"

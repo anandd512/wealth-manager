@@ -19,6 +19,10 @@ const EXTRACTION_PROPERTIES = {
   },
   insurer: { type: ['string', 'null'], description: 'Name of the insurance company' },
   insured_name: { type: ['string', 'null'], description: 'Name of the primary insured person' },
+  additional_insured: {
+    type: ['string', 'null'],
+    description: 'Comma-separated names of additional insured members (spouse, children, etc.) beyond the primary insured, or null if only one person is insured'
+  },
   vehicle_number: {
     type: ['string', 'null'],
     description: 'Registration/license plate number, only for vehicle policies'

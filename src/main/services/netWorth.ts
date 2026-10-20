@@ -4,16 +4,23 @@ import type { NetWorthSnapshot, Account } from '../../shared/types'
 
 const todayStr = todayLocalDateString
 
+type AccountTotalsRow = Pick<Account, 'is_liability' | 'current_value'> & { ownership_pct: number | null }
+
+function effectiveValue(a: AccountTotalsRow): number {
+  if (a.ownership_pct != null && a.ownership_pct < 100) {
+    return a.current_value * a.ownership_pct / 100
+  }
+  return a.current_value
+}
+
 export function computeTotals(): { totalAssets: number; totalLiabilities: number; netWorth: number } {
-  const accounts = getDb().prepare('SELECT is_liability, current_value FROM accounts').all() as Pick<
-    Account,
-    'is_liability' | 'current_value'
-  >[]
+  const accounts = getDb().prepare('SELECT is_liability, current_value, ownership_pct FROM accounts').all() as AccountTotalsRow[]
   let totalAssets = 0
   let totalLiabilities = 0
   for (const a of accounts) {
-    if (a.is_liability) totalLiabilities += a.current_value
-    else totalAssets += a.current_value
+    const v = effectiveValue(a)
+    if (a.is_liability) totalLiabilities += v
+    else totalAssets += v
   }
   return { totalAssets, totalLiabilities, netWorth: totalAssets - totalLiabilities }
 }
@@ -48,9 +55,9 @@ export function getBreakdownByCategory(): { category: string; value: number }[] 
   // computed expression.
   const rows = getDb()
     .prepare(
-      `SELECT category, subtype, current_value FROM accounts WHERE is_liability = 0`
+      `SELECT category, subtype, current_value, ownership_pct FROM accounts WHERE is_liability = 0`
     )
-    .all() as Pick<Account, 'category' | 'subtype' | 'current_value'>[]
+    .all() as (Pick<Account, 'category' | 'subtype' | 'current_value'> & { ownership_pct: number | null })[]
 
   const totals = new Map<string, number>()
   for (const r of rows) {
@@ -58,7 +65,10 @@ export function getBreakdownByCategory(): { category: string; value: number }[] 
       r.category === 'bank' && (r.subtype === 'fixed_deposit' || r.subtype === 'recurring_deposit')
         ? 'fixed_deposits'
         : r.category
-    totals.set(key, (totals.get(key) ?? 0) + r.current_value)
+    const v = (r.ownership_pct != null && r.ownership_pct < 100)
+      ? r.current_value * r.ownership_pct / 100
+      : r.current_value
+    totals.set(key, (totals.get(key) ?? 0) + v)
   }
 
   return Array.from(totals.entries())

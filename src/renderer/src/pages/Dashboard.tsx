@@ -48,6 +48,7 @@ export default function Dashboard(): JSX.Element {
   const [upcoming, setUpcoming] = useState<UpcomingItem[]>([])
   const [insurancePolicies, setInsurancePolicies] = useState<InsurancePolicy[]>([])
   const [chartRange, setChartRange] = useState<'1M' | '3M' | '6M' | '1Y' | 'All'>('All')
+  const [scrolled, setScrolled] = useState(false)
 
   const load = async (): Promise<void> => {
     const [t, h, b, u, ins] = await Promise.all([
@@ -68,6 +69,14 @@ export default function Dashboard(): JSX.Element {
     load()
   }, [])
 
+  useEffect(() => {
+    const el = document.querySelector('.main') as HTMLElement | null
+    if (!el) return
+    const handler = (): void => { setScrolled(el.scrollTop > 50) }
+    el.addEventListener('scroll', handler, { passive: true })
+    return () => { el.removeEventListener('scroll', handler) }
+  }, [])
+
   const resolveUpcoming = async (item: UpcomingItem, status: 'paid' | 'dismissed'): Promise<void> => {
     setUpcoming((prev) => prev.filter((i) => i !== item))
     await api().dashboard.dismiss(item.itemType, item.itemId, item.dueDate, status)
@@ -85,6 +94,8 @@ export default function Dashboard(): JSX.Element {
 
   const delta = computeDelta(history, chartRange)
   const isEmpty = totals.totalAssets === 0 && totals.totalLiabilities === 0
+  const noChartData = totals.netWorth === 0 && history.length === 0
+  const lastUpdated = history.length > 0 ? history[history.length - 1].snapshot_date : null
 
   // Financial health score
   const debtRatio = totals.totalAssets > 0 ? totals.totalLiabilities / totals.totalAssets : 0
@@ -167,11 +178,22 @@ export default function Dashboard(): JSX.Element {
                   {delta.pct.toFixed(1)}%) vs. {delta.label}
                 </div>
               )}
+              {!delta && chartRange !== 'All' && (
+                <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>
+                  Not enough data for this period
+                </div>
+              )}
               {totals.totalAssets > 0 && (
                 <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: healthColor, flexShrink: 0 }} />
                   <span style={{ color: healthColor, fontWeight: 600 }}>{healthLabel}</span>
-                  <span className="muted">· {healthScore}/3 health indicators</span>
+                  <span
+                    className="muted"
+                    title={`Financial health check (${healthScore}/3 passed):\n✓ Debt-to-asset ratio below 40%\n✓ At least one active insurance policy\n✓ Net worth is positive`}
+                    style={{ cursor: 'help', borderBottom: '1px dotted var(--text-faint)' }}
+                  >
+                    · {healthScore}/3 health indicators
+                  </span>
                 </div>
               )}
             </div>
@@ -187,6 +209,27 @@ export default function Dashboard(): JSX.Element {
               </div>
               <div className="value negative">{formatCurrency(totals.totalLiabilities)}</div>
             </div>
+          </div>
+
+          {lastUpdated && (
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: -10, marginBottom: 16 }}>
+              Updated {formatDate(lastUpdated)}
+            </div>
+          )}
+
+          <div
+            style={{
+              textAlign: 'center',
+              color: 'var(--text-faint)',
+              fontSize: 11,
+              marginTop: -8,
+              marginBottom: 12,
+              opacity: scrolled ? 0 : 0.6,
+              transition: 'opacity 300ms',
+              pointerEvents: 'none'
+            }}
+          >
+            &#9662; scroll for more
           </div>
 
           {insurancePolicies.length > 0 && (() => {
@@ -217,9 +260,21 @@ export default function Dashboard(): JSX.Element {
                     {soonExpiring.length} polic{soonExpiring.length === 1 ? 'y' : 'ies'} renewing within 90 days — <Link to="/insurance" style={{ color: 'var(--amber)', textDecoration: 'underline' }}>see your insurance →</Link>
                   </div>
                 )}
+                <div>
+                  <Link to="/insurance" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', marginTop: 6, display: 'inline-block' }}>→ View all</Link>
+                </div>
               </div>
             )
           })()}
+
+          {noChartData && (
+            <div className="card section">
+              <div className="empty-state">
+                <TrendingUp size={32} />
+                <p style={{ margin: '8px 0 0', fontSize: 13 }}>Add your accounts to see your net worth trend.</p>
+              </div>
+            </div>
+          )}
 
           <div className="grid cols-2 section">
             <div className="card">
@@ -282,8 +337,13 @@ export default function Dashboard(): JSX.Element {
                       ]}
                     />
                     <Legend
-                      formatter={(value) => BREAKDOWN_LABELS[value as string] ?? value}
-                      wrapperStyle={{ fontSize: 12, color: '#8b96ad' }}
+                      layout="horizontal"
+                      verticalAlign="bottom"
+                      formatter={(value) => {
+                        const label = BREAKDOWN_LABELS[value as string] ?? (value as string)
+                        return label.length > 12 ? label.slice(0, 12) + '…' : label
+                      }}
+                      wrapperStyle={{ fontSize: 12, color: '#8b96ad', paddingTop: 8 }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -368,22 +428,32 @@ export default function Dashboard(): JSX.Element {
                           </span>
                         </td>
                         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          {(item.itemType === 'credit_card' || item.itemType === 'check_in') && (
+                          {item.itemType === 'credit_card' && (
                             <button
-                              className="icon-btn"
-                              style={{ marginRight: 6 }}
+                              className="btn"
+                              style={{ background: 'var(--green)', fontSize: 11, padding: '3px 10px', marginRight: 6 }}
                               title={item.actionLabel}
                               onClick={() => resolveUpcoming(item, 'paid')}
                             >
-                              <Check size={15} />
+                              <Check size={13} /> Paid
                             </button>
                           )}
+                          {item.itemType === 'check_in' && (
+                            <a
+                              href="#/accounts"
+                              className="btn"
+                              style={{ fontSize: 11, padding: '3px 10px', marginRight: 6, textDecoration: 'none' }}
+                              onClick={() => resolveUpcoming(item, 'dismissed')}
+                            >
+                              Check in →
+                            </a>
+                          )}
                           <button
-                            className="icon-btn"
+                            style={{ background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: 11 }}
                             title={item.itemType === 'credit_card' ? 'Ignore' : 'Dismiss'}
                             onClick={() => resolveUpcoming(item, 'dismissed')}
                           >
-                            <X size={15} />
+                            Dismiss
                           </button>
                         </td>
                       </tr>

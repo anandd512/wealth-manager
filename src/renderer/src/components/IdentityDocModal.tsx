@@ -1,5 +1,5 @@
 import { api } from '../lib/api'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type {
   IdentityDocExtraction,
   IdentityDocType,
@@ -11,6 +11,7 @@ import { DOC_TYPES, DOC_TYPE_EXPIRY_LABELS } from '../../../shared/identityDocTy
 interface Props {
   doc: IdentityDocument | null
   prefill?: { extraction: IdentityDocExtraction; storedPath: string; originalName: string } | null
+  initialDocType?: IdentityDocType
   onClose: () => void
   onSaved: () => void
 }
@@ -21,11 +22,12 @@ function toDateInput(v: string | null | undefined): string {
   return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
 }
 
-export default function IdentityDocModal({ doc, prefill, onClose, onSaved }: Props): JSX.Element {
+export default function IdentityDocModal({ doc, prefill, initialDocType, onClose, onSaved }: Props): JSX.Element {
   const seed = prefill?.extraction
   // Extraction (seed) wins over the saved record when both are present — that only
   // happens on re-sync, where the point is to bring in freshly extracted values.
-  const [docType, setDocType] = useState<IdentityDocType>(seed?.doc_type ?? doc?.doc_type ?? 'aadhaar')
+  // initialDocType is used when opening the modal from a quick-add type pill.
+  const [docType, setDocType] = useState<IdentityDocType>(seed?.doc_type ?? doc?.doc_type ?? initialDocType ?? 'aadhaar')
   const [label, setLabel] = useState(seed?.label ?? doc?.label ?? '')
   const [idNumber, setIdNumber] = useState(seed?.id_number ?? doc?.id_number ?? '')
   const [fullName, setFullName] = useState(seed?.full_name ?? doc?.full_name ?? '')
@@ -51,6 +53,12 @@ export default function IdentityDocModal({ doc, prefill, onClose, onSaved }: Pro
   const showVehicleClass = docType === 'driving_license' || docType === 'rc'
   const showRcFields = docType === 'rc'
   const showVoterFields = docType === 'voter_id'
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
 
   const submit = async (): Promise<void> => {
     setError(null)

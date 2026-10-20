@@ -1,5 +1,5 @@
 import { api } from '../lib/api'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { InsurancePolicy, InsurancePolicyInput, PolicyExtraction } from '../../../shared/types'
 import { POLICY_TYPES, VEHICLE_POLICY_TYPES } from '../../../shared/insuranceTypes'
 
@@ -43,6 +43,7 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
   const [startDate, setStartDate] = useState(toDateInput(seed?.start_date ?? policy?.start_date))
   const [expiryDate, setExpiryDate] = useState(toDateInput(seed?.expiry_date ?? policy?.expiry_date))
   const [renewalDate, setRenewalDate] = useState(toDateInput(seed?.renewal_date ?? policy?.renewal_date))
+  const [additionalInsured, setAdditionalInsured] = useState(seed?.additional_insured ?? policy?.additional_insured ?? '')
   const [nomineeName, setNomineeName] = useState(policy?.nominee_name ?? '')
   const [riders, setRiders] = useState(policy?.riders ?? '')
   const [notes, setNotes] = useState(policy?.notes ?? '')
@@ -50,6 +51,12 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
   const [busy, setBusy] = useState(false)
 
   const isVehicle = VEHICLE_POLICY_TYPES.includes(policyType as never)
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
 
   const submit = async (): Promise<void> => {
     setError(null)
@@ -63,6 +70,7 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
       policy_type: resolvedType,
       insurer: insurer.trim() || null,
       insured_name: insuredName.trim() || null,
+      additional_insured: additionalInsured.trim() || null,
       vehicle_number: isVehicle && vehicleNumber.trim() ? vehicleNumber.trim().toUpperCase() : null,
       sum_assured: sumAssured ? Number(sumAssured) : null,
       premium_amount: premiumAmount ? Number(premiumAmount) : null,
@@ -139,6 +147,16 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
             <label>Insured person</label>
             <input value={insuredName} onChange={(e) => setInsuredName(e.target.value)} />
           </div>
+        </div>
+
+        <div className="field">
+          <label>Additional insured members (optional)</label>
+          <input
+            value={additionalInsured}
+            onChange={(e) => setAdditionalInsured(e.target.value)}
+            placeholder="e.g. Gayathri Anand Deshpande, Dhruv Anand Deshpande"
+          />
+          <div className="help-text">Other people covered by this policy — spouse, children, etc. Comma-separated.</div>
         </div>
 
         <div className="form-row">

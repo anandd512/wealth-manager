@@ -189,22 +189,26 @@ export const DEMO_VAULT: VaultEntry[] = [
   {
     id: 1, service_name: 'Gmail', category: 'Communication & Social',
     url: 'mail.google.com', username: 'dev.sharma@gmail.com',
-    password: 'Gmail@Dev2024!', notes: null, created_at: '2026-01-01T00:00:00Z',
+    password: 'Gmail@Dev2024!', notes: null, password_changed_at: '2026-06-01T00:00:00Z',
+    created_at: '2026-01-01T00:00:00Z',
   },
   {
     id: 2, service_name: 'HDFC NetBanking', category: 'Finance & Banking',
     url: 'netbanking.hdfcbank.com', username: '30985678****',
-    password: 'HDFC@Bank#99', notes: null, created_at: '2026-01-01T00:00:00Z',
+    password: 'HDFC@Bank#99', notes: null, password_changed_at: '2026-08-15T00:00:00Z',
+    created_at: '2026-01-01T00:00:00Z',
   },
   {
     id: 3, service_name: 'Zerodha', category: 'Finance & Banking',
     url: 'kite.zerodha.com', username: 'DS1234',
-    password: 'Zr0dh@Secur3!', notes: null, created_at: '2026-01-01T00:00:00Z',
+    password: 'Zr0dh@Secur3!', notes: null, password_changed_at: '2026-09-01T00:00:00Z',
+    created_at: '2026-01-01T00:00:00Z',
   },
   {
     id: 4, service_name: 'Amazon', category: 'Shopping & E-commerce',
     url: 'amazon.in', username: 'dev.sharma@gmail.com',
-    password: 'Amazon@Shop24', notes: null, created_at: '2026-01-01T00:00:00Z',
+    password: 'Amazon@Shop24', notes: null, password_changed_at: '2026-10-01T00:00:00Z',
+    created_at: '2026-01-01T00:00:00Z',
   },
 ]
 

@@ -22,10 +22,10 @@ export function createPolicy(input: InsurancePolicyInput): InsurancePolicy {
   const info = getDb()
     .prepare(
       `INSERT INTO insurance_policies
-        (policy_number, policy_type, insurer, insured_name, nominee_name, vehicle_number, sum_assured,
+        (policy_number, policy_type, insurer, insured_name, additional_insured, nominee_name, vehicle_number, sum_assured,
          premium_amount, premium_frequency, start_date, expiry_date, renewal_date, riders,
          document_path, document_original_name, notes, created_at)
-       VALUES (@policy_number, @policy_type, @insurer, @insured_name, @nominee_name, @vehicle_number, @sum_assured,
+       VALUES (@policy_number, @policy_type, @insurer, @insured_name, @additional_insured, @nominee_name, @vehicle_number, @sum_assured,
                @premium_amount, @premium_frequency, @start_date, @expiry_date, @renewal_date, @riders,
                @document_path, @document_original_name, @notes, @created_at)`
     )
@@ -41,7 +41,7 @@ export function updatePolicy(id: number, input: Partial<InsurancePolicyInput>): 
     .prepare(
       `UPDATE insurance_policies SET
         policy_number=@policy_number, policy_type=@policy_type, insurer=@insurer,
-        insured_name=@insured_name, nominee_name=@nominee_name, vehicle_number=@vehicle_number,
+        insured_name=@insured_name, additional_insured=@additional_insured, nominee_name=@nominee_name, vehicle_number=@vehicle_number,
         sum_assured=@sum_assured, premium_amount=@premium_amount, premium_frequency=@premium_frequency,
         start_date=@start_date, expiry_date=@expiry_date, renewal_date=@renewal_date, riders=@riders,
         document_path=@document_path, document_original_name=@document_original_name, notes=@notes

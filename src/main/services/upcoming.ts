@@ -47,7 +47,15 @@ export function getCheckInReminderItem(
 ): UpcomingItem | null {
   if (!schedule.enabled) return null
   const now = new Date()
-  const thisMonthDate = nthWeekdayOfMonth(now.getFullYear(), now.getMonth(), schedule.weekday, schedule.occurrence)
+
+  const resolveDate = (year: number, month: number): Date => {
+    if ((schedule.scheduleType ?? 'weekday') === 'day_of_month' && schedule.dayOfMonth) {
+      return new Date(year, month, schedule.dayOfMonth)
+    }
+    return nthWeekdayOfMonth(year, month, schedule.weekday, schedule.occurrence)
+  }
+
+  const thisMonthDate = resolveDate(now.getFullYear(), now.getMonth())
   const thisMonthKey = toLocalDateString(thisMonthDate)
 
   let target = thisMonthDate
@@ -55,12 +63,17 @@ export function getCheckInReminderItem(
     const nextMonthIndex = now.getMonth() + 1
     const year = now.getFullYear() + Math.floor(nextMonthIndex / 12)
     const month = ((nextMonthIndex % 12) + 12) % 12
-    target = nthWeekdayOfMonth(year, month, schedule.weekday, schedule.occurrence)
+    target = resolveDate(year, month)
   }
 
   const dueDate = toLocalDateString(target)
   const daysLeft = daysUntil(dueDate)
   if (daysLeft === null || daysLeft > windowDays) return null
+
+  // Don't surface next month's check-in before the 1st of that month —
+  // prevents "due in November" appearing while it's still October.
+  const targetFirstOfMonth = new Date(target.getFullYear(), target.getMonth(), 1)
+  if (now < targetFirstOfMonth) return null
 
   return {
     itemType: 'check_in',

@@ -79,6 +79,15 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
   })
   const [documentPath, setDocumentPath] = useState(account?.document_path ?? null)
   const [documentOriginalName, setDocumentOriginalName] = useState(account?.document_original_name ?? null)
+  const [purchasePrice, setPurchasePrice] = useState(
+    account?.purchase_price != null ? String(account.purchase_price) : ''
+  )
+  const [purchaseDate, setPurchaseDate] = useState(() => {
+    if (!account?.purchase_date) return ''
+    const d = new Date(account.purchase_date)
+    return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
+  })
+  const [ownershipPct, setOwnershipPct] = useState(account?.ownership_pct != null ? String(account.ownership_pct) : '100')
   const [scheduleExtracting, setScheduleExtracting] = useState(false)
   const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [scheduleSummary, setScheduleSummary] = useState<string | null>(null)
@@ -90,6 +99,9 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
   const showBankExtras = category === 'bank'
   const isLoan = category === 'loan'
   const isEditing = Boolean(account)
+  const isVehicle = subtype === 'vehicle'
+  const showPurchaseFields = isVehicle || subtype === 'home' || subtype === 'land' || category === 'real_estate'
+  const showOwnershipField = category === 'real_estate'
   // Loans keep an editable value here — it's the one entry point for the sync-from-schedule
   // review flow. For every other account, current value / invested amount / quantity are only
   // ever changed via Check-in once the account exists, so history stays consistent.
@@ -167,6 +179,12 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
   const submit = async (): Promise<void> => {
     setError(null)
     if (!name.trim()) {
@@ -210,6 +228,9 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
       loan_start_date: isLoan && loanStartDate ? new Date(loanStartDate).toISOString() : null,
       document_path: isLoan ? documentPath : null,
       document_original_name: isLoan ? documentOriginalName : null,
+      purchase_price: showPurchaseFields && purchasePrice ? Number(purchasePrice) : null,
+      purchase_date: showPurchaseFields && purchaseDate ? new Date(purchaseDate).toISOString() : null,
+      ownership_pct: showOwnershipField && ownershipPct ? Number(ownershipPct) : null,
       notes: notes.trim() || null
     }
     setBusy(true)
@@ -223,6 +244,18 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
     } finally {
       setBusy(false)
     }
+  }
+
+  function irdaiDepreciatedValue(purchasePriceVal: number, purchaseDateStr: string): number {
+    const months = Math.floor((Date.now() - new Date(purchaseDateStr).getTime()) / (1000 * 60 * 60 * 24 * 30.44))
+    if (months < 6) return purchasePriceVal * 0.95
+    if (months < 12) return purchasePriceVal * 0.85
+    if (months < 24) return purchasePriceVal * 0.80
+    if (months < 36) return purchasePriceVal * 0.70
+    if (months < 48) return purchasePriceVal * 0.60
+    if (months < 60) return purchasePriceVal * 0.50
+    const extraYears = Math.floor((months - 60) / 12)
+    return Math.max(purchasePriceVal * (0.50 - extraYears * 0.10), purchasePriceVal * 0.20)
   }
 
   return (
@@ -271,7 +304,7 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
             <input value={institution} onChange={(e) => setInstitution(e.target.value)} placeholder="e.g. HDFC Bank" />
           </div>
           <div className="field">
-            <label>{isLoan ? 'Outstanding balance (₹)' : 'Current value (₹)'}</label>
+            <label>{isLoan ? 'Outstanding balance (₹)' : category === 'real_estate' ? 'Current market value of the unit (₹)' : 'Current value (₹)'}</label>
             {hideValueFieldsOnEdit ? (
               <div className="help-text">
                 {formatCurrency(Number(currentValue) || 0)} — use the Check-in option from the ⋮
@@ -523,6 +556,87 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
                 </button>
               </>
             )}
+          </div>
+        )}
+
+        {showPurchaseFields && (
+          <div className="form-row">
+            <div className="field">
+              <label>Purchase price (₹)</label>
+              <input
+                type="number"
+                value={purchasePrice}
+                onChange={(e) => setPurchasePrice(e.target.value)}
+                placeholder="Original purchase price"
+              />
+            </div>
+            <div className="field">
+              <label>Purchase date</label>
+              <input
+                type="date"
+                value={purchaseDate}
+                onChange={(e) => setPurchaseDate(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+
+        {showOwnershipField && (
+          <div className="form-row">
+            <div className="field">
+              <label>Your ownership (%)</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={ownershipPct}
+                onChange={(e) => setOwnershipPct(e.target.value)}
+                placeholder="100"
+              />
+              <div className="help-text">
+                For jointly owned property, enter your share — e.g. 50 for half. Artha uses this to count only your portion toward net worth.
+              </div>
+            </div>
+            <div className="field">
+              {Number(ownershipPct) < 100 && currentValue && (
+                <div style={{ background: 'rgba(91,141,239,0.07)', border: '1px solid rgba(91,141,239,0.25)', borderRadius: 'var(--radius)', padding: '10px 14px' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 4 }}>Your share counted in net worth</div>
+                  <div style={{ fontSize: 16, fontWeight: 700 }}>
+                    {formatCurrency(Math.round(Number(currentValue) * Number(ownershipPct) / 100))}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>
+                    Applied automatically — enter the full property value above.
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {isVehicle && purchasePrice && purchaseDate && (
+          <div style={{ background: 'rgba(91,141,239,0.07)', border: '1px solid rgba(91,141,239,0.25)', borderRadius: 'var(--radius)', padding: '10px 14px', marginTop: 6 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', marginBottom: 4 }}>
+              IRDAI depreciated value (estimated)
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 8, lineHeight: 1.5 }}>
+              Based on IRDAI standard depreciation slabs applied to your purchase price of {formatCurrency(Number(purchasePrice))}, the Insured Declared Value (IDV) of this vehicle today is approximately:
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>
+              {formatCurrency(irdaiDepreciatedValue(Number(purchasePrice), purchaseDate))}
+            </div>
+            {!hideValueFieldsOnEdit && (
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ fontSize: 12, padding: '4px 12px' }}
+                onClick={() => setCurrentValue(String(Math.round(irdaiDepreciatedValue(Number(purchasePrice), purchaseDate))))}
+              >
+                Use as current value
+              </button>
+            )}
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 8 }}>
+              You can override the current value with your own estimate — this is just a reference based on IRDAI guidelines.
+            </div>
           </div>
         )}
 

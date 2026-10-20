@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { MemoryRouter, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
+import { NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Wallet,
@@ -89,8 +89,8 @@ const STEPS: TourStep[] = [
   {
     key: 'ai', nav: 'AI Extraction', route: '/accounts', icon: Bot,
     title: 'AI does the heavy lifting',
-    desc: 'Got a loan statement or insurance PDF? Upload it and AI reads the document and fills every field instantly — lender, rate, tenure, outstanding balance. No typing required.',
-    tip: 'Your documents are encrypted on-device and never stored in the cloud.',
+    desc: 'Got a loan statement or insurance PDF? Upload it and AI reads the document and fills every field instantly — lender, rate, tenure, outstanding balance. No typing required. Add your API key in Settings → AI & Extraction to enable this.',
+    tip: 'Your documents are processed locally and never stored in the cloud.',
     demoKey: 'ai',
   },
   {
@@ -103,7 +103,7 @@ const STEPS: TourStep[] = [
   {
     key: 'insurance', nav: 'Insurance', route: '/insurance', icon: ShieldCheck,
     title: 'Never miss a renewal',
-    desc: 'One place for all your policies — life, health, vehicle. Artha tells you exactly when each one is up for renewal so nothing ever lapses. Upload the PDF and AI fills the details for you.',
+    desc: 'One place for all your policies — life, health, vehicle. Artha tells you exactly when each one is up for renewal so nothing ever lapses. Upload the PDF and AI fills the details automatically. Requires an API key in Settings → AI & Extraction.',
     tip: 'Upload your policy PDF and AI reads your cover amount, premium, and renewal date automatically.',
     demoKey: 'ai_insurance',
   },
@@ -134,26 +134,117 @@ const STEPS: TourStep[] = [
   },
 ]
 
+// ─── Shared button-click coach mark ──────────────────────────────────────────
+
+function DemoButtonClick({ label, subText, buttonText }: { label: string; subText: string; buttonText?: string }): JSX.Element {
+  const [step, setStep] = useState(0)
+  const [btnRect, setBtnRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  // step 0: tooltip only; 1: cursor at tooltip; 2: cursor moves to button; 3: click fires
+
+  useEffect(() => {
+    const measureBtn = (): void => {
+      const allBtns = Array.from(document.querySelectorAll('button'))
+      // Find by buttonText prop first, otherwise fall back to the last .btn in the toolbar
+      const target = buttonText
+        ? allBtns.find(b => b.textContent?.includes(buttonText))
+        : allBtns.filter(b => b.classList.contains('btn') && !b.classList.contains('secondary')).slice(-1)[0]
+      if (target) {
+        const r = target.getBoundingClientRect()
+        setBtnRect({ x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height })
+      }
+    }
+    const measure = setTimeout(measureBtn, 50)
+    const t1 = setTimeout(() => setStep(1), 300)
+    const t2 = setTimeout(() => setStep(2), 900)
+    const t3 = setTimeout(() => setStep(3), 1300)
+    const t4 = setTimeout(() => setStep(2), 1700)
+    return () => { clearTimeout(measure); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
+  }, [buttonText])
+
+  const btnX = btnRect?.x ?? (window.innerWidth - 90)
+  const btnY = btnRect?.y ?? 28
+  const startX = btnX - 70
+  const startY = btnY + 90
+
+  const cursorX = step <= 1 ? startX : btnX
+  const cursorY = step <= 1 ? startY : btnY
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'none' }}>
+      {/* Tooltip below the real button */}
+      <div style={{ position: 'absolute', top: (btnRect?.y ?? 28) + (btnRect?.h ?? 12) / 2 + 8, right: 16, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', pointerEvents: 'none' }}>
+        <div style={{ width: 0, height: 0, borderLeft: '8px solid transparent', borderRight: '8px solid transparent', borderBottom: '8px solid var(--accent)', marginRight: 20 }} />
+        <div style={{ background: 'var(--accent)', color: '#fff', borderRadius: 10, padding: '10px 14px', fontSize: 13, fontWeight: 500, lineHeight: 1.5, maxWidth: 240, boxShadow: '0 8px 24px rgba(91,141,239,0.4)' }}>
+          {label}
+          <div style={{ fontSize: 11, opacity: 0.85, marginTop: 3 }}>{subText}</div>
+        </div>
+      </div>
+      {/* Highlight ring around the real button */}
+      {btnRect && (
+        <div style={{
+          position: 'fixed',
+          left: btnRect.x - btnRect.w / 2 - 4,
+          top: btnRect.y - btnRect.h / 2 - 4,
+          width: btnRect.w + 8,
+          height: btnRect.h + 8,
+          borderRadius: 8,
+          border: '2px solid rgba(91,141,239,0.85)',
+          background: 'rgba(91,141,239,0.1)',
+          pointerEvents: 'none',
+          zIndex: 201,
+          boxShadow: '0 0 0 3px rgba(91,141,239,0.15)',
+        }} />
+      )}
+      {step > 0 && (
+        <>
+          <div style={{
+            position: 'fixed', left: cursorX, top: cursorY,
+            width: 16, height: 16, borderRadius: '50%',
+            background: 'rgba(91,141,239,0.9)', border: '2.5px solid #fff',
+            transform: 'translate(-50%,-50%)', pointerEvents: 'none', zIndex: 202,
+            boxShadow: '0 2px 10px rgba(91,141,239,0.55)',
+            transition: 'left 600ms cubic-bezier(0.4,0,0.2,1), top 600ms cubic-bezier(0.4,0,0.2,1)',
+          }} />
+          {step === 3 && (
+            <div style={{
+              position: 'fixed', left: btnX, top: btnY,
+              width: 44, height: 44, borderRadius: '50%',
+              border: '2px solid rgba(91,141,239,0.65)',
+              transform: 'translate(-50%,-50%)', pointerEvents: 'none', zIndex: 200,
+              animation: 'wt-click-ripple 400ms ease-out forwards',
+            }} />
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ─── Demo modal: Manual account entry ────────────────────────────────────────
 
-const ACC_DEMO = [
-  { label: 'Category',            value: 'Assets — Savings' },
-  { label: 'Account name',        value: 'SBI Savings Account' },
-  { label: 'Institution',         value: 'State Bank of India' },
-  { label: 'Account number',      value: '43218765****' },
-  { label: 'Current balance (₹)', value: '1,75,000' },
+// Only the typed text fields — selects (Category, Type) are shown as pre-filled statics
+const ACC_DEMO_TEXT = [
+  { label: 'Name',              value: 'SBI Savings Account' },
+  { label: 'Institution',       value: 'State Bank of India' },
+  { label: 'Current value (₹)', value: '1,75,000' },
 ]
 
 function DemoAccountModal({ onDone }: { onDone: () => void }): JSX.Element {
+  const [formReady, setFormReady] = useState(false)
   const [phase, setPhase] = useState<'idle' | 'typing' | 'done'>('idle')
   const [fi, setFi] = useState(0)
-  const [typed, setTyped] = useState(ACC_DEMO.map(() => ''))
+  const [typed, setTyped] = useState(ACC_DEMO_TEXT.map(() => ''))
 
-  // Start typing after mount
   useEffect(() => {
-    const t = setTimeout(() => setPhase('typing'), 500)
+    const t = setTimeout(() => setFormReady(true), 1800)
     return () => clearTimeout(t)
   }, [])
+
+  useEffect(() => {
+    if (!formReady) return
+    const t = setTimeout(() => setPhase('typing'), 500)
+    return () => clearTimeout(t)
+  }, [formReady])
 
   useEffect(() => {
     if (phase !== 'typing') return
@@ -164,14 +255,14 @@ function DemoAccountModal({ onDone }: { onDone: () => void }): JSX.Element {
       charIdx++
       setTyped((prev) => {
         const next = [...prev]
-        next[fieldIdx] = ACC_DEMO[fieldIdx].value.slice(0, charIdx)
+        next[fieldIdx] = ACC_DEMO_TEXT[fieldIdx].value.slice(0, charIdx)
         return next
       })
-      if (charIdx < ACC_DEMO[fieldIdx].value.length) {
+      if (charIdx < ACC_DEMO_TEXT[fieldIdx].value.length) {
         setTimeout(tick, 38)
       } else {
         const nextFi = fieldIdx + 1
-        if (nextFi < ACC_DEMO.length) {
+        if (nextFi < ACC_DEMO_TEXT.length) {
           setTimeout(() => {
             setFi(nextFi)
             fieldIdx = nextFi
@@ -186,37 +277,79 @@ function DemoAccountModal({ onDone }: { onDone: () => void }): JSX.Element {
     setTimeout(tick, 120)
   }, [phase])
 
+  useEffect(() => {
+    if (phase !== 'done') return
+    const t = setTimeout(onDone, 1500)
+    return () => clearTimeout(t)
+  }, [phase])
+
+  const activeStyle = (idx: number) => ({
+    borderColor: fi === idx && phase === 'typing' ? 'var(--accent)' : undefined,
+    boxShadow: fi === idx && phase === 'typing' ? '0 0 0 3px var(--accent-soft)' : undefined,
+  })
+
+  if (!formReady) {
+    return <DemoButtonClick label='Click "Add account" to start tracking' subText="Banks, investments, loans, FDs — all in one place." buttonText="Add account" />
+  }
+
   return (
     <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
       <div className="modal">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h2 style={{ margin: 0 }}>Add Account</h2>
+          <h2 style={{ margin: 0 }}>Add account</h2>
           {phase === 'done' && <span className="badge ok"><Check size={11} /> Saved!</span>}
         </div>
-        <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--text-faint)' }}>
-          Watch how Artha fills in a new bank account…
-        </p>
-        {ACC_DEMO.map((f, i) => (
-          <div className="field" key={f.label}>
-            <label>{f.label}</label>
-            <input
-              readOnly
-              value={typed[i]}
-              className={fi === i && phase === 'typing' ? 'tour-typing-cursor' : ''}
-              style={{
-                borderColor: fi === i && phase === 'typing' ? 'var(--accent)' : undefined,
-                boxShadow: fi === i && phase === 'typing' ? '0 0 0 3px var(--accent-soft)' : undefined,
-              }}
-            />
+
+        {/* Row 1: Category + Type — both pre-filled selects, matching real modal */}
+        <div className="form-row">
+          <div className="field">
+            <label>Category</label>
+            <select defaultValue="bank">
+              <option value="bank">Bank Accounts</option>
+            </select>
           </div>
-        ))}
+          <div className="field">
+            <label>Type</label>
+            <select defaultValue="savings">
+              <option value="savings">Savings</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Name — full width, matching real modal */}
+        <div className="field">
+          <label>Name</label>
+          <input readOnly value={typed[0]} placeholder="e.g. HDFC Savings"
+            className={fi === 0 && phase === 'typing' ? 'tour-typing-cursor' : ''}
+            style={activeStyle(0)} />
+        </div>
+
+        {/* Row 2: Institution + Current value — matching real modal */}
+        <div className="form-row">
+          <div className="field">
+            <label>Institution</label>
+            <input readOnly value={typed[1]} placeholder="e.g. HDFC Bank"
+              className={fi === 1 && phase === 'typing' ? 'tour-typing-cursor' : ''}
+              style={activeStyle(1)} />
+          </div>
+          <div className="field">
+            <label>Current value (₹)</label>
+            <input readOnly value={typed[2]}
+              className={fi === 2 && phase === 'typing' ? 'tour-typing-cursor' : ''}
+              style={activeStyle(2)} />
+          </div>
+        </div>
+
         <div className="modal-actions">
           {phase === 'done' ? (
-            <button className="btn" style={{ background: 'var(--green)', boxShadow: '0 4px 14px rgba(62,207,142,0.35)' }} onClick={onDone}>
-              <Check size={14} /> Close demo
+            <button className="btn" style={{ background: 'var(--green)', boxShadow: '0 4px 14px rgba(62,207,142,0.35)', pointerEvents: 'none' }}>
+              <Check size={14} /> Saved!
             </button>
           ) : (
-            <button className="btn" disabled>Save</button>
+            <>
+              <button className="btn secondary" disabled>Cancel</button>
+              <button className="btn" disabled>Save</button>
+            </>
           )}
         </div>
       </div>
@@ -226,7 +359,7 @@ function DemoAccountModal({ onDone }: { onDone: () => void }): JSX.Element {
 
 // ─── Shared AI demo modal (accounts loan schedule + insurance policy) ─────────
 
-type AIPhase = 'button' | 'picker' | 'file_selected' | 'extracting' | 'done'
+type AIPhase = 'button' | 'form_nav' | 'picker' | 'file_selected' | 'extracting' | 'done'
 
 // Fictional demo files for the Windows-style file picker
 const LOAN_PICKER_FILES = [
@@ -256,25 +389,33 @@ interface AIModalProps {
   onDone: () => void
   buttonLabel: string
   buttonHint: string
+  FormNav?: React.ComponentType  // NEW — component rendered during form_nav phase
 }
 
-function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, onDone, buttonLabel, buttonHint }: AIModalProps): JSX.Element {
+function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, onDone, buttonLabel, buttonHint, FormNav }: AIModalProps): JSX.Element {
   const [phase, setPhase] = useState<AIPhase>('button')
   const [highlightedFile, setHighlightedFile] = useState<string | null>(null)
   const [clickFlash, setClickFlash] = useState(false)
 
   useEffect(() => {
-    const t0 = setTimeout(() => setPhase('picker'), 1800)
-    const t1 = setTimeout(() => setHighlightedFile(fileName), 2800)
-    const t2 = setTimeout(() => { setPhase('file_selected'); setHighlightedFile(null) }, 3700)
-    const t3 = setTimeout(() => setPhase('extracting'), 4000)
-    const t4 = setTimeout(() => setPhase('done'), 6200)
-    return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
+    const t0 = setTimeout(() => setPhase('form_nav'), 1500)   // was: setPhase('picker') at 1800ms
+    const t1 = setTimeout(() => setPhase('picker'), 4200)     // NEW: enter picker after 2700ms in form_nav
+    const t2 = setTimeout(() => setHighlightedFile(fileName), 5200)   // was 2800ms
+    const t3 = setTimeout(() => { setPhase('file_selected'); setHighlightedFile(null) }, 6100) // was 3700ms
+    const t4 = setTimeout(() => setPhase('extracting'), 6400) // was 4000ms
+    const t5 = setTimeout(() => setPhase('done'), 8600)       // was 6200ms
+    return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); clearTimeout(t5) }
   }, [])
 
   useEffect(() => {
-    const tf = setTimeout(() => setClickFlash(true), 1400)
-    const tf2 = setTimeout(() => setClickFlash(false), 1700)
+    if (phase !== 'done') return
+    const t = setTimeout(onDone, 1800)
+    return () => clearTimeout(t)
+  }, [phase])
+
+  useEffect(() => {
+    const tf = setTimeout(() => setClickFlash(true), 1100)
+    const tf2 = setTimeout(() => setClickFlash(false), 1400)
     return () => { clearTimeout(tf); clearTimeout(tf2) }
   }, [])
 
@@ -293,40 +434,59 @@ function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, on
   }
 
   if (phase === 'button') {
-    // Show the real page unobscured — only overlay a coach mark near the toolbar button
     return (
       <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'none' }}>
-        {/* Tooltip + arrow anchored top-right, pointing at the toolbar button */}
-        <div style={{ position: 'absolute', top: 56, right: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-          {/* Upward-pointing arrow */}
-          <div style={{ width: 0, height: 0, borderLeft: '7px solid transparent', borderRight: '7px solid transparent', borderBottom: '9px solid var(--accent)', alignSelf: 'center', marginRight: 6 }} />
-          {/* Tooltip card */}
+        {/* Semi-transparent highlight over the toolbar area */}
+        <div style={{
+          position: 'absolute',
+          top: 0, left: 220, right: 0, height: 64,
+          background: 'rgba(91,141,239,0.08)',
+          borderBottom: '1px solid rgba(91,141,239,0.2)',
+        }} />
+        {/* Tooltip below the button */}
+        <div style={{
+          position: 'absolute',
+          top: 70,
+          right: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-end',
+          gap: 0,
+          pointerEvents: 'none',
+        }}>
+          {/* Arrow pointing up */}
           <div style={{
-            background: 'var(--bg-card)', border: '1px solid var(--accent)', borderRadius: 10,
-            padding: '12px 16px', fontSize: 13, lineHeight: 1.6,
-            boxShadow: '0 8px 28px rgba(0,0,0,0.45)', maxWidth: 260,
+            width: 0, height: 0,
+            borderLeft: '8px solid transparent',
+            borderRight: '8px solid transparent',
+            borderBottom: '8px solid var(--accent)',
+            marginRight: 20,
+          }} />
+          {/* Tooltip */}
+          <div style={{
+            background: 'var(--accent)',
+            color: '#fff',
+            borderRadius: 10,
+            padding: '10px 14px',
+            fontSize: 13,
+            fontWeight: 500,
+            lineHeight: 1.5,
+            maxWidth: 240,
+            boxShadow: '0 8px 24px rgba(91,141,239,0.4)',
           }}>
-            <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--text)' }}>{buttonHint}</div>
-            <div style={{ color: 'var(--text-dim)', fontSize: 12 }}>
-              AI reads the PDF and fills every field instantly — no typing.
+            {buttonHint}
+            <div style={{ fontSize: 11, opacity: 0.85, marginTop: 3 }}>
+              AI reads the PDF and fills every field instantly.
             </div>
           </div>
         </div>
-        {/* Pulsing button replica at the exact toolbar-right position */}
-        <div style={{ position: 'absolute', top: 14, right: 20, pointerEvents: 'none' }}>
-          <button
-            className="btn tour-pulse-btn"
-            style={{
-              transform: clickFlash ? 'scale(0.95)' : 'scale(1)',
-              opacity: clickFlash ? 0.75 : 1,
-              transition: 'transform 80ms, opacity 80ms',
-            }}
-          >
-            <Upload size={14} /> {buttonLabel}
-          </button>
-        </div>
       </div>
     )
+  }
+
+  if (phase === 'form_nav') {
+    const Nav = FormNav
+    return Nav ? <Nav /> : null
   }
 
   return (
@@ -493,14 +653,104 @@ function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, on
 
           <div className="modal-actions">
             {phase === 'done' ? (
-              <button className="btn" style={{ background: 'var(--green)' }} onClick={onDone}>
-                <Check size={14} /> Close demo
+              <button className="btn" style={{ background: 'var(--green)', pointerEvents: 'none' }}>
+                <Check size={14} /> Saved!
               </button>
             ) : (
               <button className="btn" disabled>Save</button>
             )}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ─── LoanFormNav: shows Add Account form with cursor clicking Upload button ───
+
+function LoanFormNav(): JSX.Element {
+  const [navStep, setNavStep] = useState(0)
+  // navStep 0: form appears; 1: cursor at form center; 2: cursor moves to upload btn; 3: click
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setNavStep(1), 400)
+    const t2 = setTimeout(() => setNavStep(2), 1000)
+    const t3 = setTimeout(() => setNavStep(3), 1400)
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+  }, [])
+
+  // Upload button is roughly in the middle of the modal, about 55% down viewport
+  const uploadBtnX = window.innerWidth / 2
+  const uploadBtnY = Math.round(window.innerHeight * 0.55)
+  const startX = Math.round(window.innerWidth / 2)
+  const startY = Math.round(window.innerHeight * 0.38)
+
+  const cursorX = navStep <= 1 ? startX : uploadBtnX
+  const cursorY = navStep <= 1 ? startY : uploadBtnY
+
+  return (
+    <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
+      <div className="modal">
+        <h2 style={{ margin: '0 0 16px' }}>Add account</h2>
+        <div className="form-row">
+          <div className="field">
+            <label>Category</label>
+            <select defaultValue="loans" disabled>
+              <option value="loans">Loans</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Type</label>
+            <select defaultValue="home_loan" disabled>
+              <option value="home_loan">Home Loan</option>
+            </select>
+          </div>
+        </div>
+        <div style={{
+          border: `2px solid ${navStep >= 2 ? 'var(--accent)' : 'var(--border)'}`,
+          borderRadius: 'var(--radius)',
+          padding: '12px 16px',
+          marginTop: 12,
+          display: 'flex', alignItems: 'center', gap: 10,
+          background: navStep >= 2 ? 'rgba(91,141,239,0.08)' : 'transparent',
+          transition: 'all 300ms',
+          cursor: 'default',
+        }}>
+          <Upload size={15} style={{ color: navStep >= 2 ? 'var(--accent)' : 'var(--text-faint)', flexShrink: 0, transition: 'color 300ms' }} />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: navStep >= 2 ? 'var(--accent)' : 'var(--text-dim)', transition: 'color 300ms' }}>
+              Upload loan schedule PDF
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 1 }}>
+              AI reads the document and fills every field instantly
+            </div>
+          </div>
+        </div>
+        <div className="modal-actions" style={{ marginTop: 16 }}>
+          <button className="btn secondary" disabled>Cancel</button>
+          <button className="btn" disabled>Save manually</button>
+        </div>
+      </div>
+      {navStep > 0 && (
+        <>
+          <div style={{
+            position: 'fixed', left: cursorX, top: cursorY,
+            width: 16, height: 16, borderRadius: '50%',
+            background: 'rgba(91,141,239,0.9)', border: '2.5px solid #fff',
+            transform: 'translate(-50%,-50%)', pointerEvents: 'none', zIndex: 350,
+            boxShadow: '0 2px 10px rgba(91,141,239,0.55)',
+            transition: 'left 600ms cubic-bezier(0.4,0,0.2,1), top 600ms cubic-bezier(0.4,0,0.2,1)',
+          }} />
+          {navStep === 3 && (
+            <div style={{
+              position: 'fixed', left: uploadBtnX, top: uploadBtnY,
+              width: 44, height: 44, borderRadius: '50%',
+              border: '2px solid rgba(91,141,239,0.65)',
+              transform: 'translate(-50%,-50%)', pointerEvents: 'none', zIndex: 349,
+              animation: 'wt-click-ripple 400ms ease-out forwards',
+            }} />
+          )}
+        </>
       )}
     </div>
   )
@@ -528,7 +778,83 @@ function DemoAIModal({ onDone }: { onDone: () => void }): JSX.Element {
       onDone={onDone}
       buttonLabel="Add account"
       buttonHint="On the Accounts page, click Add account — then choose 'Upload loan schedule' to let AI read your PDF"
+      FormNav={LoanFormNav}
     />
+  )
+}
+
+// ─── InsuranceFormNav: shows cursor clicking "Add via PDF (AI)" toolbar button ─
+
+function InsuranceFormNav(): JSX.Element {
+  const [navStep, setNavStep] = useState(0)
+  const [btnRect, setBtnRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+
+  useEffect(() => {
+    // Measure the real button in the dimmed Insurance page behind the overlay
+    const measureBtn = (): void => {
+      const allBtns = Array.from(document.querySelectorAll('button'))
+      const target = allBtns.find(b => b.textContent?.includes('Add via PDF'))
+      if (target) {
+        const r = target.getBoundingClientRect()
+        setBtnRect({ x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height })
+      }
+    }
+    // Give the page a moment to render before measuring
+    const measure = setTimeout(measureBtn, 50)
+    const t1 = setTimeout(() => setNavStep(1), 300)
+    const t2 = setTimeout(() => setNavStep(2), 900)
+    const t3 = setTimeout(() => setNavStep(3), 1300)
+    return () => { clearTimeout(measure); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+  }, [])
+
+  const btnX = btnRect?.x ?? (window.innerWidth - 120)
+  const btnY = btnRect?.y ?? 44
+  const startX = btnX - 80
+  const startY = btnY + 100
+
+  const cursorX = navStep <= 1 ? startX : btnX
+  const cursorY = navStep <= 1 ? startY : btnY
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'none' }}>
+      {/* Highlight the toolbar row that contains the real button */}
+      {btnRect && (
+        <div style={{
+          position: 'fixed',
+          left: btnRect.x - btnRect.w / 2 - 6,
+          top: btnRect.y - btnRect.h / 2 - 6,
+          width: btnRect.w + 12,
+          height: btnRect.h + 12,
+          borderRadius: 8,
+          border: '2px solid rgba(91,141,239,0.85)',
+          background: 'rgba(91,141,239,0.15)',
+          pointerEvents: 'none',
+          zIndex: 201,
+          boxShadow: '0 0 0 4px rgba(91,141,239,0.15)',
+        }} />
+      )}
+      {navStep > 0 && (
+        <>
+          <div style={{
+            position: 'fixed', left: cursorX, top: cursorY,
+            width: 16, height: 16, borderRadius: '50%',
+            background: 'rgba(91,141,239,0.9)', border: '2.5px solid #fff',
+            transform: 'translate(-50%,-50%)', pointerEvents: 'none', zIndex: 210,
+            boxShadow: '0 2px 10px rgba(91,141,239,0.55)',
+            transition: 'left 600ms cubic-bezier(0.4,0,0.2,1), top 600ms cubic-bezier(0.4,0,0.2,1)',
+          }} />
+          {navStep === 3 && (
+            <div style={{
+              position: 'fixed', left: btnX, top: btnY,
+              width: 44, height: 44, borderRadius: '50%',
+              border: '2px solid rgba(91,141,239,0.65)',
+              transform: 'translate(-50%,-50%)', pointerEvents: 'none', zIndex: 209,
+              animation: 'wt-click-ripple 400ms ease-out forwards',
+            }} />
+          )}
+        </>
+      )}
+    </div>
   )
 }
 
@@ -552,8 +878,9 @@ function DemoInsuranceAIModal({ onDone }: { onDone: () => void }): JSX.Element {
       pickerFiles={INSURANCE_PICKER_FILES}
       fields={AI_INSURANCE_FIELDS}
       onDone={onDone}
-      buttonLabel="Extract with AI"
-      buttonHint="Click Extract with AI in the Insurance page toolbar"
+      buttonLabel="Add via PDF (AI)"
+      buttonHint="In the Insurance page toolbar, click 'Add via PDF (AI)' to extract a policy"
+      FormNav={InsuranceFormNav}
     />
   )
 }
@@ -567,20 +894,26 @@ const CARD_DEMO = [
   { label: 'Name on card',             value: 'DEV SHARMA' },
   { label: 'Network',                  value: 'Visa' },
   { label: 'Expiry (MM / YYYY)',       value: '08 / 2027' },
-  { label: 'CVV',                      value: '412' },
   { label: 'Credit limit (₹)',         value: '2,00,000' },
   { label: 'Statement date',           value: '10' },
 ]
 
 function DemoCreditCardModal({ onDone }: { onDone: () => void }): JSX.Element {
+  const [formReady, setFormReady] = useState(false)
   const [phase, setPhase] = useState<'idle' | 'typing' | 'done'>('idle')
   const [fi, setFi] = useState(0)
   const [typed, setTyped] = useState(CARD_DEMO.map(() => ''))
 
   useEffect(() => {
-    const t = setTimeout(() => setPhase('typing'), 500)
+    const t = setTimeout(() => setFormReady(true), 1800)
     return () => clearTimeout(t)
   }, [])
+
+  useEffect(() => {
+    if (!formReady) return
+    const t = setTimeout(() => setPhase('typing'), 500)
+    return () => clearTimeout(t)
+  }, [formReady])
 
   useEffect(() => {
     if (phase !== 'typing') return
@@ -607,16 +940,23 @@ function DemoCreditCardModal({ onDone }: { onDone: () => void }): JSX.Element {
     setTimeout(tick, 120)
   }, [phase])
 
+  useEffect(() => {
+    if (phase !== 'done') return
+    const t = setTimeout(onDone, 1500)
+    return () => clearTimeout(t)
+  }, [phase])
+
+  if (!formReady) {
+    return <DemoButtonClick label='Click "Add card" to track a credit card' subText="Artha reminds you before the due date so you never pay a late fee." buttonText="Add card" />
+  }
+
   return (
     <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
       <div className="modal">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h2 style={{ margin: 0 }}>Add Credit Card</h2>
+          <h2 style={{ margin: 0 }}>Add credit card</h2>
           {phase === 'done' && <span className="badge ok"><Check size={11} /> Saved!</span>}
         </div>
-        <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--text-faint)' }}>
-          Watch how a card is added…
-        </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 14px' }}>
           {CARD_DEMO.map((f, i) => (
             <div className="field" key={f.label}>
@@ -635,11 +975,14 @@ function DemoCreditCardModal({ onDone }: { onDone: () => void }): JSX.Element {
         </div>
         <div className="modal-actions">
           {phase === 'done' ? (
-            <button className="btn" style={{ background: 'var(--green)', boxShadow: '0 4px 14px rgba(62,207,142,0.35)' }} onClick={onDone}>
-              <Check size={14} /> Close demo
+            <button className="btn" style={{ background: 'var(--green)', boxShadow: '0 4px 14px rgba(62,207,142,0.35)', pointerEvents: 'none' }}>
+              <Check size={14} /> Saved!
             </button>
           ) : (
-            <button className="btn" disabled>Save</button>
+            <>
+              <button className="btn secondary" disabled>Cancel</button>
+              <button className="btn" disabled>Save</button>
+            </>
           )}
         </div>
       </div>
@@ -659,15 +1002,24 @@ const VAULT_DEMO = [
 ]
 
 function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
+  const [formReady, setFormReady] = useState(false)
   const [phase, setPhase] = useState<'idle' | 'typing' | 'done'>('idle')
   const [fi, setFi] = useState(0)
   const [typed, setTyped] = useState(VAULT_DEMO.map(() => ''))
   const [showPass, setShowPass] = useState(false)
 
+  // Show button coach mark for 1800ms, then open form
   useEffect(() => {
-    const t = setTimeout(() => setPhase('typing'), 500)
+    const t = setTimeout(() => setFormReady(true), 1800)
     return () => clearTimeout(t)
   }, [])
+
+  // Start typing 500ms after form appears
+  useEffect(() => {
+    if (!formReady) return
+    const t = setTimeout(() => setPhase('typing'), 500)
+    return () => clearTimeout(t)
+  }, [formReady])
 
   useEffect(() => {
     if (phase !== 'typing') return
@@ -701,65 +1053,144 @@ function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
     setTimeout(tick, 120)
   }, [phase])
 
+  useEffect(() => {
+    if (phase !== 'done') return
+    const t = setTimeout(onDone, 1500)
+    return () => clearTimeout(t)
+  }, [phase])
+
+  // Track password strength for the demo
+  const pwStr = typed[4] // index 4 is 'p'
+  const pwScore = (() => {
+    if (!pwStr) return 0
+    let s = 0
+    if (pwStr.length >= 8) s++
+    if (pwStr.length >= 12) s++
+    if (/[A-Z]/.test(pwStr) && /[a-z]/.test(pwStr)) s++
+    if (/[0-9]/.test(pwStr)) s++
+    if (/[^A-Za-z0-9]/.test(pwStr)) s++
+    return s
+  })()
+  const pwColors = ['transparent', 'var(--red)', 'var(--amber)', 'var(--amber)', 'var(--green)', 'var(--green)']
+  const pwLabels = ['', 'Weak', 'Fair', 'Good', 'Strong', 'Very strong']
+  const pwColor = pwColors[pwScore] ?? 'var(--green)'
+
+  const isTyping = (key: string, idx: number): boolean => fi === idx && phase === 'typing'
+  const activeStyle = (idx: number) => ({
+    borderColor: fi === idx && phase === 'typing' ? 'var(--accent)' : undefined,
+    boxShadow: fi === idx && phase === 'typing' ? '0 0 0 3px var(--accent-soft)' : undefined,
+  })
+
+  if (!formReady) {
+    return <DemoButtonClick label='Click "Add login" to save a password' subText="Encrypted on your device — no cloud sync, no breach risk." buttonText="Add login" />
+  }
+
   return (
     <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
       <div className="modal">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h2 style={{ margin: 0 }}>Add login</h2>
+          <h2 style={{ margin: 0 }}>Add entry</h2>
           {phase === 'done' && <span className="badge ok"><Check size={11} /> Saved!</span>}
         </div>
-        <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--text-faint)' }}>
-          Watch how a new vault entry is added…
-        </p>
-        {VAULT_DEMO.map((f, i) => (
-          <div className="field" key={f.key}>
-            <label>{f.label}</label>
+
+        {/* Row 1: Service name + Category */}
+        <div className="form-row">
+          <div className="field">
+            <label>Service / account name</label>
+            <input readOnly value={typed[0]} placeholder="e.g. Zerodha, Gmail"
+              className={isTyping('s', 0) ? 'tour-typing-cursor' : ''}
+              style={activeStyle(0)} />
+          </div>
+          <div className="field">
+            <label>Category</label>
+            <select readOnly value={typed[1] || ''} style={activeStyle(1)}>
+              <option value="">— Select category —</option>
+              {typed[1] && <option value={typed[1]}>{typed[1]}</option>}
+            </select>
+          </div>
+        </div>
+
+        {/* Row 2: Website (full width) */}
+        <div className="form-row">
+          <div className="field">
+            <label>Website (optional)</label>
+            <input readOnly value={typed[2]} placeholder="e.g. kite.zerodha.com"
+              className={isTyping('u', 2) ? 'tour-typing-cursor' : ''}
+              style={activeStyle(2)} />
+          </div>
+        </div>
+
+        {/* Row 3: Username + Password */}
+        <div className="form-row">
+          <div className="field">
+            <label>Username</label>
+            <input readOnly value={typed[3]}
+              className={isTyping('n', 3) ? 'tour-typing-cursor' : ''}
+              style={activeStyle(3)} />
+          </div>
+          <div className="field">
+            <label>Password</label>
             <div style={{ position: 'relative' }}>
               <input
                 readOnly
-                type={f.key === 'p' && !showPass ? 'password' : 'text'}
-                value={typed[i]}
-                className={fi === i && phase === 'typing' ? 'tour-typing-cursor' : ''}
-                style={{
-                  borderColor: fi === i && phase === 'typing' ? 'var(--accent)' : undefined,
-                  boxShadow: fi === i && phase === 'typing' ? '0 0 0 3px var(--accent-soft)' : undefined,
-                  paddingRight: f.key === 'p' ? 36 : undefined,
-                }}
+                type={!showPass ? 'password' : 'text'}
+                value={typed[4]}
+                className={isTyping('p', 4) ? 'tour-typing-cursor' : ''}
+                style={{ ...activeStyle(4), paddingRight: 36 }}
               />
-              {f.key === 'p' && (
-                <button
-                  className="icon-btn"
-                  onClick={() => setShowPass(v => !v)}
-                  style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', width: 28, height: 28 }}
-                >
-                  {showPass ? <EyeOff size={13} /> : <Eye size={13} />}
-                </button>
-              )}
+              <button className="icon-btn" onClick={() => setShowPass(v => !v)}
+                style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', width: 28, height: 28 }}>
+                {showPass ? <EyeOff size={13} /> : <Eye size={13} />}
+              </button>
             </div>
-            {f.key === 'p' && typed[i].length > 0 && (
-              <div style={{ marginTop: 4, height: 3, borderRadius: 2, background: 'var(--border)' }}>
-                <div style={{ height: '100%', borderRadius: 2, width: '80%', background: 'var(--green)', transition: 'width 300ms' }} />
-              </div>
-            )}
-            {f.key === 'p' && typed[i].length > 0 && (
-              <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
-                {['Uppercase', 'Numbers', 'Symbols'].map(opt => (
-                  <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-faint)', cursor: 'default' }}>
-                    <input type="checkbox" readOnly checked style={{ pointerEvents: 'none', width: 12, height: 12 }} />
-                    {opt}
-                  </label>
-                ))}
-              </div>
+            {typed[4].length > 0 && (
+              <>
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ display: 'flex', gap: 3, marginBottom: 3 }}>
+                    {[1,2,3,4,5].map(i => (
+                      <div key={i} style={{ height: 3, flex: 1, borderRadius: 2, background: i <= pwScore ? pwColor : 'var(--border)' }} />
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, color: pwColor }}>{pwLabels[pwScore]}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-faint)', flexShrink: 0 }}>Length: 16</span>
+                  <input type="range" readOnly min={8} max={32} value={16} style={{ width: 70 }} />
+                  <button className="btn secondary" style={{ padding: '3px 10px', fontSize: 11, marginLeft: 'auto' }} disabled>Generate</button>
+                </div>
+                <div style={{ display: 'flex', gap: 12, marginTop: 5, flexWrap: 'wrap' }}>
+                  {['A–Z', 'a–z', '0–9', '!@#'].map(opt => (
+                    <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-faint)', cursor: 'default' }}>
+                      <input type="checkbox" readOnly checked style={{ pointerEvents: 'none', width: 12, height: 12 }} />
+                      {opt}
+                    </label>
+                  ))}
+                </div>
+              </>
             )}
           </div>
-        ))}
+        </div>
+
+        {/* Notes */}
+        <div className="field">
+          <label>Notes</label>
+          <textarea readOnly value={typed[5]}
+            rows={2} placeholder="e.g. Recovery codes, WiFi passwords, PINs, security questions…"
+            className={isTyping('x', 5) ? 'tour-typing-cursor' : ''}
+            style={{ resize: 'none', ...(fi === 5 && phase === 'typing' ? { borderColor: 'var(--accent)', boxShadow: '0 0 0 3px var(--accent-soft)' } : {}) }}
+          />
+        </div>
+
         <div className="modal-actions">
           {phase === 'done' ? (
-            <button className="btn" style={{ background: 'var(--green)', boxShadow: '0 4px 14px rgba(62,207,142,0.35)' }} onClick={onDone}>
-              <Check size={14} /> Close demo
+            <button className="btn" style={{ background: 'var(--green)', boxShadow: '0 4px 14px rgba(62,207,142,0.35)', pointerEvents: 'none' }}>
+              <Check size={14} /> Saved!
             </button>
           ) : (
-            <button className="btn" disabled>Save</button>
+            <>
+              <button className="btn secondary" disabled>Cancel</button>
+              <button className="btn" disabled>Save</button>
+            </>
           )}
         </div>
       </div>
@@ -769,7 +1200,7 @@ function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
 
 // ─── Fullscreen overlays (welcome / security / done) ─────────────────────────
 
-function OverlayWelcome({ onNext, onWatchVideo }: { onNext: () => void; onWatchVideo: () => void }): JSX.Element {
+function OverlayWelcome({ onNext }: { onNext: () => void }): JSX.Element {
   return (
     <div className="tour-fullscreen-overlay">
       <div className="tour-overlay-card">
@@ -795,17 +1226,15 @@ function OverlayWelcome({ onNext, onWatchVideo }: { onNext: () => void; onWatchV
             </div>
           ))}
         </div>
-        <button className="btn" style={{ minWidth: 200, padding: '11px 28px', fontSize: 14, marginTop: 28 }} onClick={onNext}>
-          Start the tour <ChevronRight size={16} />
-        </button>
-        <button
-          type="button"
-          className="btn secondary"
-          style={{ minWidth: 200, padding: '10px 28px', fontSize: 13, marginTop: 10 }}
-          onClick={onWatchVideo}
-        >
-          <Sparkles size={14} /> See it in action
-        </button>
+        <div style={{ display: 'flex', gap: 12, marginTop: 28, width: '100%', maxWidth: 440 }}>
+          <button
+            className="btn"
+            style={{ flex: 1, padding: '12px 20px', fontSize: 14, justifyContent: 'center' }}
+            onClick={onNext}
+          >
+            Start the tour <ChevronRight size={16} />
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -849,28 +1278,38 @@ function OverlaySecurity({ onNext }: { onNext: () => void }): JSX.Element {
   )
 }
 
-function OverlayDone({ onExit }: { onExit: () => void }): JSX.Element {
+function OverlayDone({ onExit, isLoggedIn }: { onExit: () => void; isLoggedIn?: boolean }): JSX.Element {
   return (
     <div className="tour-fullscreen-overlay">
       <div className="tour-overlay-card">
         <div style={{ fontSize: 48, lineHeight: 1, marginBottom: 16, animation: 'celebration-pop 600ms var(--ease)' }}>✨</div>
         <h1 style={{ fontSize: 26, fontWeight: 800, margin: '0 0 10px', letterSpacing: '-0.02em' }}>You're ready!</h1>
         <p style={{ color: 'var(--text-dim)', fontSize: 14, lineHeight: 1.65, marginBottom: 8, maxWidth: 380, textAlign: 'center' }}>
-          Set a master password to create your encrypted vault and start tracking everything that matters.
+          {isLoggedIn
+            ? "You've seen everything Artha has to offer. Start exploring or head back to Settings."
+            : 'Set a master password to create your encrypted vault and start tracking everything that matters.'}
         </p>
         <p style={{ color: 'var(--text-faint)', fontSize: 12, marginBottom: 28 }}>
-          Your data stays on this device. Export a backup anytime.
+          {isLoggedIn ? 'Your data is encrypted and stays on this device.' : 'Your data stays on this device. Export a backup anytime.'}
         </p>
-        <button className="btn" style={{ minWidth: 220, padding: '12px 28px', fontSize: 14 }} onClick={onExit}>
-          Create my vault →
-        </button>
-        <button
-          className="btn secondary"
-          style={{ minWidth: 220, padding: '11px 28px', fontSize: 13, marginTop: 10 }}
-          onClick={onExit}
-        >
-          Back to login
-        </button>
+        {isLoggedIn ? (
+          <button className="btn secondary" style={{ minWidth: 220, padding: '11px 28px', fontSize: 14 }} onClick={() => { window.location.hash = '#/settings'; onExit() }}>
+            Back to Settings
+          </button>
+        ) : (
+          <>
+            <button className="btn" style={{ minWidth: 220, padding: '12px 28px', fontSize: 14 }} onClick={() => { window.location.hash = '#/'; onExit() }}>
+              Create my vault →
+            </button>
+            <button
+              className="btn secondary"
+              style={{ minWidth: 220, padding: '11px 28px', fontSize: 13, marginTop: 10 }}
+              onClick={() => { window.location.hash = '#/'; onExit() }}
+            >
+              Back to login
+            </button>
+          </>
+        )}
       </div>
     </div>
   )
@@ -892,6 +1331,8 @@ function GuidePanel({ step, total, onNext, onPrev, onExit, onWatchDemo }: GuideP
   const Icon = current.icon
   const isFirst = step === 0
   const isLast = step === total - 1
+  const nonOverlaySteps = STEPS.filter(s => s.route !== null)
+  const nonOverlayIndex = nonOverlaySteps.findIndex(s => s === current)
 
   return (
     <div className="tour-guide-panel">
@@ -901,11 +1342,11 @@ function GuidePanel({ step, total, onNext, onPrev, onExit, onWatchDemo }: GuideP
             <Icon size={15} />
           </div>
           <div>
-            <div style={{ fontSize: 10, color: 'var(--text-faint)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Step {step} of {total - 1}</div>
+            <div style={{ fontSize: 10, color: 'var(--text-faint)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Step {nonOverlayIndex + 1} of {nonOverlaySteps.length}</div>
             <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{current.title}</div>
           </div>
         </div>
-        <button className="tour-exit-btn" onClick={onExit} style={{ padding: '4px 8px', fontSize: 11 }}>
+        <button className="tour-exit-btn" onClick={() => { window.location.hash = '#/'; onExit() }} style={{ padding: '4px 8px', fontSize: 11 }}>
           <X size={13} /> Exit
         </button>
       </div>
@@ -913,6 +1354,12 @@ function GuidePanel({ step, total, onNext, onPrev, onExit, onWatchDemo }: GuideP
       <p style={{ margin: '8px 0', fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.6 }}>
         {current.desc}
       </p>
+
+      {(current.demoKey === 'ai' || current.demoKey === 'ai_insurance') && (
+        <div style={{ background: 'rgba(232,177,79,0.1)', border: '1px solid rgba(232,177,79,0.4)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: 'var(--amber, #e8b14f)', marginTop: 8 }}>
+          ⚙ Requires an API key — configure it in Settings → AI Document Reading before using this feature.
+        </div>
+      )}
 
       {current.tip && (
         <div className="tour-tip" style={{ marginBottom: 10, padding: '8px 10px', fontSize: 11.5 }}>
@@ -945,26 +1392,23 @@ function GuidePanel({ step, total, onNext, onPrev, onExit, onWatchDemo }: GuideP
           <ChevronLeft size={13} /> Back
         </button>
         <div style={{ flex: 1, display: 'flex', gap: 3, justifyContent: 'center' }}>
-          {STEPS.filter(s => s.route !== null || ['welcome', 'security', 'done'].includes(s.key)).map((_, i) => {
-            const si = STEPS.findIndex(s => s === _)
-            return (
-              <div
-                key={i}
-                style={{
-                  width: si === step ? 16 : 6,
-                  height: 6,
-                  borderRadius: 999,
-                  background: si === step ? 'var(--accent)' : si < step ? 'var(--text-faint)' : 'var(--border)',
-                  transition: 'all 200ms var(--ease)',
-                }}
-              />
-            )
-          })}
+          {nonOverlaySteps.map((s, i) => (
+            <div
+              key={s.key}
+              style={{
+                width: i === nonOverlayIndex ? 16 : 6,
+                height: 6,
+                borderRadius: 999,
+                background: i === nonOverlayIndex ? 'var(--accent)' : i < nonOverlayIndex ? 'var(--text-faint)' : 'var(--border)',
+                transition: 'all 200ms var(--ease)',
+              }}
+            />
+          ))}
         </div>
         <button
           className="btn"
           style={{ padding: '7px 12px', fontSize: 12, gap: 5 }}
-          onClick={isLast ? onExit : onNext}
+          onClick={isLast ? () => { window.location.hash = '#/'; onExit() } : onNext}
         >
           {isLast ? 'Finish' : 'Next'} <ChevronRight size={13} />
         </button>
@@ -994,18 +1438,43 @@ interface InnerProps {
   onNext: () => void
   onPrev: () => void
   onExit: () => void
-  onWatchVideo: () => void
+  isLoggedIn?: boolean
 }
 
-function TourInnerApp({ step, onNext, onPrev, onExit, onWatchVideo }: InnerProps): JSX.Element {
+function TourInnerApp({ step, onNext, onPrev, onExit, isLoggedIn }: InnerProps): JSX.Element {
   const navigate = useNavigate()
   const current = STEPS[step]
   const [activeDemo, setActiveDemo] = useState<DemoKey>(null)
 
   // Navigate to the route for the current step
   useEffect(() => {
-    if (current.route) navigate(current.route)
+    if (current.route) {
+      navigate(current.route)
+      if (current.key === 'upcoming') {
+        const t = setTimeout(() => {
+          document.querySelector('.main')?.scrollTo({ top: 750, behavior: 'smooth' })
+        }, 400)
+        return () => clearTimeout(t)
+      } else {
+        const t = setTimeout(() => {
+          document.querySelector('.main')?.scrollTo({ top: 0, behavior: 'smooth' })
+        }, 100)
+        return () => clearTimeout(t)
+      }
+    }
+    return undefined
   }, [step, current.route])
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      if (activeDemo !== null) return
+      if (e.key === 'ArrowLeft') onPrev()
+      if (e.key === 'ArrowRight') onNext()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [activeDemo, onPrev, onNext])
 
   const handleWatchDemo = (): void => {
     setActiveDemo(current.demoKey ?? null)
@@ -1067,9 +1536,9 @@ function TourInnerApp({ step, onNext, onPrev, onExit, onWatchVideo }: InnerProps
       </div>
 
       {/* Fullscreen overlays for welcome / security / done */}
-      {current.key === 'welcome' && <OverlayWelcome onNext={onNext} onWatchVideo={onWatchVideo} />}
+      {current.key === 'welcome' && <OverlayWelcome onNext={onNext} />}
       {current.key === 'security' && <OverlaySecurity onNext={onNext} />}
-      {current.key === 'done'    && <OverlayDone onExit={onExit} />}
+      {current.key === 'done'    && <OverlayDone onExit={onExit} isLoggedIn={isLoggedIn} />}
 
       {/* Demo modals */}
       {activeDemo === 'account'      && <DemoAccountModal      onDone={handleDemoAccountDone} />}
@@ -1093,240 +1562,15 @@ function TourInnerApp({ step, onNext, onPrev, onExit, onWatchVideo }: InnerProps
   )
 }
 
-// ─── Auto-playing walkthrough ("See it in action") ───────────────────────────
-
-interface WalkthroughScene {
-  route: string
-  duration: number  // ms to show this scene (including any demo)
-  title: string
-  body: string
-  demo?: 'ai' | 'ai_insurance' | 'account' | 'card' | 'vault'
-  demoDelay?: number  // ms after scene start to open the demo
-}
-
-const WALKTHROUGH_SCENES: WalkthroughScene[] = [
-  {
-    route: '/',
-    duration: 7000,
-    title: 'Net worth at a glance',
-    body: 'See your total assets, liabilities, and net worth trend the moment you open the app — no spreadsheets.',
-  },
-  {
-    route: '/',
-    duration: 6000,
-    title: 'Never miss a deadline',
-    body: 'Upcoming insurance renewals and card payment dates are surfaced automatically so nothing slips.',
-  },
-  {
-    route: '/accounts',
-    duration: 9000,
-    title: 'All your financial accounts',
-    body: 'Bank accounts, mutual funds, FDs, real estate, loans — everything that makes up your wealth in one place.',
-  },
-  {
-    route: '/accounts',
-    duration: 16000,
-    title: 'AI reads your loan documents',
-    body: 'Upload a loan schedule PDF and AI fills the lender, rate, tenure, and outstanding balance instantly.',
-    demo: 'ai',
-    demoDelay: 2000,
-  },
-  {
-    route: '/insurance',
-    duration: 8000,
-    title: 'All your policies, organised',
-    body: 'Life, health, vehicle — see every policy with a countdown to renewal so nothing ever lapses.',
-  },
-  {
-    route: '/insurance',
-    duration: 16000,
-    title: 'Upload a PDF, AI does the rest',
-    body: 'AI reads your policy document and fills the cover amount, premium, and expiry date automatically.',
-    demo: 'ai_insurance',
-    demoDelay: 2000,
-  },
-  {
-    route: '/cards',
-    duration: 7000,
-    title: 'Credit cards and payment dates',
-    body: 'Add your statement date and Artha calculates the due date and reminds you before it hits.',
-  },
-  {
-    route: '/ids',
-    duration: 6000,
-    title: 'Identity documents',
-    body: 'Aadhaar, PAN, passport, driving licence — all your IDs encrypted and instantly accessible.',
-  },
-  {
-    route: '/vault',
-    duration: 7000,
-    title: 'Secure password vault',
-    body: 'Encrypted logins alongside your financial data. No third-party service, no cloud sync, no breach risk.',
-    demo: 'vault',
-    demoDelay: 2500,
-  },
-]
-
-const TOTAL_WALKTHROUGH_MS = WALKTHROUGH_SCENES.reduce((s, sc) => s + sc.duration, 0)
-
-function WalkthroughPlayer({ onExit }: { onExit: () => void }): JSX.Element {
-  const navigate = useNavigate()
-  const [sceneIdx, setSceneIdx] = useState(0)
-  const [activeDemo, setActiveDemo] = useState<'ai' | 'ai_insurance' | 'account' | 'card' | 'vault' | null>(null)
-  const [elapsed, setElapsed] = useState(0)
-  const [captionVisible, setCaptionVisible] = useState(true)
-
-  const scene = WALKTHROUGH_SCENES[sceneIdx]
-
-  // Navigate on scene change
-  useEffect(() => {
-    navigate(scene.route)
-    setCaptionVisible(false)
-    setActiveDemo(null)
-    const tf = setTimeout(() => setCaptionVisible(true), 80)
-    return () => clearTimeout(tf)
-  }, [sceneIdx])
-
-  // Demo trigger
-  useEffect(() => {
-    if (!scene.demo) return
-    const td = setTimeout(() => setActiveDemo(scene.demo!), scene.demoDelay ?? 1500)
-    return () => clearTimeout(td)
-  }, [sceneIdx])
-
-  // Advance to next scene
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (sceneIdx < WALKTHROUGH_SCENES.length - 1) {
-        setSceneIdx((i) => i + 1)
-      } else {
-        onExit()
-      }
-    }, scene.duration)
-    return () => clearTimeout(t)
-  }, [sceneIdx])
-
-  // Progress bar ticker (every 100ms)
-  useEffect(() => {
-    setElapsed(0)
-    const interval = setInterval(() => setElapsed((e) => e + 100), 100)
-    return () => clearInterval(interval)
-  }, [sceneIdx])
-
-  // Cumulative progress across all scenes
-  const cumulativeBefore = WALKTHROUGH_SCENES.slice(0, sceneIdx).reduce((s, sc) => s + sc.duration, 0)
-  const progress = Math.min(((cumulativeBefore + elapsed) / TOTAL_WALKTHROUGH_MS) * 100, 100)
-
-  return (
-    <div style={{ position: 'relative', height: '100vh', overflow: 'hidden' }}>
-      {/* Real app shell — non-interactive */}
-      <div className="app-shell" style={{ pointerEvents: 'none', userSelect: 'none' }}>
-        <aside className="sidebar">
-          <div className="brand">
-            <img src={logo} alt="Artha" style={{ width: 120, height: 48, objectFit: 'contain' }} />
-          </div>
-          <nav>
-            {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-                end={end}
-              >
-                <Icon size={16} />
-                {label}
-              </NavLink>
-            ))}
-          </nav>
-          <div className="sidebar-footer">
-            <button className="lock-btn"><LockKeyhole size={14} /> Lock app</button>
-          </div>
-        </aside>
-        <main className="main">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/accounts" element={<Accounts />} />
-            <Route path="/insurance" element={<Insurance />} />
-            <Route path="/ids" element={<IdentityDocuments />} />
-            <Route path="/cards" element={<CreditCards />} />
-            <Route path="/vault" element={<Vault />} />
-          </Routes>
-        </main>
-      </div>
-
-      {/* Demo modals — rendered on top, still auto-play */}
-      {activeDemo === 'ai'           && <DemoAIModal           onDone={() => setActiveDemo(null)} />}
-      {activeDemo === 'ai_insurance' && <DemoInsuranceAIModal  onDone={() => setActiveDemo(null)} />}
-      {activeDemo === 'account'      && <DemoAccountModal      onDone={() => setActiveDemo(null)} />}
-      {activeDemo === 'card'         && <DemoCreditCardModal   onDone={() => setActiveDemo(null)} />}
-      {activeDemo === 'vault'        && <DemoVaultModal        onDone={() => setActiveDemo(null)} />}
-
-      {/* Top progress bar */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 3, zIndex: 500, background: 'rgba(255,255,255,0.08)' }}>
-        <div style={{ height: '100%', width: `${progress}%`, background: 'var(--accent)', transition: 'width 100ms linear', borderRadius: '0 2px 2px 0' }} />
-      </div>
-
-      {/* Exit button */}
-      <button
-        className="tour-exit-btn"
-        onClick={onExit}
-        style={{ position: 'fixed', top: 14, right: 16, zIndex: 500, padding: '5px 10px', fontSize: 12 }}
-      >
-        <X size={13} /> Exit
-      </button>
-
-      {/* Caption strip — bottom of screen */}
-      {!activeDemo && (
-        <div
-          style={{
-            position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 400,
-            background: 'linear-gradient(to top, rgba(10,13,22,0.97) 0%, rgba(10,13,22,0.8) 70%, transparent 100%)',
-            padding: '48px 40px 28px',
-            opacity: captionVisible ? 1 : 0,
-            transform: captionVisible ? 'translateY(0)' : 'translateY(8px)',
-            transition: 'opacity 350ms var(--ease), transform 350ms var(--ease)',
-          }}
-        >
-          <div style={{ maxWidth: 640, margin: '0 auto' }}>
-            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--accent)', marginBottom: 6 }}>
-              {sceneIdx + 1} / {WALKTHROUGH_SCENES.length}
-            </div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', marginBottom: 6, letterSpacing: '-0.01em' }}>
-              {scene.title}
-            </div>
-            <div style={{ fontSize: 14, color: 'var(--text-dim)', lineHeight: 1.65 }}>
-              {scene.body}
-            </div>
-          </div>
-          {/* Scene progress dots */}
-          <div style={{ display: 'flex', gap: 5, justifyContent: 'center', marginTop: 18 }}>
-            {WALKTHROUGH_SCENES.map((_, i) => (
-              <div
-                key={i}
-                style={{
-                  height: 3, borderRadius: 999,
-                  width: i === sceneIdx ? 20 : 6,
-                  background: i < sceneIdx ? 'var(--accent)' : i === sceneIdx ? 'var(--accent)' : 'rgba(255,255,255,0.2)',
-                  transition: 'all 300ms var(--ease)',
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── Main TourMode component ──────────────────────────────────────────────────
 
 interface Props {
   onExit: () => void
+  isLoggedIn?: boolean
 }
 
-export default function TourMode({ onExit }: Props): JSX.Element {
+export default function TourMode({ onExit, isLoggedIn }: Props): JSX.Element {
   const [step, setStep] = useState(0)
-  const [videoMode, setVideoMode] = useState(false)
   // One stable tour API instance (persists across re-renders so in-memory store survives)
   const tourApiRef = useRef<ReturnType<typeof createTourApi> | null>(null)
   if (tourApiRef.current === null) {
@@ -1347,17 +1591,5 @@ export default function TourMode({ onExit }: Props): JSX.Element {
   const goNext = (): void => setStep((s) => Math.min(s + 1, STEPS.length - 1))
   const goPrev = (): void => setStep((s) => Math.max(s - 1, 0))
 
-  if (videoMode) {
-    return (
-      <MemoryRouter>
-        <WalkthroughPlayer onExit={onExit} />
-      </MemoryRouter>
-    )
-  }
-
-  return (
-    <MemoryRouter>
-      <TourInnerApp step={step} onNext={goNext} onPrev={goPrev} onExit={onExit} onWatchVideo={() => setVideoMode(true)} />
-    </MemoryRouter>
-  )
+  return <TourInnerApp step={step} onNext={goNext} onPrev={goPrev} onExit={onExit} isLoggedIn={isLoggedIn} />
 }

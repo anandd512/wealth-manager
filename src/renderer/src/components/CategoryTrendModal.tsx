@@ -20,6 +20,12 @@ export default function CategoryTrendModal({ category, onClose }: Props): JSX.El
     })
   }, [category])
 
+  useEffect(() => {
+    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
   const chartData = data.map((d) => ({ date: d.date, value: d.total }))
 
   return (

@@ -3,20 +3,18 @@ import { useEffect, useRef, useState } from 'react'
 import type { Account, AccountCategory } from '../../../shared/types'
 import {
   CATEGORY_LABELS,
-  SUPPORTS_TICKER,
   CHECKIN_QUANTITY_SUBTYPES,
   getSubtypeLabel,
   getSubtypeIcon
 } from '../lib/categories'
 import { formatCurrency, formatDate } from '../lib/format'
 import AccountModal from '../components/AccountModal'
-import ActionMenu from '../components/ActionMenu'
 import CheckInModal from '../components/CheckInModal'
 import CheckInCelebration from '../components/CheckInCelebration'
 import AccountTrendModal from '../components/AccountTrendModal'
 import CategoryTrendModal from '../components/CategoryTrendModal'
-import { Plus, Landmark } from 'lucide-react'
-import { ICON_VIEW, ICON_DOWNLOAD, ICON_EDIT, ICON_DELETE, ICON_SYNC, ICON_TREND, ICON_CHECK_IN } from '../lib/actionIcons'
+import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, Wallet } from 'lucide-react'
+import { ICON_TREND, ICON_CHECK_IN } from '../lib/actionIcons'
 
 function gainLabel(currentValue: number, investedAmount: number): JSX.Element {
   const gain = currentValue - investedAmount
@@ -35,7 +33,6 @@ export default function Accounts(): JSX.Element {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [editing, setEditing] = useState<Account | null>(null)
   const [showModal, setShowModal] = useState(false)
-  const [refreshingId, setRefreshingId] = useState<number | null>(null)
   const [linkedAssetSuggestion, setLinkedAssetSuggestion] = useState<Account | null>(null)
   const [assetModalInitial, setAssetModalInitial] = useState<{
     category: AccountCategory
@@ -53,9 +50,10 @@ export default function Accounts(): JSX.Element {
   } | null>(null)
   const [trendTarget, setTrendTarget] = useState<Account | null>(null)
   const [categoryTrend, setCategoryTrend] = useState<AccountCategory | null>(null)
-  const [priceError, setPriceError] = useState<string | null>(null)
   const [undoPending, setUndoPending] = useState<{ id: number; label: string } | null>(null)
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [hoveredId, setHoveredId] = useState<number | null>(null)
+  const [collapsedInstitutions, setCollapsedInstitutions] = useState<Set<string>>(new Set())
 
   const load = async (): Promise<void> => {
     setAccounts(await api().accounts.list())
@@ -80,24 +78,6 @@ export default function Accounts(): JSX.Element {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
     setUndoPending(null)
     load()
-  }
-
-  const refreshPrice = async (id: number): Promise<void> => {
-    setRefreshingId(id)
-    setPriceError(null)
-    try {
-      const quote = await api().accounts.refreshPrice(id)
-      if (quote.error) setPriceError(`Could not fetch price: ${quote.error}`)
-    } finally {
-      setRefreshingId(null)
-      load()
-    }
-  }
-
-  const openLoanSync = (a: Account): void => {
-    setEditing(a)
-    setAutoSyncOnOpen(true)
-    setShowModal(true)
   }
 
   const grouped = accounts.reduce<Record<string, Account[]>>((acc, a) => {
@@ -152,19 +132,24 @@ export default function Accounts(): JSX.Element {
         </button>
       </div>
 
-      {priceError && (
-        <div className="error-text section" style={{ marginTop: -10 }}>
-          {priceError}
-        </div>
-      )}
-
       {accounts.length === 0 && (
         <div className="card empty-state">
-          <Landmark size={30} />
-          <div>
-            No accounts yet. Add your bank accounts, investments, real estate, or loans to start
-            tracking your net worth.
+          <Wallet size={30} />
+          <div>No accounts yet.</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-dim)', marginTop: 4 }}>
+            Add your bank accounts, investments, real estate, and loans to track your net worth.
           </div>
+          <button
+            className="btn"
+            style={{ marginTop: 12 }}
+            onClick={() => {
+              setEditing(null)
+              setAutoSyncOnOpen(false)
+              setShowModal(true)
+            }}
+          >
+            <Plus size={14} /> Add your first account
+          </button>
         </div>
       )}
 
@@ -238,115 +223,116 @@ export default function Accounts(): JSX.Element {
                           <th></th>
                         </tr>
                       </thead>
-                      {sorted.map(([inst, instRows]) => (
-                        <tbody key={inst}>
-                          <tr>
-                            <td colSpan={showInstitution ? 6 : 5} style={{ background: 'var(--bg-inset)', color: 'var(--text-faint)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '6px 14px' }}>
-                              {inst}
-                            </td>
-                          </tr>
-                          {instRows.map((a) => {
-                            const SubtypeIcon = getSubtypeIcon(a.subtype)
-                            return (
-                              <tr key={a.id}>
-                                <td>{a.name}</td>
-                                <td className="muted">
-                                  <span className="type-cell">
-                                    <span className="icon">
-                                      <SubtypeIcon />
+                      {sorted.map(([inst, instRows]) => {
+                        const isCollapsed = collapsedInstitutions.has(inst)
+                        const toggleInst = (): void => {
+                          setCollapsedInstitutions((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(inst)) next.delete(inst)
+                            else next.add(inst)
+                            return next
+                          })
+                        }
+                        return (
+                          <tbody key={inst}>
+                            <tr
+                              style={{ cursor: 'pointer' }}
+                              onClick={toggleInst}
+                            >
+                              <td colSpan={showInstitution ? 6 : 5} style={{ background: 'var(--bg-inset)', color: 'var(--text-faint)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '6px 14px' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                  {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                                  {inst}
+                                </span>
+                              </td>
+                            </tr>
+                            {!isCollapsed && instRows.map((a) => {
+                              const SubtypeIcon = getSubtypeIcon(a.subtype)
+                              return (
+                                <tr
+                                  key={a.id}
+                                  style={{ cursor: 'pointer' }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'var(--hover-row, rgba(255,255,255,0.03))'
+                                    setHoveredId(a.id)
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = ''
+                                    setHoveredId(null)
+                                  }}
+                                  onClick={() => setCheckInTarget(a)}
+                                >
+                                  <td>{a.name}</td>
+                                  <td className="muted">
+                                    <span className="type-cell">
+                                      <span className="icon">
+                                        <SubtypeIcon />
+                                      </span>
+                                      {getSubtypeLabel(a.category, a.subtype)}
                                     </span>
-                                    {getSubtypeLabel(a.category, a.subtype)}
-                                  </span>
-                                </td>
-                                {showInstitution && <td className="muted">{a.institution ?? '—'}</td>}
-                                <td>
-                                  {formatCurrency(a.current_value, a.currency)}
-                                  {a.principal_amount != null && !a.is_liability ? (
-                                    <div style={{ fontSize: 12 }}>
-                                      {gainLabel(a.current_value, a.principal_amount)}
-                                    </div>
-                                  ) : CHECKIN_QUANTITY_SUBTYPES.includes(a.subtype) && a.quantity != null ? (
-                                    <div className="muted" style={{ fontSize: 12 }}>
-                                      {a.quantity} {a.subtype === 'physical_gold' ? 'g' : 'shares'}
-                                    </div>
-                                  ) : null}
-                                </td>
-                                <td className="muted">{formatDate(a.last_updated)}</td>
-                                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                  <button
-                                    className="icon-btn"
-                                    style={{ marginRight: 4 }}
-                                    title="Update value"
-                                    aria-label="Update value"
-                                    onClick={() => setCheckInTarget(a)}
-                                  >
-                                    <ICON_CHECK_IN size={15} />
-                                  </button>
-                                  <button
-                                    className="icon-btn"
-                                    style={{ marginRight: 6 }}
-                                    title="View trend"
-                                    aria-label="View trend"
-                                    onClick={() => setTrendTarget(a)}
-                                  >
-                                    <ICON_TREND size={15} />
-                                  </button>
-                                  <ActionMenu
-                                    items={[
-                                      ...(SUPPORTS_TICKER.includes(a.subtype) && a.ticker
-                                        ? [
-                                            {
-                                              icon: ICON_SYNC,
-                                              label: refreshingId === a.id ? 'Refreshing price…' : 'Refresh price',
-                                              onClick: () => refreshPrice(a.id)
-                                            }
-                                          ]
-                                        : []),
-                                      ...(a.category === 'loan' && a.document_path
-                                        ? [
-                                            {
-                                              icon: ICON_SYNC,
-                                              label: 'Update from document',
-                                              onClick: () => openLoanSync(a)
-                                            }
-                                          ]
-                                        : []),
-                                      ...(a.document_path
-                                        ? [
-                                            {
-                                              icon: ICON_VIEW,
-                                              label: 'View',
-                                              onClick: () => api().accounts.openDocument(a.document_path!)
-                                            },
-                                            {
-                                              icon: ICON_DOWNLOAD,
-                                              label: 'Download',
-                                              onClick: () =>
-                                                api().accounts.downloadDocument(
-                                                  a.document_path!,
-                                                  a.document_original_name
-                                                )
-                                            }
-                                          ]
-                                        : []),
-                                      {
-                                        icon: ICON_EDIT,
-                                        label: 'Edit',
-                                        onClick: () => {
+                                  </td>
+                                  {showInstitution && <td className="muted">{a.institution ?? '—'}</td>}
+                                  <td>
+                                    {formatCurrency(a.current_value, a.currency)}
+                                    {a.principal_amount != null && !a.is_liability ? (
+                                      <div style={{ fontSize: 12 }}>
+                                        {gainLabel(a.current_value, a.principal_amount)}
+                                      </div>
+                                    ) : CHECKIN_QUANTITY_SUBTYPES.includes(a.subtype) && a.quantity != null ? (
+                                      <div className="muted" style={{ fontSize: 12 }}>
+                                        {a.quantity} {a.subtype === 'physical_gold' ? 'g' : 'shares'}
+                                      </div>
+                                    ) : null}
+                                  </td>
+                                  <td className="muted">{formatDate(a.last_updated)}</td>
+                                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                    <button
+                                      className="icon-btn"
+                                      style={{ marginRight: 4 }}
+                                      title="Update value"
+                                      aria-label="Update value"
+                                      onClick={(e) => { e.stopPropagation(); setCheckInTarget(a) }}
+                                    >
+                                      <ICON_CHECK_IN size={15} />
+                                    </button>
+                                    <button
+                                      className="icon-btn"
+                                      style={{ marginRight: 6 }}
+                                      title="View trend"
+                                      aria-label="View trend"
+                                      onClick={(e) => { e.stopPropagation(); setTrendTarget(a) }}
+                                    >
+                                      <ICON_TREND size={15} />
+                                    </button>
+                                    <div style={{ display: 'inline-flex', gap: 4, justifyContent: 'flex-end', opacity: hoveredId === a.id ? 1 : 0, transition: 'opacity 150ms' }}>
+                                      <button
+                                        className="icon-btn"
+                                        title="Edit"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
                                           setEditing(a)
                                           setAutoSyncOnOpen(false)
                                           setShowModal(true)
-                                        }
-                                      },
-                                      { icon: ICON_DELETE, label: 'Delete', danger: true, onClick: () => remove(a.id, a.name) }
-                                    ]}
-                                  />
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      ))}
+                                        }}
+                                      >
+                                        <Pencil size={14} />
+                                      </button>
+                                      <button
+                                        className="icon-btn"
+                                        title="Delete"
+                                        onClick={(e) => { e.stopPropagation(); remove(a.id, a.name) }}
+                                        style={{ color: 'var(--red)' }}
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        )
+                      })}
                     </table>
                   </div>
                 )
@@ -367,8 +353,25 @@ export default function Accounts(): JSX.Element {
                   <tbody>
                     {rows.map((a) => {
                       const SubtypeIcon = getSubtypeIcon(a.subtype)
+                      const monthsOld = (() => {
+                        const d = new Date(a.last_updated)
+                        const now = new Date()
+                        return (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth())
+                      })()
                       return (
-                        <tr key={a.id}>
+                        <tr
+                          key={a.id}
+                          style={{ cursor: 'pointer' }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'var(--hover-row, rgba(255,255,255,0.03))'
+                            setHoveredId(a.id)
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = ''
+                            setHoveredId(null)
+                          }}
+                          onClick={() => setCheckInTarget(a)}
+                        >
                           <td>{a.name}</td>
                           <td className="muted">
                             <span className="type-cell">
@@ -380,8 +383,33 @@ export default function Accounts(): JSX.Element {
                           </td>
                           {showInstitution && <td className="muted">{a.institution ?? '—'}</td>}
                           <td>
-                            {formatCurrency(a.current_value, a.currency)}
-                            {a.principal_amount != null && !a.is_liability ? (
+                            {(() => {
+                              const hasPartialOwnership = a.category === 'real_estate' && a.ownership_pct != null && a.ownership_pct < 100
+                              const effectiveValue = hasPartialOwnership
+                                ? a.current_value * (a.ownership_pct!) / 100
+                                : a.current_value
+                              return (
+                                <>
+                                  {formatCurrency(effectiveValue, a.currency)}
+                                  {hasPartialOwnership && (
+                                    <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+                                      {a.ownership_pct}% of {formatCurrency(a.current_value)}
+                                    </div>
+                                  )}
+                                  {a.category === 'real_estate' && monthsOld > 6 && (
+                                    <span style={{ fontSize: 10, color: 'var(--amber, #e8b14f)', marginLeft: 6 }}>Update value</span>
+                                  )}
+                                </>
+                              )
+                            })()}
+                            {a.category === 'real_estate' && a.purchase_price != null ? (
+                              <div style={{ fontSize: 12 }}>
+                                {gainLabel(
+                                  a.ownership_pct != null && a.ownership_pct < 100 ? a.current_value * a.ownership_pct / 100 : a.current_value,
+                                  a.ownership_pct != null && a.ownership_pct < 100 ? a.purchase_price * a.ownership_pct / 100 : a.purchase_price
+                                )}
+                              </div>
+                            ) : a.principal_amount != null && !a.is_liability ? (
                               <div style={{ fontSize: 12 }}>
                                 {gainLabel(a.current_value, a.principal_amount)}
                               </div>
@@ -398,7 +426,7 @@ export default function Accounts(): JSX.Element {
                               style={{ marginRight: 4 }}
                               title="Update value"
                               aria-label="Update value"
-                              onClick={() => setCheckInTarget(a)}
+                              onClick={(e) => { e.stopPropagation(); setCheckInTarget(a) }}
                             >
                               <ICON_CHECK_IN size={15} />
                             </button>
@@ -407,60 +435,32 @@ export default function Accounts(): JSX.Element {
                               style={{ marginRight: 6 }}
                               title="View trend"
                               aria-label="View trend"
-                              onClick={() => setTrendTarget(a)}
+                              onClick={(e) => { e.stopPropagation(); setTrendTarget(a) }}
                             >
                               <ICON_TREND size={15} />
                             </button>
-                            <ActionMenu
-                              items={[
-                                ...(SUPPORTS_TICKER.includes(a.subtype) && a.ticker
-                                  ? [
-                                      {
-                                        icon: ICON_SYNC,
-                                        label: refreshingId === a.id ? 'Refreshing price…' : 'Refresh price',
-                                        onClick: () => refreshPrice(a.id)
-                                      }
-                                    ]
-                                  : []),
-                                ...(a.category === 'loan' && a.document_path
-                                  ? [
-                                      {
-                                        icon: ICON_SYNC,
-                                        label: 'Update from document',
-                                        onClick: () => openLoanSync(a)
-                                      }
-                                    ]
-                                  : []),
-                                ...(a.document_path
-                                  ? [
-                                      {
-                                        icon: ICON_VIEW,
-                                        label: 'View',
-                                        onClick: () => api().accounts.openDocument(a.document_path!)
-                                      },
-                                      {
-                                        icon: ICON_DOWNLOAD,
-                                        label: 'Download',
-                                        onClick: () =>
-                                          api().accounts.downloadDocument(
-                                            a.document_path!,
-                                            a.document_original_name
-                                          )
-                                      }
-                                    ]
-                                  : []),
-                                {
-                                  icon: ICON_EDIT,
-                                  label: 'Edit',
-                                  onClick: () => {
-                                    setEditing(a)
-                                    setAutoSyncOnOpen(false)
-                                    setShowModal(true)
-                                  }
-                                },
-                                { icon: ICON_DELETE, label: 'Delete', danger: true, onClick: () => remove(a.id, a.name) }
-                              ]}
-                            />
+                            <div style={{ display: 'inline-flex', gap: 4, justifyContent: 'flex-end', opacity: hoveredId === a.id ? 1 : 0, transition: 'opacity 150ms' }}>
+                              <button
+                                className="icon-btn"
+                                title="Edit"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setEditing(a)
+                                  setAutoSyncOnOpen(false)
+                                  setShowModal(true)
+                                }}
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                className="icon-btn"
+                                title="Delete"
+                                onClick={(e) => { e.stopPropagation(); remove(a.id, a.name) }}
+                                style={{ color: 'var(--red)' }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       )

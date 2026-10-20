@@ -47,6 +47,12 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
     loadEntries()
   }, [])
 
+  useEffect(() => {
+    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
   const submit = async (): Promise<void> => {
     setError(null)
     const num = Number(value)

@@ -10,7 +10,9 @@ import {
   CreditCard as CreditCardIcon,
   KeyRound,
   Settings as SettingsIcon,
-  LockKeyhole
+  LockKeyhole,
+  Sun,
+  Moon
 } from 'lucide-react'
 import type { AuthStatus } from '../../shared/types'
 import AuthGate from './pages/AuthGate'
@@ -34,9 +36,24 @@ const NAV_ITEMS = [
 ]
 
 export default function App(): JSX.Element {
-  const [showSplash, setShowSplash] = useState(true)
+  // Item 52 — show splash only on first launch
+  const [showSplash, setShowSplash] = useState(() => {
+    const seen = localStorage.getItem('artha_splash_seen')
+    return !seen
+  })
   const [status, setStatus] = useState<AuthStatus | null>(null)
   const [tourMode, setTourMode] = useState(false)
+
+  // Item 47 — theme state
+  const [theme, setTheme] = useState<'dark' | 'light'>(
+    () => (localStorage.getItem('artha_theme') as 'dark' | 'light') ?? 'dark'
+  )
+
+  // Item 53 — first-run empty state
+  const [hasAccounts, setHasAccounts] = useState<boolean | null>(null)
+
+  // Item 55 — auto-lock warning state
+  const [autoLockWarning, setAutoLockWarning] = useState(false)
 
   const refreshStatus = async (): Promise<void> => {
     const s = await window.api.auth.status()
@@ -47,7 +64,14 @@ export default function App(): JSX.Element {
     refreshStatus()
   }, [])
 
+  // Item 53 — check if user has accounts after unlock
+  useEffect(() => {
+    if (!status?.unlocked) return
+    window.api.accounts.list().then((list) => setHasAccounts(list.length > 0))
+  }, [status?.unlocked])
+
   // Auto-lock after configurable period of inactivity (stored in localStorage, default 5 min)
+  // Item 55 — warn 60s before lock
   useEffect(() => {
     if (!status?.unlocked) return
 
@@ -56,22 +80,31 @@ export default function App(): JSX.Element {
     if (!minutes) return
     const TIMEOUT_MS = minutes * 60_000
     let timer: ReturnType<typeof setTimeout>
+    let warnTimer: ReturnType<typeof setTimeout>
 
-    const reset = (): void => {
+    const resetTimers = (): void => {
       clearTimeout(timer)
+      clearTimeout(warnTimer)
+      setAutoLockWarning(false)
+      // warn 60s before lock
+      if (TIMEOUT_MS > 60_000) {
+        warnTimer = setTimeout(() => setAutoLockWarning(true), TIMEOUT_MS - 60_000)
+      }
       timer = setTimeout(async () => {
+        setAutoLockWarning(false)
         await window.api.auth.lock()
         refreshStatus()
       }, TIMEOUT_MS)
     }
 
     const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'] as const
-    events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
-    reset()
+    events.forEach((e) => window.addEventListener(e, resetTimers, { passive: true }))
+    resetTimers()
 
     return () => {
       clearTimeout(timer)
-      events.forEach((e) => window.removeEventListener(e, reset))
+      clearTimeout(warnTimer)
+      events.forEach((e) => window.removeEventListener(e, resetTimers))
     }
   }, [status?.unlocked])
 
@@ -83,10 +116,37 @@ export default function App(): JSX.Element {
 
   // Apply saved theme on mount
   useEffect(() => {
-    const theme = localStorage.getItem('artha_theme') ?? 'dark'
-    if (theme === 'light') document.body.classList.add('light-mode')
+    const savedTheme = localStorage.getItem('artha_theme') ?? 'dark'
+    if (savedTheme === 'light') document.body.classList.add('light-mode')
     else document.body.classList.remove('light-mode')
   }, [])
+
+  // Item 47 — theme toggle function
+  const toggleTheme = (): void => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    localStorage.setItem('artha_theme', next)
+    if (next === 'light') document.body.classList.add('light-mode')
+    else document.body.classList.remove('light-mode')
+  }
+
+  // Item 48 — global keyboard shortcuts
+  useEffect(() => {
+    if (!status?.unlocked) return
+    const handler = (e: KeyboardEvent): void => {
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && e.key === 'l') { e.preventDefault(); window.api.auth.lock().then(refreshStatus) }
+      if (mod && e.key === '1') { e.preventDefault(); window.location.hash = '#/' }
+      if (mod && e.key === '2') { e.preventDefault(); window.location.hash = '#/accounts' }
+      if (mod && e.key === '3') { e.preventDefault(); window.location.hash = '#/cards' }
+      if (mod && e.key === '4') { e.preventDefault(); window.location.hash = '#/insurance' }
+      if (mod && e.key === '5') { e.preventDefault(); window.location.hash = '#/ids' }
+      if (mod && e.key === '6') { e.preventDefault(); window.location.hash = '#/vault' }
+      if (mod && e.key === '7') { e.preventDefault(); window.location.hash = '#/settings' }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [status?.unlocked])
 
   if (showSplash) {
     return (
@@ -96,8 +156,8 @@ export default function App(): JSX.Element {
           autoPlay
           muted
           playsInline
-          onEnded={() => setShowSplash(false)}
-          onError={() => setShowSplash(false)}
+          onEnded={() => { localStorage.setItem('artha_splash_seen', '1'); setShowSplash(false) }}
+          onError={() => { localStorage.setItem('artha_splash_seen', '1'); setShowSplash(false) }}
           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />
       </div>
@@ -107,14 +167,17 @@ export default function App(): JSX.Element {
   if (!status) return <div className="gate">Loading…</div>
 
   if (tourMode) {
-    return <TourMode onExit={() => setTourMode(false)} />
+    return <TourMode onExit={() => setTourMode(false)} isLoggedIn={status.unlocked} />
   }
 
   if (!status.unlocked) {
     return (
       <AuthGate
         initialized={status.initialized}
-        onUnlocked={refreshStatus}
+        onUnlocked={() => {
+          window.location.hash = '#/'
+          refreshStatus()
+        }}
         onTakeTour={() => setTourMode(true)}
       />
     )
@@ -140,8 +203,20 @@ export default function App(): JSX.Element {
           ))}
         </nav>
         <div className="sidebar-footer">
+          {/* Item 47 — theme toggle */}
           <button
             className="lock-btn"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            style={{ marginBottom: 6 }}
+          >
+            {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+            {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          </button>
+          {/* Item 51 — lock button with tooltip */}
+          <button
+            className="lock-btn"
+            title="Lock Artha and return to password screen (Ctrl+L)"
             onClick={async () => {
               await window.api.auth.lock()
               refreshStatus()
@@ -153,6 +228,16 @@ export default function App(): JSX.Element {
         </div>
       </aside>
       <main className="main">
+        {/* Item 53 — first-run banner */}
+        {hasAccounts === false && (
+          <div style={{ background: 'var(--accent)', color: '#fff', borderRadius: 'var(--radius)', padding: '14px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Welcome to Artha!</div>
+              <div style={{ fontSize: 12.5, opacity: 0.85, marginTop: 2 }}>Start by adding your first account to see your net worth.</div>
+            </div>
+            <a href="#/accounts" style={{ color: '#fff', fontWeight: 600, fontSize: 13, textDecoration: 'none', background: 'rgba(255,255,255,0.2)', padding: '7px 14px', borderRadius: 6 }}>Add account →</a>
+          </div>
+        )}
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/accounts" element={<Accounts />} />
@@ -163,6 +248,13 @@ export default function App(): JSX.Element {
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
+      {/* Item 55 — auto-lock warning toast */}
+      {autoLockWarning && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '10px 20px', fontSize: 13, zIndex: 999, boxShadow: '0 4px 20px rgba(0,0,0,0.3)', display: 'flex', gap: 12, alignItems: 'center' }}>
+          <span style={{ color: 'var(--text-dim)' }}>Locking in 1 minute due to inactivity</span>
+          <button className="btn secondary" style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => { setAutoLockWarning(false); window.dispatchEvent(new MouseEvent('mousemove')) }}>Stay logged in</button>
+        </div>
+      )}
     </div>
   )
 }

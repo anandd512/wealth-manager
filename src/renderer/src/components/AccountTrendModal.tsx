@@ -21,6 +21,12 @@ export default function AccountTrendModal({ account, onClose }: Props): JSX.Elem
     api().accounts.history(account.id).then(setEntries)
   }, [account.id])
 
+  useEffect(() => {
+    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
   const chartData = entries.map((e) => ({ date: e.recorded_at, value: e.value }))
 
   return (

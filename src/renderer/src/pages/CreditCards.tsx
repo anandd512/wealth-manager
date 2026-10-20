@@ -1,6 +1,6 @@
 import { api } from '../lib/api'
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Eye, EyeOff, CreditCard as CreditCardGlyph, Check, X } from 'lucide-react'
+import { Plus, CreditCard as CreditCardGlyph, Check, X } from 'lucide-react'
 import type { CreditCard, UpcomingItem } from '../../../shared/types'
 
 import CreditCardModal from '../components/CreditCardModal'
@@ -25,7 +25,6 @@ export default function CreditCards(): JSX.Element {
   const [dueByCardId, setDueByCardId] = useState<Map<number, UpcomingItem>>(new Map())
   const [editing, setEditing] = useState<CreditCard | null>(null)
   const [showModal, setShowModal] = useState(false)
-  const [revealedCvv, setRevealedCvv] = useState<Set<number>>(new Set())
   const [undoPending, setUndoPending] = useState<{ id: number; label: string } | null>(null)
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -70,15 +69,6 @@ export default function CreditCards(): JSX.Element {
     load()
   }
 
-  const toggleCvv = (id: number): void => {
-    setRevealedCvv((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
   return (
     <div>
       {undoPending && (
@@ -105,7 +95,7 @@ export default function CreditCards(): JSX.Element {
       </div>
 
       <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
-        Only the last 4 digits are shown. CVV is hidden by default — tap the eye to reveal.
+        Only the last 4 digits of the card number are shown.
       </p>
 
       {cards.length === 0 ? (
@@ -123,17 +113,20 @@ export default function CreditCards(): JSX.Element {
                 <th>Network</th>
                 <th>Number</th>
                 <th>Expiry</th>
-                <th>CVV</th>
                 <th>Statement date</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {cards.map((c) => {
-                const isCvvRevealed = revealedCvv.has(c.id)
                 const due = dueByCardId.get(c.id)
+                const daysUntilDue = due != null ? due.daysLeft : null
+                const rowStyle =
+                  daysUntilDue != null && daysUntilDue <= 3
+                    ? { background: 'rgba(239,91,91,0.04)' }
+                    : undefined
                 return (
-                  <tr key={c.id} className={due ? 'row-due' : undefined}>
+                  <tr key={c.id} className={due ? 'row-due' : undefined} style={rowStyle}>
                     <td>{c.nickname}</td>
                     <td className="muted">{c.issuer ?? '—'}</td>
                     <td className="muted">{c.network ?? '—'}</td>
@@ -143,22 +136,13 @@ export default function CreditCards(): JSX.Element {
                         ? `${String(c.expiry_month).padStart(2, '0')}/${c.expiry_year}`
                         : '—'}
                     </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <span>{isCvvRevealed ? c.cvv ?? '—' : c.cvv ? '•••' : '—'}</span>
-                      {c.cvv && (
-                        <button
-                          className="icon-btn"
-                          style={{ marginLeft: 6 }}
-                          title={isCvvRevealed ? 'Hide CVV' : 'Show CVV'}
-                          aria-label={isCvvRevealed ? 'Hide CVV' : 'Show CVV'}
-                          onClick={() => toggleCvv(c.id)}
-                        >
-                          {isCvvRevealed ? <EyeOff size={13} /> : <Eye size={13} />}
-                        </button>
-                      )}
-                    </td>
                     <td className="muted">
                       {c.statement_day != null ? ordinal(c.statement_day) : '—'}
+                      {daysUntilDue != null && daysUntilDue <= 7 && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)', marginLeft: 6 }}>
+                          Due in {daysUntilDue}d
+                        </span>
+                      )}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <ActionMenu

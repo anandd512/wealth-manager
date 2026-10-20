@@ -19,12 +19,14 @@ export function createAccount(input: AccountInput): Account {
          ticker, quantity, last_price, last_price_at, account_number, ifsc_code,
          debit_card_number, debit_card_network, debit_card_expiry_month, debit_card_expiry_year,
          debit_card_cvv, debit_card_name_on_card, principal_amount, interest_rate, tenure_months,
-         emi_amount, loan_start_date, document_path, document_original_name, last_updated, notes, created_at)
+         emi_amount, loan_start_date, document_path, document_original_name, purchase_price, purchase_date,
+         ownership_pct, last_updated, notes, created_at)
        VALUES (@name, @category, @subtype, @institution, @currency, @is_liability, @current_value,
                @ticker, @quantity, @last_price, @last_price_at, @account_number, @ifsc_code,
                @debit_card_number, @debit_card_network, @debit_card_expiry_month, @debit_card_expiry_year,
                @debit_card_cvv, @debit_card_name_on_card, @principal_amount, @interest_rate, @tenure_months,
-               @emi_amount, @loan_start_date, @document_path, @document_original_name, @last_updated, @notes, @created_at)`
+               @emi_amount, @loan_start_date, @document_path, @document_original_name, @purchase_price, @purchase_date,
+               @ownership_pct, @last_updated, @notes, @created_at)`
     )
     .run({ ...input, last_updated: now, created_at: now })
   const account = getAccount(Number(info.lastInsertRowid))!
@@ -49,8 +51,8 @@ export function updateAccount(id: number, input: Partial<AccountInput>): Account
         debit_card_cvv=@debit_card_cvv, debit_card_name_on_card=@debit_card_name_on_card,
         principal_amount=@principal_amount, interest_rate=@interest_rate, tenure_months=@tenure_months,
         emi_amount=@emi_amount, loan_start_date=@loan_start_date, document_path=@document_path,
-        document_original_name=@document_original_name,
-        last_updated=@last_updated, notes=@notes
+        document_original_name=@document_original_name, purchase_price=@purchase_price,
+        purchase_date=@purchase_date, ownership_pct=@ownership_pct, last_updated=@last_updated, notes=@notes
        WHERE id=@id`
     )
     .run({ ...merged, id })

@@ -169,13 +169,17 @@ const MIGRATION_COLUMNS: Record<string, [string, string][]> = {
     ['emi_amount', 'REAL'],
     ['loan_start_date', 'TEXT'],
     ['document_path', 'TEXT'],
-    ['document_original_name', 'TEXT']
+    ['document_original_name', 'TEXT'],
+    ['purchase_price', 'REAL'],
+    ['purchase_date', 'TEXT'],
+    ['ownership_pct', 'REAL']
   ],
   insurance_policies: [
     ['vehicle_number', 'TEXT'],
     ['renewal_date', 'TEXT'],
     ['nominee_name', 'TEXT'],
-    ['riders', 'TEXT']
+    ['riders', 'TEXT'],
+    ['additional_insured', 'TEXT']
   ],
   identity_documents: [
     ['date_of_birth', 'TEXT'],

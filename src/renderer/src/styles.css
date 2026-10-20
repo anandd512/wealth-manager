@@ -86,6 +86,7 @@ svg {
 
 .sidebar {
   width: 236px;
+  min-width: 236px;
   background: var(--bg-elev);
   border-right: 1px solid var(--border-soft);
   display: flex;
@@ -136,6 +137,9 @@ nav {
   font-weight: 500;
   font-size: 13px;
   transition: background var(--ease) 120ms, color var(--ease) 120ms;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nav-link svg {
@@ -557,6 +561,15 @@ label {
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* Item 49 — page transitions */
+.main > * {
+  animation: page-fade-in 150ms ease;
+}
+@keyframes page-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes modal-in {
@@ -1432,8 +1445,8 @@ body.light-mode {
   --border: #d6dce9;
   --border-soft: #e4e8f3;
   --text: #181e30;
-  --text-dim: #4a5470;
-  --text-faint: #8390aa;
+  --text-dim: #3a4468;
+  --text-faint: #5c6880;
   --accent-soft: rgba(91, 141, 239, 0.1);
   --green-soft: rgba(62, 207, 142, 0.1);
   --red-soft: rgba(240, 97, 107, 0.1);
@@ -1465,4 +1478,14 @@ body.light-mode .modal {
 body.light-mode .tour-guide-panel {
   background: #fff;
   border-color: var(--border-soft);
+}
+
+@keyframes wt-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(91,141,239,0.15), 0 0 28px rgba(91,141,239,0.18); }
+  50%       { box-shadow: 0 0 0 6px rgba(91,141,239,0.28), 0 0 48px rgba(91,141,239,0.32); }
+}
+
+@keyframes wt-click-ripple {
+  0%   { transform: translate(-50%,-50%) scale(0); opacity: 0.8; }
+  100% { transform: translate(-50%,-50%) scale(2.5); opacity: 0; }
 }
