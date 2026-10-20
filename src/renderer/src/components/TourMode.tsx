@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { NavLink, Route, Routes, useNavigate } from 'react-router-dom'
+import { MemoryRouter, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Wallet,
@@ -769,7 +769,7 @@ function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
 
 // ─── Fullscreen overlays (welcome / security / done) ─────────────────────────
 
-function OverlayWelcome({ onNext }: { onNext: () => void }): JSX.Element {
+function OverlayWelcome({ onNext, onWatchVideo }: { onNext: () => void; onWatchVideo: () => void }): JSX.Element {
   return (
     <div className="tour-fullscreen-overlay">
       <div className="tour-overlay-card">
@@ -797,6 +797,14 @@ function OverlayWelcome({ onNext }: { onNext: () => void }): JSX.Element {
         </div>
         <button className="btn" style={{ minWidth: 200, padding: '11px 28px', fontSize: 14, marginTop: 28 }} onClick={onNext}>
           Start the tour <ChevronRight size={16} />
+        </button>
+        <button
+          type="button"
+          className="btn secondary"
+          style={{ minWidth: 200, padding: '10px 28px', fontSize: 13, marginTop: 10 }}
+          onClick={onWatchVideo}
+        >
+          <Sparkles size={14} /> See it in action
         </button>
       </div>
     </div>
@@ -986,9 +994,10 @@ interface InnerProps {
   onNext: () => void
   onPrev: () => void
   onExit: () => void
+  onWatchVideo: () => void
 }
 
-function TourInnerApp({ step, onNext, onPrev, onExit }: InnerProps): JSX.Element {
+function TourInnerApp({ step, onNext, onPrev, onExit, onWatchVideo }: InnerProps): JSX.Element {
   const navigate = useNavigate()
   const current = STEPS[step]
   const [activeDemo, setActiveDemo] = useState<DemoKey>(null)
@@ -1058,7 +1067,7 @@ function TourInnerApp({ step, onNext, onPrev, onExit }: InnerProps): JSX.Element
       </div>
 
       {/* Fullscreen overlays for welcome / security / done */}
-      {current.key === 'welcome' && <OverlayWelcome onNext={onNext} />}
+      {current.key === 'welcome' && <OverlayWelcome onNext={onNext} onWatchVideo={onWatchVideo} />}
       {current.key === 'security' && <OverlaySecurity onNext={onNext} />}
       {current.key === 'done'    && <OverlayDone onExit={onExit} />}
 
@@ -1084,6 +1093,231 @@ function TourInnerApp({ step, onNext, onPrev, onExit }: InnerProps): JSX.Element
   )
 }
 
+// ─── Auto-playing walkthrough ("See it in action") ───────────────────────────
+
+interface WalkthroughScene {
+  route: string
+  duration: number  // ms to show this scene (including any demo)
+  title: string
+  body: string
+  demo?: 'ai' | 'ai_insurance' | 'account' | 'card' | 'vault'
+  demoDelay?: number  // ms after scene start to open the demo
+}
+
+const WALKTHROUGH_SCENES: WalkthroughScene[] = [
+  {
+    route: '/',
+    duration: 7000,
+    title: 'Net worth at a glance',
+    body: 'See your total assets, liabilities, and net worth trend the moment you open the app — no spreadsheets.',
+  },
+  {
+    route: '/',
+    duration: 6000,
+    title: 'Never miss a deadline',
+    body: 'Upcoming insurance renewals and card payment dates are surfaced automatically so nothing slips.',
+  },
+  {
+    route: '/accounts',
+    duration: 9000,
+    title: 'All your financial accounts',
+    body: 'Bank accounts, mutual funds, FDs, real estate, loans — everything that makes up your wealth in one place.',
+  },
+  {
+    route: '/accounts',
+    duration: 16000,
+    title: 'AI reads your loan documents',
+    body: 'Upload a loan schedule PDF and AI fills the lender, rate, tenure, and outstanding balance instantly.',
+    demo: 'ai',
+    demoDelay: 2000,
+  },
+  {
+    route: '/insurance',
+    duration: 8000,
+    title: 'All your policies, organised',
+    body: 'Life, health, vehicle — see every policy with a countdown to renewal so nothing ever lapses.',
+  },
+  {
+    route: '/insurance',
+    duration: 16000,
+    title: 'Upload a PDF, AI does the rest',
+    body: 'AI reads your policy document and fills the cover amount, premium, and expiry date automatically.',
+    demo: 'ai_insurance',
+    demoDelay: 2000,
+  },
+  {
+    route: '/cards',
+    duration: 7000,
+    title: 'Credit cards and payment dates',
+    body: 'Add your statement date and Artha calculates the due date and reminds you before it hits.',
+  },
+  {
+    route: '/ids',
+    duration: 6000,
+    title: 'Identity documents',
+    body: 'Aadhaar, PAN, passport, driving licence — all your IDs encrypted and instantly accessible.',
+  },
+  {
+    route: '/vault',
+    duration: 7000,
+    title: 'Secure password vault',
+    body: 'Encrypted logins alongside your financial data. No third-party service, no cloud sync, no breach risk.',
+    demo: 'vault',
+    demoDelay: 2500,
+  },
+]
+
+const TOTAL_WALKTHROUGH_MS = WALKTHROUGH_SCENES.reduce((s, sc) => s + sc.duration, 0)
+
+function WalkthroughPlayer({ onExit }: { onExit: () => void }): JSX.Element {
+  const navigate = useNavigate()
+  const [sceneIdx, setSceneIdx] = useState(0)
+  const [activeDemo, setActiveDemo] = useState<'ai' | 'ai_insurance' | 'account' | 'card' | 'vault' | null>(null)
+  const [elapsed, setElapsed] = useState(0)
+  const [captionVisible, setCaptionVisible] = useState(true)
+
+  const scene = WALKTHROUGH_SCENES[sceneIdx]
+
+  // Navigate on scene change
+  useEffect(() => {
+    navigate(scene.route)
+    setCaptionVisible(false)
+    setActiveDemo(null)
+    const tf = setTimeout(() => setCaptionVisible(true), 80)
+    return () => clearTimeout(tf)
+  }, [sceneIdx])
+
+  // Demo trigger
+  useEffect(() => {
+    if (!scene.demo) return
+    const td = setTimeout(() => setActiveDemo(scene.demo!), scene.demoDelay ?? 1500)
+    return () => clearTimeout(td)
+  }, [sceneIdx])
+
+  // Advance to next scene
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (sceneIdx < WALKTHROUGH_SCENES.length - 1) {
+        setSceneIdx((i) => i + 1)
+      } else {
+        onExit()
+      }
+    }, scene.duration)
+    return () => clearTimeout(t)
+  }, [sceneIdx])
+
+  // Progress bar ticker (every 100ms)
+  useEffect(() => {
+    setElapsed(0)
+    const interval = setInterval(() => setElapsed((e) => e + 100), 100)
+    return () => clearInterval(interval)
+  }, [sceneIdx])
+
+  // Cumulative progress across all scenes
+  const cumulativeBefore = WALKTHROUGH_SCENES.slice(0, sceneIdx).reduce((s, sc) => s + sc.duration, 0)
+  const progress = Math.min(((cumulativeBefore + elapsed) / TOTAL_WALKTHROUGH_MS) * 100, 100)
+
+  return (
+    <div style={{ position: 'relative', height: '100vh', overflow: 'hidden' }}>
+      {/* Real app shell — non-interactive */}
+      <div className="app-shell" style={{ pointerEvents: 'none', userSelect: 'none' }}>
+        <aside className="sidebar">
+          <div className="brand">
+            <img src={logo} alt="Artha" style={{ width: 120, height: 48, objectFit: 'contain' }} />
+          </div>
+          <nav>
+            {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+                end={end}
+              >
+                <Icon size={16} />
+                {label}
+              </NavLink>
+            ))}
+          </nav>
+          <div className="sidebar-footer">
+            <button className="lock-btn"><LockKeyhole size={14} /> Lock app</button>
+          </div>
+        </aside>
+        <main className="main">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/accounts" element={<Accounts />} />
+            <Route path="/insurance" element={<Insurance />} />
+            <Route path="/ids" element={<IdentityDocuments />} />
+            <Route path="/cards" element={<CreditCards />} />
+            <Route path="/vault" element={<Vault />} />
+          </Routes>
+        </main>
+      </div>
+
+      {/* Demo modals — rendered on top, still auto-play */}
+      {activeDemo === 'ai'           && <DemoAIModal           onDone={() => setActiveDemo(null)} />}
+      {activeDemo === 'ai_insurance' && <DemoInsuranceAIModal  onDone={() => setActiveDemo(null)} />}
+      {activeDemo === 'account'      && <DemoAccountModal      onDone={() => setActiveDemo(null)} />}
+      {activeDemo === 'card'         && <DemoCreditCardModal   onDone={() => setActiveDemo(null)} />}
+      {activeDemo === 'vault'        && <DemoVaultModal        onDone={() => setActiveDemo(null)} />}
+
+      {/* Top progress bar */}
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 3, zIndex: 500, background: 'rgba(255,255,255,0.08)' }}>
+        <div style={{ height: '100%', width: `${progress}%`, background: 'var(--accent)', transition: 'width 100ms linear', borderRadius: '0 2px 2px 0' }} />
+      </div>
+
+      {/* Exit button */}
+      <button
+        className="tour-exit-btn"
+        onClick={onExit}
+        style={{ position: 'fixed', top: 14, right: 16, zIndex: 500, padding: '5px 10px', fontSize: 12 }}
+      >
+        <X size={13} /> Exit
+      </button>
+
+      {/* Caption strip — bottom of screen */}
+      {!activeDemo && (
+        <div
+          style={{
+            position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 400,
+            background: 'linear-gradient(to top, rgba(10,13,22,0.97) 0%, rgba(10,13,22,0.8) 70%, transparent 100%)',
+            padding: '48px 40px 28px',
+            opacity: captionVisible ? 1 : 0,
+            transform: captionVisible ? 'translateY(0)' : 'translateY(8px)',
+            transition: 'opacity 350ms var(--ease), transform 350ms var(--ease)',
+          }}
+        >
+          <div style={{ maxWidth: 640, margin: '0 auto' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--accent)', marginBottom: 6 }}>
+              {sceneIdx + 1} / {WALKTHROUGH_SCENES.length}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', marginBottom: 6, letterSpacing: '-0.01em' }}>
+              {scene.title}
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--text-dim)', lineHeight: 1.65 }}>
+              {scene.body}
+            </div>
+          </div>
+          {/* Scene progress dots */}
+          <div style={{ display: 'flex', gap: 5, justifyContent: 'center', marginTop: 18 }}>
+            {WALKTHROUGH_SCENES.map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  height: 3, borderRadius: 999,
+                  width: i === sceneIdx ? 20 : 6,
+                  background: i < sceneIdx ? 'var(--accent)' : i === sceneIdx ? 'var(--accent)' : 'rgba(255,255,255,0.2)',
+                  transition: 'all 300ms var(--ease)',
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main TourMode component ──────────────────────────────────────────────────
 
 interface Props {
@@ -1092,6 +1326,7 @@ interface Props {
 
 export default function TourMode({ onExit }: Props): JSX.Element {
   const [step, setStep] = useState(0)
+  const [videoMode, setVideoMode] = useState(false)
   // One stable tour API instance (persists across re-renders so in-memory store survives)
   const tourApiRef = useRef<ReturnType<typeof createTourApi> | null>(null)
   if (tourApiRef.current === null) {
@@ -1112,5 +1347,17 @@ export default function TourMode({ onExit }: Props): JSX.Element {
   const goNext = (): void => setStep((s) => Math.min(s + 1, STEPS.length - 1))
   const goPrev = (): void => setStep((s) => Math.max(s - 1, 0))
 
-  return <TourInnerApp step={step} onNext={goNext} onPrev={goPrev} onExit={onExit} />
+  if (videoMode) {
+    return (
+      <MemoryRouter>
+        <WalkthroughPlayer onExit={onExit} />
+      </MemoryRouter>
+    )
+  }
+
+  return (
+    <MemoryRouter>
+      <TourInnerApp step={step} onNext={goNext} onPrev={goPrev} onExit={onExit} onWatchVideo={() => setVideoMode(true)} />
+    </MemoryRouter>
+  )
 }
