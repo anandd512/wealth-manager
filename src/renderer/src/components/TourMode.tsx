@@ -225,7 +225,7 @@ function DemoAccountModal({ onDone }: { onDone: () => void }): JSX.Element {
 
 // ─── Shared AI demo modal (accounts loan schedule + insurance policy) ─────────
 
-type AIPhase = 'file_select' | 'file_selected' | 'extracting' | 'done'
+type AIPhase = 'picker' | 'file_selected' | 'extracting' | 'done'
 
 interface AIModalProps {
   title: string
@@ -234,94 +234,143 @@ interface AIModalProps {
   onDone: () => void
 }
 
-function DemoAIModalBase({ title, fileName, fields, onDone }: AIModalProps): JSX.Element {
-  const [phase, setPhase] = useState<AIPhase>('file_select')
+// Fake OS file picker entries for the demo
+const DEMO_PICKER_FILES = [
+  'Suvidya Deshpande.pdf',
+  'Sunil Deshpande.pdf',
+  'CF27538388_KMP_SWITCH_14-Jul-2026-unlock.pdf',
+  'CF27538388_KMP_SWITCH_14-Jul-2026.pdf',
+  'EPFO.pdf',
+  'RC.pdf',
+]
 
-  const handleFileSelect = (): void => {
-    // Simulate file picker: brief delay then show file as selected
-    setTimeout(() => setPhase('file_selected'), 350)
-  }
-  const handleExtract = (): void => {
-    setPhase('extracting')
-    setTimeout(() => setPhase('done'), 2200)
-  }
+function DemoAIModalBase({ title, fileName, fields, onDone }: AIModalProps): JSX.Element {
+  const [phase, setPhase] = useState<AIPhase>('picker')
+  const [highlightedFile, setHighlightedFile] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (phase !== 'picker') return
+    // Auto-highlight the target file after 1s, then close picker and proceed
+    const t1 = setTimeout(() => setHighlightedFile(fileName), 1000)
+    const t2 = setTimeout(() => {
+      setPhase('file_selected')
+      setHighlightedFile(null)
+    }, 1800)
+    const t3 = setTimeout(() => setPhase('extracting'), 2100)
+    const t4 = setTimeout(() => setPhase('done'), 4300)
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
+  }, [phase])
 
   return (
     <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
-      <div className="modal">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h2 style={{ margin: 0 }}>{title}</h2>
-          {phase === 'done' && (
-            <span className="badge ok" style={{ gap: 5 }}>
-              <Bot size={11} /> AI extracted {Object.keys(fields).length} fields
-            </span>
-          )}
+      {/* Simulated OS file picker dialog */}
+      {phase === 'picker' && (
+        <div style={{
+          position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100
+        }}>
+          <div style={{
+            background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10,
+            width: 480, boxShadow: '0 24px 60px rgba(0,0,0,0.5)', overflow: 'hidden'
+          }}>
+            {/* Title bar */}
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', background: 'var(--bg-card)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Select insurance policy document</span>
+            </div>
+            {/* Fake breadcrumb */}
+            <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border-soft)', fontSize: 12, color: 'var(--text-faint)', background: 'var(--bg-inset)' }}>
+              Downloads &rsaquo;
+            </div>
+            {/* File list */}
+            <div style={{ padding: '8px 0', maxHeight: 220, overflowY: 'auto' }}>
+              {DEMO_PICKER_FILES.map((f) => (
+                <div key={f} style={{
+                  padding: '6px 16px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 10,
+                  background: highlightedFile === f ? 'var(--accent)' : 'transparent',
+                  color: highlightedFile === f ? '#fff' : 'var(--text)',
+                  borderRadius: highlightedFile === f ? 4 : 0,
+                  margin: highlightedFile === f ? '0 8px' : '0',
+                  transition: 'background 200ms',
+                }}>
+                  <FileText size={14} style={{ opacity: 0.7, flexShrink: 0 }} />
+                  {f}
+                </div>
+              ))}
+            </div>
+            {/* Footer */}
+            <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8, background: 'var(--bg-card)' }}>
+              <button className="btn secondary small" disabled>Cancel</button>
+              <button className="btn small" disabled style={{ opacity: highlightedFile ? 1 : 0.4 }}>Open</button>
+            </div>
+          </div>
         </div>
+      )}
 
-        {/* File picker row */}
-        <div className="card" style={{ marginBottom: 14, padding: '12px 14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 7, background: 'var(--accent-soft)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <FileText size={16} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {phase === 'file_select' ? 'No document selected' : fileName}
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 1 }}>
-                {phase === 'file_select' && 'Choose a PDF or image to extract fields automatically'}
-                {phase === 'file_selected' && <span style={{ color: 'var(--accent)' }}>File selected — ready to extract</span>}
-                {phase === 'extracting' && (
-                  <span style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Loader2 size={11} className="spin" /> AI is reading the document…
-                  </span>
-                )}
-                {phase === 'done' && <span style={{ color: 'var(--green)' }}>✓ All fields extracted successfully</span>}
-              </div>
-            </div>
-            {phase === 'file_select' && (
-              <button className="btn secondary small tour-pulse-btn" onClick={handleFileSelect}>
-                <Upload size={12} /> Browse PDF
-              </button>
+      {/* Main form modal — shown after file is picked */}
+      {phase !== 'picker' && (
+        <div className="modal">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <h2 style={{ margin: 0 }}>{title}</h2>
+            {phase === 'done' && (
+              <span className="badge ok" style={{ gap: 5 }}>
+                <Bot size={11} /> AI extracted {Object.keys(fields).length} fields
+              </span>
             )}
-            {phase === 'file_selected' && (
-              <button className="btn small tour-pulse-btn" onClick={handleExtract}>
-                <Bot size={12} /> Extract with AI
+          </div>
+
+          {/* File row */}
+          <div className="card" style={{ marginBottom: 14, padding: '12px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 7, background: 'var(--accent-soft)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <FileText size={16} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {fileName}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 1 }}>
+                  {phase === 'file_selected' && <span style={{ color: 'var(--accent)' }}>File selected — reading…</span>}
+                  {phase === 'extracting' && (
+                    <span style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Loader2 size={11} className="spin" /> AI is reading the document…
+                    </span>
+                  )}
+                  {phase === 'done' && <span style={{ color: 'var(--green)' }}>✓ All fields extracted successfully</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Fields */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 14px' }}>
+            {phase === 'done'
+              ? Object.entries(fields).map(([label, value]) => (
+                  <div className="field" key={label} style={{ animation: 'modal-in 250ms var(--ease)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {label} <span style={{ color: 'var(--green)', fontSize: 10 }}>● AI</span>
+                    </label>
+                    <input readOnly value={value} style={{ borderColor: 'var(--green)', fontSize: 12 }} />
+                  </div>
+                ))
+              : Object.keys(fields).map((label) => (
+                  <div className="field" key={label}>
+                    <label>{label}</label>
+                    <input readOnly value="" placeholder="—" style={{ opacity: 0.4 }} />
+                  </div>
+                ))
+            }
+          </div>
+
+          <div className="modal-actions">
+            {phase === 'done' ? (
+              <button className="btn" style={{ background: 'var(--green)' }} onClick={onDone}>
+                <Check size={14} /> Close demo
               </button>
+            ) : (
+              <button className="btn" disabled>Save</button>
             )}
           </div>
         </div>
-
-        {/* Fields — empty placeholders until done, then all appear at once */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 14px' }}>
-          {phase === 'done'
-            ? Object.entries(fields).map(([label, value]) => (
-                <div className="field" key={label} style={{ animation: 'modal-in 250ms var(--ease)' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    {label} <span style={{ color: 'var(--green)', fontSize: 10 }}>● AI</span>
-                  </label>
-                  <input readOnly value={value} style={{ borderColor: 'var(--green)', fontSize: 12 }} />
-                </div>
-              ))
-            : Object.keys(fields).map((label) => (
-                <div className="field" key={label}>
-                  <label>{label}</label>
-                  <input readOnly value="" placeholder="—" style={{ opacity: 0.4 }} />
-                </div>
-              ))
-          }
-        </div>
-
-        <div className="modal-actions">
-          {phase === 'done' ? (
-            <button className="btn" style={{ background: 'var(--green)' }} onClick={onDone}>
-              <Check size={14} /> Close demo
-            </button>
-          ) : (
-            <button className="btn" disabled>Save</button>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   )
 }
