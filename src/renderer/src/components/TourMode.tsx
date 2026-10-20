@@ -94,6 +94,13 @@ const STEPS: TourStep[] = [
     demoKey: 'ai',
   },
   {
+    key: 'cards', nav: 'Credit Cards', route: '/cards', icon: CreditCardIcon,
+    title: 'Stay on top of bills',
+    desc: 'Add your credit cards and Artha tracks payment due dates for you. It can even email you a reminder before the due date so you never pay a late fee or interest again.',
+    tip: 'Add your statement date and Artha will remind you before the payment due date — no late fees, ever.',
+    demoKey: 'card',
+  },
+  {
     key: 'insurance', nav: 'Insurance', route: '/insurance', icon: ShieldCheck,
     title: 'Never miss a renewal',
     desc: 'One place for all your policies — life, health, vehicle. Artha tells you exactly when each one is up for renewal so nothing ever lapses. Upload the PDF and AI fills the details for you.',
@@ -107,17 +114,10 @@ const STEPS: TourStep[] = [
     tip: 'Upload a photo or scan and AI reads the number, name, and expiry automatically.',
   },
   {
-    key: 'cards', nav: 'Credit Cards', route: '/cards', icon: CreditCardIcon,
-    title: 'Stay on top of bills',
-    desc: 'Add your credit cards and Artha tracks payment due dates for you. It can even email you a reminder before the due date so you never pay a late fee or interest again.',
-    tip: 'Log your outstanding balance to track utilisation and see your net worth accurately.',
-    demoKey: 'card',
-  },
-  {
     key: 'vault', nav: 'Passwords', route: '/vault', icon: KeyRound,
     title: 'Secure password vault',
     desc: 'A secure home for all your logins — encrypted alongside your financial data. No LastPass subscription, no cloud sync, no third-party breach risk. Your passwords stay on your device.',
-    tip: 'You can also store 2FA/TOTP codes so you have your authenticator codes right here.',
+    tip: 'All your logins encrypted alongside your financial data — no separate password manager needed.',
     demoKey: 'vault',
   },
   {
@@ -137,8 +137,9 @@ const STEPS: TourStep[] = [
 // ─── Demo modal: Manual account entry ────────────────────────────────────────
 
 const ACC_DEMO = [
+  { label: 'Category',            value: 'Assets — Savings' },
   { label: 'Account name',        value: 'SBI Savings Account' },
-  { label: 'Bank / Institution',  value: 'State Bank of India' },
+  { label: 'Institution',         value: 'State Bank of India' },
   { label: 'Account number',      value: '43218765****' },
   { label: 'Current balance (₹)', value: '1,75,000' },
 ]
@@ -227,85 +228,168 @@ function DemoAccountModal({ onDone }: { onDone: () => void }): JSX.Element {
 
 type AIPhase = 'picker' | 'file_selected' | 'extracting' | 'done'
 
+// Fictional demo files for the Windows-style file picker
+const LOAN_PICKER_FILES = [
+  { name: 'Loan_Schedule_HDFC_2024.pdf',    date: 'Today, 7:12 AM',      type: 'PDF' },
+  { name: 'Car_Insurance_Policy.pdf',        date: 'Today, 6:55 AM',      type: 'PDF' },
+  { name: 'Bank_Statement_Q3_2026.pdf',      date: 'Yesterday, 11:30 PM', type: 'PDF' },
+  { name: 'Salary_Slip_Sep_2026.pdf',        date: 'Yesterday, 10:05 PM', type: 'PDF' },
+  { name: 'Home_Loan_Statement.pdf',         date: '18 Oct 2026, 5:26 AM',type: 'PDF' },
+  { name: 'Tax_Returns_FY2025.pdf',          date: '18 Oct 2026, 4:19 AM',type: 'PDF' },
+]
+
+const INSURANCE_PICKER_FILES = [
+  { name: 'Motor_Policy_Bajaj_2026.pdf',     date: 'Today, 7:12 AM',      type: 'PDF' },
+  { name: 'Health_Policy_HDFC_ERGO.pdf',     date: 'Today, 6:55 AM',      type: 'PDF' },
+  { name: 'Loan_Schedule_2024.pdf',          date: 'Yesterday, 11:30 PM', type: 'PDF' },
+  { name: 'Salary_Slip_Oct_2026.pdf',        date: 'Yesterday, 10:05 PM', type: 'PDF' },
+  { name: 'Bank_Statement_Sep.pdf',          date: '18 Oct 2026, 5:26 AM',type: 'PDF' },
+  { name: 'Term_Life_Policy.pdf',            date: '18 Oct 2026, 4:19 AM',type: 'PDF' },
+]
+
 interface AIModalProps {
   title: string
   fileName: string
+  pickerTitle: string
+  pickerFiles: { name: string; date: string; type: string }[]
   fields: Record<string, string>
   onDone: () => void
 }
 
-// Fake OS file picker entries for the demo
-const DEMO_PICKER_FILES = [
-  'Suvidya Deshpande.pdf',
-  'Sunil Deshpande.pdf',
-  'CF27538388_KMP_SWITCH_14-Jul-2026-unlock.pdf',
-  'CF27538388_KMP_SWITCH_14-Jul-2026.pdf',
-  'EPFO.pdf',
-  'RC.pdf',
-]
-
-function DemoAIModalBase({ title, fileName, fields, onDone }: AIModalProps): JSX.Element {
+function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, onDone }: AIModalProps): JSX.Element {
   const [phase, setPhase] = useState<AIPhase>('picker')
   const [highlightedFile, setHighlightedFile] = useState<string | null>(null)
 
   useEffect(() => {
-    if (phase !== 'picker') return
-    // Auto-highlight the target file after 1s, then close picker and proceed
     const t1 = setTimeout(() => setHighlightedFile(fileName), 1000)
-    const t2 = setTimeout(() => {
-      setPhase('file_selected')
-      setHighlightedFile(null)
-    }, 1800)
-    const t3 = setTimeout(() => setPhase('extracting'), 2100)
-    const t4 = setTimeout(() => setPhase('done'), 4300)
+    const t2 = setTimeout(() => { setPhase('file_selected'); setHighlightedFile(null) }, 1900)
+    const t3 = setTimeout(() => setPhase('extracting'), 2200)
+    const t4 = setTimeout(() => setPhase('done'), 4400)
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4) }
-  }, [phase])
+  }, [])
+
+  // Windows 11 dark-mode file dialog colours (hardcoded, not app theme)
+  const W = {
+    bg:        '#202020',
+    sidebar:   '#1c1c1c',
+    toolbar:   '#2a2a2a',
+    border:    '#3a3a3a',
+    text:      '#e8e8e8',
+    muted:     '#999999',
+    highlight: '#0067c0',
+    hover:     '#2e2e2e',
+    btnBg:     '#3a3a3a',
+    btnText:   '#e8e8e8',
+  }
 
   return (
     <div className="modal-backdrop tour-demo-backdrop" onClick={(e) => e.stopPropagation()}>
-      {/* Simulated OS file picker dialog */}
+      {/* Windows 11-style file open dialog */}
       {phase === 'picker' && (
         <div style={{
           position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100
         }}>
           <div style={{
-            background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 10,
-            width: 480, boxShadow: '0 24px 60px rgba(0,0,0,0.5)', overflow: 'hidden'
+            background: W.bg, border: `1px solid ${W.border}`, borderRadius: 8,
+            width: 560, boxShadow: '0 32px 80px rgba(0,0,0,0.7)', overflow: 'hidden',
+            fontFamily: '"Segoe UI", system-ui, sans-serif',
           }}>
-            {/* Title bar */}
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', background: 'var(--bg-card)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Select insurance policy document</span>
+            {/* Window title bar */}
+            <div style={{ background: W.toolbar, padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${W.border}` }}>
+              <span style={{ fontSize: 12, color: W.text }}>{pickerTitle}</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {['─', '□', '✕'].map(s => (
+                  <div key={s} style={{ width: 28, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: W.muted, cursor: 'default' }}>{s}</div>
+                ))}
+              </div>
             </div>
-            {/* Fake breadcrumb */}
-            <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border-soft)', fontSize: 12, color: 'var(--text-faint)', background: 'var(--bg-inset)' }}>
-              Downloads &rsaquo;
+            {/* Navigation toolbar */}
+            <div style={{ background: W.toolbar, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: `1px solid ${W.border}` }}>
+              <div style={{ display: 'flex', gap: 2 }}>
+                {['←', '→', '↑'].map(a => (
+                  <div key={a} style={{ width: 24, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: W.muted, cursor: 'default' }}>{a}</div>
+                ))}
+              </div>
+              <div style={{ flex: 1, background: W.hover, border: `1px solid ${W.border}`, borderRadius: 4, padding: '3px 8px', fontSize: 12, color: W.text }}>
+                Downloads &rsaquo;
+              </div>
+              <div style={{ width: 120, background: W.hover, border: `1px solid ${W.border}`, borderRadius: 4, padding: '3px 8px', fontSize: 12, color: W.muted }}>
+                Search
+              </div>
             </div>
-            {/* File list */}
-            <div style={{ padding: '8px 0', maxHeight: 220, overflowY: 'auto' }}>
-              {DEMO_PICKER_FILES.map((f) => (
-                <div key={f} style={{
-                  padding: '6px 16px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 10,
-                  background: highlightedFile === f ? 'var(--accent)' : 'transparent',
-                  color: highlightedFile === f ? '#fff' : 'var(--text)',
-                  borderRadius: highlightedFile === f ? 4 : 0,
-                  margin: highlightedFile === f ? '0 8px' : '0',
-                  transition: 'background 200ms',
-                }}>
-                  <FileText size={14} style={{ opacity: 0.7, flexShrink: 0 }} />
-                  {f}
-                </div>
+            {/* Action toolbar */}
+            <div style={{ background: W.toolbar, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: `1px solid ${W.border}` }}>
+              {['Organize ▾', 'New folder'].map(l => (
+                <div key={l} style={{ fontSize: 11, color: W.text, cursor: 'default', padding: '2px 6px' }}>{l}</div>
               ))}
             </div>
+            {/* Body: sidebar + file list */}
+            <div style={{ display: 'flex' }}>
+              {/* Sidebar */}
+              <div style={{ width: 130, background: W.sidebar, borderRight: `1px solid ${W.border}`, padding: '8px 0', flexShrink: 0 }}>
+                {['Home', 'Desktop', 'Downloads', 'Documents', 'Pictures', 'Music'].map(l => (
+                  <div key={l} style={{
+                    padding: '5px 14px', fontSize: 12, color: l === 'Downloads' ? W.text : W.muted,
+                    background: l === 'Downloads' ? W.hover : 'transparent', cursor: 'default',
+                  }}>{l}</div>
+                ))}
+              </div>
+              {/* File list */}
+              <div style={{ flex: 1, overflow: 'hidden' }}>
+                {/* Column headers */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 60px', padding: '4px 10px', borderBottom: `1px solid ${W.border}`, background: W.toolbar }}>
+                  {['Name', 'Date modified', 'Type'].map(h => (
+                    <div key={h} style={{ fontSize: 11, color: W.muted }}>{h}</div>
+                  ))}
+                </div>
+                {/* Files */}
+                <div style={{ maxHeight: 180, overflowY: 'auto', background: W.bg }}>
+                  {pickerFiles.map((f) => {
+                    const isHighlighted = highlightedFile === f.name
+                    return (
+                      <div key={f.name} style={{
+                        display: 'grid', gridTemplateColumns: '1fr 140px 60px',
+                        padding: '5px 10px', cursor: 'default',
+                        background: isHighlighted ? W.highlight : 'transparent',
+                        color: isHighlighted ? '#ffffff' : W.text,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, overflow: 'hidden' }}>
+                          <FileText size={13} style={{ flexShrink: 0, opacity: 0.7 }} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: isHighlighted ? '#cce4ff' : W.muted, display: 'flex', alignItems: 'center' }}>{f.date}</div>
+                        <div style={{ fontSize: 11, color: isHighlighted ? '#cce4ff' : W.muted, display: 'flex', alignItems: 'center' }}>{f.type}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
             {/* Footer */}
-            <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8, background: 'var(--bg-card)' }}>
-              <button className="btn secondary small" disabled>Cancel</button>
-              <button className="btn small" disabled style={{ opacity: highlightedFile ? 1 : 0.4 }}>Open</button>
+            <div style={{ background: W.toolbar, padding: '10px 12px', borderTop: `1px solid ${W.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: W.muted, flexShrink: 0 }}>File name:</span>
+                <div style={{ flex: 1, background: '#ffffff', border: `1px solid ${W.border}`, borderRadius: 3, padding: '3px 6px', fontSize: 12, color: '#000000' }}>
+                  {highlightedFile ?? ''}
+                </div>
+                <div style={{ fontSize: 11, color: W.muted, background: W.btnBg, border: `1px solid ${W.border}`, borderRadius: 3, padding: '3px 8px', flexShrink: 0 }}>
+                  Documents (*.pdf;*.png;*.jpg) ▾
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <div style={{ padding: '5px 20px', fontSize: 12, background: highlightedFile ? W.highlight : W.btnBg, color: highlightedFile ? '#fff' : W.btnText, border: `1px solid ${W.border}`, borderRadius: 3, cursor: 'default' }}>
+                  Open
+                </div>
+                <div style={{ padding: '5px 20px', fontSize: 12, background: W.btnBg, color: W.btnText, border: `1px solid ${W.border}`, borderRadius: 3, cursor: 'default' }}>
+                  Cancel
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Main form modal — shown after file is picked */}
+      {/* Main form modal */}
       {phase !== 'picker' && (
         <div className="modal">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -390,7 +474,9 @@ function DemoAIModal({ onDone }: { onDone: () => void }): JSX.Element {
   return (
     <DemoAIModalBase
       title="Add Account — Loan Schedule"
-      fileName="HDFC_Car_Loan_Schedule_2024.pdf"
+      fileName="Loan_Schedule_HDFC_2024.pdf"
+      pickerTitle="Select loan repayment schedule"
+      pickerFiles={LOAN_PICKER_FILES}
       fields={AI_LOAN_FIELDS}
       onDone={onDone}
     />
@@ -412,7 +498,9 @@ function DemoInsuranceAIModal({ onDone }: { onDone: () => void }): JSX.Element {
   return (
     <DemoAIModalBase
       title="Add Insurance Policy"
-      fileName="Bajaj_Motor_Policy_2026.pdf"
+      fileName="Motor_Policy_Bajaj_2026.pdf"
+      pickerTitle="Select insurance policy document"
+      pickerFiles={INSURANCE_PICKER_FILES}
       fields={AI_INSURANCE_FIELDS}
       onDone={onDone}
     />
@@ -422,14 +510,15 @@ function DemoInsuranceAIModal({ onDone }: { onDone: () => void }): JSX.Element {
 // ─── Demo modal: Credit card manual entry ─────────────────────────────────────
 
 const CARD_DEMO = [
-  { label: 'Card nickname',     value: 'ICICI Coral Card' },
-  { label: 'Bank / Issuer',     value: 'ICICI Bank' },
-  { label: 'Network',           value: 'Visa' },
-  { label: 'Last 4 digits',     value: '7723' },
-  { label: 'Expiry month',      value: '08' },
-  { label: 'Expiry year',       value: '27' },
-  { label: 'Credit limit (₹)',  value: '2,00,000' },
-  { label: 'Statement date',    value: '10' },
+  { label: 'Label',                    value: 'ICICI Coral' },
+  { label: 'Issuer',                   value: 'ICICI Bank' },
+  { label: 'Card number',              value: '4111 1111 1111 7723' },
+  { label: 'Name on card',             value: 'DEV SHARMA' },
+  { label: 'Network',                  value: 'Visa' },
+  { label: 'Expiry (MM / YYYY)',       value: '08 / 2027' },
+  { label: 'CVV',                      value: '412' },
+  { label: 'Credit limit (₹)',         value: '2,00,000' },
+  { label: 'Statement date',           value: '10' },
 ]
 
 function DemoCreditCardModal({ onDone }: { onDone: () => void }): JSX.Element {
@@ -475,7 +564,7 @@ function DemoCreditCardModal({ onDone }: { onDone: () => void }): JSX.Element {
           {phase === 'done' && <span className="badge ok"><Check size={11} /> Saved!</span>}
         </div>
         <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--text-faint)' }}>
-          Watch how a new credit card is added…
+          Watch how a card is added…
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 14px' }}>
           {CARD_DEMO.map((f, i) => (
@@ -512,9 +601,10 @@ function DemoCreditCardModal({ onDone }: { onDone: () => void }): JSX.Element {
 const VAULT_DEMO = [
   { label: 'Service / account name', key: 's', value: 'Paytm' },
   { label: 'Category',               key: 'c', value: 'Finance & Banking' },
-  { label: 'Website (optional)',      key: 'u', value: 'paytm.com' },
-  { label: 'Username / ID',          key: 'n', value: 'dev.sharma@gmail.com' },
+  { label: 'Website URL (optional)', key: 'u', value: 'paytm.com' },
+  { label: 'Username',               key: 'n', value: 'dev.sharma@gmail.com' },
   { label: 'Password',               key: 'p', value: 'P@ytm#Dev2024' },
+  { label: 'Notes',                  key: 'x', value: 'Primary payments wallet' },
 ]
 
 function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
@@ -595,6 +685,11 @@ function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
                 </button>
               )}
             </div>
+            {f.key === 'p' && typed[i].length > 0 && (
+              <div style={{ marginTop: 4, height: 3, borderRadius: 2, background: 'var(--border)' }}>
+                <div style={{ height: '100%', borderRadius: 2, width: '80%', background: 'var(--green)', transition: 'width 300ms' }} />
+              </div>
+            )}
           </div>
         ))}
         <div className="modal-actions">
@@ -652,7 +747,7 @@ function OverlaySecurity({ onNext }: { onNext: () => void }): JSX.Element {
     { label: 'Encryption', value: 'AES-256-GCM', color: 'var(--accent)' },
     { label: 'Key derivation', value: 'scrypt (N=32768, r=8)', color: 'var(--green)' },
     { label: 'Storage', value: '100% local — no cloud sync', color: 'var(--green)' },
-    { label: 'Auto-lock', value: '30 seconds of inactivity', color: 'var(--text-dim)' },
+    { label: 'Auto-lock', value: '5 minutes of inactivity', color: 'var(--text-dim)' },
     { label: 'Biometrics', value: 'Windows Hello supported', color: 'var(--text-dim)' },
     { label: 'Backup', value: 'Encrypted .wmbackup export', color: 'var(--text-dim)' },
   ]
@@ -816,7 +911,7 @@ const NAV_ITEMS = [
   { to: '/accounts', label: 'Accounts', icon: Wallet, end: false },
   { to: '/cards', label: 'Credit Cards', icon: CreditCardIcon, end: false },
   { to: '/insurance', label: 'Insurance', icon: ShieldCheck, end: false },
-  { to: '/ids', label: 'IDs', icon: IdCard, end: false },
+  { to: '/ids', label: 'Identity', icon: IdCard, end: false },
   { to: '/vault', label: 'Vault', icon: KeyRound, end: false },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, end: false },
 ]
