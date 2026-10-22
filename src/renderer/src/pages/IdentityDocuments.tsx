@@ -230,7 +230,7 @@ export default function IdentityDocuments(): JSX.Element {
             className="btn"
             onClick={uploadAndExtract}
             disabled={extracting}
-            title="Upload a photo or scan — AI reads the document number, name and expiry automatically"
+            title="Upload a photo or scan — AI reads the document number, name and expiry automatically. Your chosen AI provider reads the document, and the details are saved privately on your device."
           >
             <Upload size={14} /> {extracting ? 'Reading document…' : 'Add via photo/scan (AI)'}
           </button>
@@ -283,7 +283,7 @@ export default function IdentityDocuments(): JSX.Element {
       {(extracting || syncingId !== null) && (
         <div className="syncing-banner">
           <RefreshCw size={15} className="spin" />
-          {syncingId !== null ? 'Updating from document…' : 'Reading document…'}
+          {syncingId !== null ? 'Your AI provider is re-reading the document…' : 'Your AI provider is reading the document…'}
         </div>
       )}
       {error && <div className="error-text section">{error}</div>}
@@ -416,7 +416,7 @@ export default function IdentityDocuments(): JSX.Element {
                                     },
                                     {
                                       icon: ICON_SYNC,
-                                      label: syncingId === d.id ? 'Updating…' : 'Update from document',
+                                      label: syncingId === d.id ? 'Updating…' : 'Update from document (AI)',
                                       onClick: () => resync(d)
                                     }
                                   ]

@@ -388,9 +388,10 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
                 </>
               )}
               <div className="help-text">
-                Upload the lender's amortization/repayment schedule PDF and the model fills in the
-                fields below, including today's outstanding balance, by reading the installment
-                table itself.
+                Upload the lender's amortization/repayment schedule PDF and AI fills in the fields
+                below, including today's outstanding balance, by reading the installment table itself.
+                Your chosen AI provider reads the document, and the details are saved privately on
+                your device.
               </div>
               {scheduleSummary && <div className="success-text">{scheduleSummary}</div>}
               {scheduleError && <div className="error-text">{scheduleError}</div>}

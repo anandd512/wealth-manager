@@ -865,7 +865,9 @@ export default function Settings(): JSX.Element {
             </h2>
           </div>
           <p className="muted" style={{ marginTop: 0 }}>
-            Artha can read your uploaded policy PDFs and loan documents and fill in the fields automatically. Requires an API key from your chosen provider.
+            Artha can read your policy PDFs, loan schedules and identity documents and fill in the fields automatically.
+            Your chosen AI provider reads each document you upload, and the details are saved privately on your device.
+            Requires an API key from that provider.
           </p>
 
           <div className="field" style={{ maxWidth: 360 }}>

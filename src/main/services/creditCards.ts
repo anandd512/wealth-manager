@@ -18,11 +18,11 @@ export function createCreditCard(input: CreditCardInput): CreditCard {
     .prepare(
       `INSERT INTO credit_cards
         (nickname, network, issuer, card_number, name_on_card, expiry_month, expiry_year,
-         cvv, credit_limit, outstanding_balance, statement_day, notes, created_at)
+         cvv, credit_limit, statement_day, notes, status, created_at)
        VALUES (@nickname, @network, @issuer, @card_number, @name_on_card, @expiry_month, @expiry_year,
-               @cvv, @credit_limit, @outstanding_balance, @statement_day, @notes, @created_at)`
+               @cvv, @credit_limit, @statement_day, @notes, @status, @created_at)`
     )
-    .run({ ...input, created_at: now })
+    .run({ ...input, status: input.status ?? 'active', created_at: now })
   return getCreditCard(Number(info.lastInsertRowid))!
 }
 
@@ -35,8 +35,8 @@ export function updateCreditCard(id: number, input: Partial<CreditCardInput>): C
       `UPDATE credit_cards SET
         nickname=@nickname, network=@network, issuer=@issuer, card_number=@card_number,
         name_on_card=@name_on_card, expiry_month=@expiry_month, expiry_year=@expiry_year,
-        cvv=@cvv, credit_limit=@credit_limit, outstanding_balance=@outstanding_balance,
-        statement_day=@statement_day, notes=@notes
+        cvv=@cvv, credit_limit=@credit_limit,
+        statement_day=@statement_day, notes=@notes, status=@status
        WHERE id=@id`
     )
     .run({ ...merged, id })
@@ -95,7 +95,7 @@ export function getUpcomingDueDates(): { id: number; statementDate: string; dueD
   const now = new Date()
   const results: { id: number; statementDate: string; dueDate: string }[] = []
   for (const card of listCreditCards()) {
-    if (card.statement_day == null) continue
+    if (card.statement_day == null || card.status === 'disabled') continue
     const cycle = computeCurrentBillingCycle(card.statement_day, now)
     if (!cycle) continue
     results.push({
@@ -118,7 +118,7 @@ export function getCreditCardsNeedingReminder(
   const now = new Date()
   const results: { card: CreditCard; dueDate: string }[] = []
   for (const card of all) {
-    if (!card.statement_day) continue
+    if (!card.statement_day || card.status === 'disabled') continue
     const cycle = computeCurrentBillingCycle(card.statement_day, now)
     if (!cycle) continue
     const dueIso = toLocalDateString(cycle.dueDate)

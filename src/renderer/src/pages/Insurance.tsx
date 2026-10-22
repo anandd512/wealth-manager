@@ -149,7 +149,7 @@ export default function Insurance(): JSX.Element {
             className="btn"
             onClick={uploadAndExtract}
             disabled={extracting}
-            title="Upload a PDF and AI fills the details automatically"
+            title="Upload a PDF and AI fills the details automatically. Your chosen AI provider reads the document, and the details are saved privately on your device."
           >
             <Upload size={14} /> {extracting ? 'Reading document…' : 'Add via PDF (AI)'}
           </button>
@@ -159,7 +159,7 @@ export default function Insurance(): JSX.Element {
       {(extracting || syncingId !== null) && (
         <div className="syncing-banner">
           <RefreshCw size={15} className="spin" />
-          {syncingId !== null ? 'Updating from document…' : 'Reading document…'}
+          {syncingId !== null ? 'Your AI provider is re-reading the document…' : 'Your AI provider is reading the document…'}
         </div>
       )}
       {extractError && <div className="error-text section">{extractError}</div>}
@@ -281,7 +281,7 @@ export default function Insurance(): JSX.Element {
                                 },
                                 {
                                   icon: ICON_SYNC,
-                                  label: syncingId === p.id ? 'Updating…' : 'Update from document',
+                                  label: syncingId === p.id ? 'Updating…' : 'Update from document (AI)',
                                   onClick: () => resync(p)
                                 }
                               ]

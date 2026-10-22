@@ -113,10 +113,10 @@ CREATE TABLE IF NOT EXISTS credit_cards (
   expiry_year INTEGER,
   cvv TEXT,
   credit_limit REAL,
-  outstanding_balance REAL,
   statement_day INTEGER,
   last_reminder_sent TEXT,
   notes TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT NOT NULL
 );
 
@@ -193,7 +193,7 @@ const MIGRATION_COLUMNS: Record<string, [string, string][]> = {
   credit_cards: [
     ['statement_day', 'INTEGER'],
     ['last_reminder_sent', 'TEXT'],
-    ['outstanding_balance', 'REAL']
+    ['status', "TEXT NOT NULL DEFAULT 'active'"]
   ],
   value_history: [
     ['invested_value', 'REAL'],

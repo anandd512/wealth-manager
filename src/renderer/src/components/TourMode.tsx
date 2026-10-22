@@ -90,7 +90,7 @@ const STEPS: TourStep[] = [
     key: 'ai', nav: 'AI Extraction', route: '/accounts', icon: Bot,
     title: 'AI does the heavy lifting',
     desc: 'Got a loan statement or insurance PDF? Upload it and AI reads the document and fills every field instantly — lender, rate, tenure, outstanding balance. No typing required. Add your API key in Settings → AI & Extraction to enable this.',
-    tip: 'Your documents are processed locally and never stored in the cloud.',
+    tip: 'Your chosen AI provider reads the document, and the details are saved privately on your device.',
     demoKey: 'ai',
   },
   {
@@ -104,14 +104,14 @@ const STEPS: TourStep[] = [
     key: 'insurance', nav: 'Insurance', route: '/insurance', icon: ShieldCheck,
     title: 'Never miss a renewal',
     desc: 'One place for all your policies — life, health, vehicle. Artha tells you exactly when each one is up for renewal so nothing ever lapses. Upload the PDF and AI fills the details automatically. Requires an API key in Settings → AI & Extraction.',
-    tip: 'Upload your policy PDF and AI reads your cover amount, premium, and renewal date automatically.',
+    tip: 'Upload your policy PDF and AI reads your cover amount, premium, and renewal date. Your chosen AI provider reads the document, and the details are saved privately on your device.',
     demoKey: 'ai_insurance',
   },
   {
     key: 'ids', nav: 'Identity Docs', route: '/ids', icon: IdCard,
     title: 'All your IDs, organised',
     desc: 'Stop hunting for your Aadhaar number or passport details. Keep all your IDs in one encrypted place, with document images stored securely on your device.',
-    tip: 'Upload a photo or scan and AI reads the number, name, and expiry automatically.',
+    tip: 'Upload a photo or scan and AI reads the number, name, and expiry. Your chosen AI provider reads the document, and the details are saved privately on your device.',
   },
   {
     key: 'vault', nav: 'Passwords', route: '/vault', icon: KeyRound,
@@ -395,15 +395,17 @@ interface AIModalProps {
 function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, onDone, buttonLabel, buttonHint, FormNav }: AIModalProps): JSX.Element {
   const [phase, setPhase] = useState<AIPhase>('button')
   const [highlightedFile, setHighlightedFile] = useState<string | null>(null)
-  const [clickFlash, setClickFlash] = useState(false)
 
   useEffect(() => {
-    const t0 = setTimeout(() => setPhase('form_nav'), 1500)   // was: setPhase('picker') at 1800ms
-    const t1 = setTimeout(() => setPhase('picker'), 4200)     // NEW: enter picker after 2700ms in form_nav
-    const t2 = setTimeout(() => setHighlightedFile(fileName), 5200)   // was 2800ms
-    const t3 = setTimeout(() => { setPhase('file_selected'); setHighlightedFile(null) }, 6100) // was 3700ms
-    const t4 = setTimeout(() => setPhase('extracting'), 6400) // was 4000ms
-    const t5 = setTimeout(() => setPhase('done'), 8600)       // was 6200ms
+    // 'button' runs the shared coach mark (cursor reaches the button and clicks at ~1.5s).
+    // Demos without an intermediate form go straight from the click to the file picker.
+    const navMs = FormNav ? 2700 : 0
+    const t0 = setTimeout(() => setPhase(FormNav ? 'form_nav' : 'picker'), 1900)
+    const t1 = setTimeout(() => setPhase('picker'), 1900 + navMs)
+    const t2 = setTimeout(() => setHighlightedFile(fileName), 2900 + navMs)
+    const t3 = setTimeout(() => { setPhase('file_selected'); setHighlightedFile(null) }, 3800 + navMs)
+    const t4 = setTimeout(() => setPhase('extracting'), 4100 + navMs)
+    const t5 = setTimeout(() => setPhase('done'), 6300 + navMs)
     return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); clearTimeout(t5) }
   }, [])
 
@@ -412,12 +414,6 @@ function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, on
     const t = setTimeout(onDone, 1800)
     return () => clearTimeout(t)
   }, [phase])
-
-  useEffect(() => {
-    const tf = setTimeout(() => setClickFlash(true), 1100)
-    const tf2 = setTimeout(() => setClickFlash(false), 1400)
-    return () => { clearTimeout(tf); clearTimeout(tf2) }
-  }, [])
 
   // Windows 11 dark-mode file dialog colours (hardcoded, not app theme)
   const W = {
@@ -435,52 +431,11 @@ function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, on
 
   if (phase === 'button') {
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'none' }}>
-        {/* Semi-transparent highlight over the toolbar area */}
-        <div style={{
-          position: 'absolute',
-          top: 0, left: 220, right: 0, height: 64,
-          background: 'rgba(91,141,239,0.08)',
-          borderBottom: '1px solid rgba(91,141,239,0.2)',
-        }} />
-        {/* Tooltip below the button */}
-        <div style={{
-          position: 'absolute',
-          top: 70,
-          right: 16,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-end',
-          gap: 0,
-          pointerEvents: 'none',
-        }}>
-          {/* Arrow pointing up */}
-          <div style={{
-            width: 0, height: 0,
-            borderLeft: '8px solid transparent',
-            borderRight: '8px solid transparent',
-            borderBottom: '8px solid var(--accent)',
-            marginRight: 20,
-          }} />
-          {/* Tooltip */}
-          <div style={{
-            background: 'var(--accent)',
-            color: '#fff',
-            borderRadius: 10,
-            padding: '10px 14px',
-            fontSize: 13,
-            fontWeight: 500,
-            lineHeight: 1.5,
-            maxWidth: 240,
-            boxShadow: '0 8px 24px rgba(91,141,239,0.4)',
-          }}>
-            {buttonHint}
-            <div style={{ fontSize: 11, opacity: 0.85, marginTop: 3 }}>
-              AI reads the PDF and fills every field instantly.
-            </div>
-          </div>
-        </div>
-      </div>
+      <DemoButtonClick
+        label={buttonHint}
+        subText="AI reads the PDF and fills every field instantly."
+        buttonText={buttonLabel}
+      />
     )
   }
 
@@ -783,81 +738,6 @@ function DemoAIModal({ onDone }: { onDone: () => void }): JSX.Element {
   )
 }
 
-// ─── InsuranceFormNav: shows cursor clicking "Add via PDF (AI)" toolbar button ─
-
-function InsuranceFormNav(): JSX.Element {
-  const [navStep, setNavStep] = useState(0)
-  const [btnRect, setBtnRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
-
-  useEffect(() => {
-    // Measure the real button in the dimmed Insurance page behind the overlay
-    const measureBtn = (): void => {
-      const allBtns = Array.from(document.querySelectorAll('button'))
-      const target = allBtns.find(b => b.textContent?.includes('Add via PDF'))
-      if (target) {
-        const r = target.getBoundingClientRect()
-        setBtnRect({ x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height })
-      }
-    }
-    // Give the page a moment to render before measuring
-    const measure = setTimeout(measureBtn, 50)
-    const t1 = setTimeout(() => setNavStep(1), 300)
-    const t2 = setTimeout(() => setNavStep(2), 900)
-    const t3 = setTimeout(() => setNavStep(3), 1300)
-    return () => { clearTimeout(measure); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
-  }, [])
-
-  const btnX = btnRect?.x ?? (window.innerWidth - 120)
-  const btnY = btnRect?.y ?? 44
-  const startX = btnX - 80
-  const startY = btnY + 100
-
-  const cursorX = navStep <= 1 ? startX : btnX
-  const cursorY = navStep <= 1 ? startY : btnY
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: 'none' }}>
-      {/* Highlight the toolbar row that contains the real button */}
-      {btnRect && (
-        <div style={{
-          position: 'fixed',
-          left: btnRect.x - btnRect.w / 2 - 6,
-          top: btnRect.y - btnRect.h / 2 - 6,
-          width: btnRect.w + 12,
-          height: btnRect.h + 12,
-          borderRadius: 8,
-          border: '2px solid rgba(91,141,239,0.85)',
-          background: 'rgba(91,141,239,0.15)',
-          pointerEvents: 'none',
-          zIndex: 201,
-          boxShadow: '0 0 0 4px rgba(91,141,239,0.15)',
-        }} />
-      )}
-      {navStep > 0 && (
-        <>
-          <div style={{
-            position: 'fixed', left: cursorX, top: cursorY,
-            width: 16, height: 16, borderRadius: '50%',
-            background: 'rgba(91,141,239,0.9)', border: '2.5px solid #fff',
-            transform: 'translate(-50%,-50%)', pointerEvents: 'none', zIndex: 210,
-            boxShadow: '0 2px 10px rgba(91,141,239,0.55)',
-            transition: 'left 600ms cubic-bezier(0.4,0,0.2,1), top 600ms cubic-bezier(0.4,0,0.2,1)',
-          }} />
-          {navStep === 3 && (
-            <div style={{
-              position: 'fixed', left: btnX, top: btnY,
-              width: 44, height: 44, borderRadius: '50%',
-              border: '2px solid rgba(91,141,239,0.65)',
-              transform: 'translate(-50%,-50%)', pointerEvents: 'none', zIndex: 209,
-              animation: 'wt-click-ripple 400ms ease-out forwards',
-            }} />
-          )}
-        </>
-      )}
-    </div>
-  )
-}
-
 // Insurance page — motor policy AI extraction demo
 const AI_INSURANCE_FIELDS = {
   'Policy type':    'Motor — Comprehensive',
@@ -880,7 +760,6 @@ function DemoInsuranceAIModal({ onDone }: { onDone: () => void }): JSX.Element {
       onDone={onDone}
       buttonLabel="Add via PDF (AI)"
       buttonHint="In the Insurance page toolbar, click 'Add via PDF (AI)' to extract a policy"
-      FormNav={InsuranceFormNav}
     />
   )
 }
@@ -893,7 +772,7 @@ const CARD_DEMO = [
   { label: 'Card number',              value: '4111 1111 1111 7723' },
   { label: 'Name on card',             value: 'DEV SHARMA' },
   { label: 'Network',                  value: 'Visa' },
-  { label: 'Expiry (MM / YYYY)',       value: '08 / 2027' },
+  { label: 'Expiry (MM / YY)',         value: '08 / 27' },
   { label: 'Credit limit (₹)',         value: '2,00,000' },
   { label: 'Statement date',           value: '10' },
 ]

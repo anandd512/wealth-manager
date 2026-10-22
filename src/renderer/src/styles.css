@@ -1489,3 +1489,104 @@ body.light-mode .tour-guide-panel {
   0%   { transform: translate(-50%,-50%) scale(0); opacity: 0.8; }
   100% { transform: translate(-50%,-50%) scale(2.5); opacity: 0; }
 }
+
+/* ─── Mini credit card ─────────────────────────────────────────────────────── */
+
+.mini-card {
+  position: relative;
+  flex-shrink: 0;
+  width: 128px;
+  height: 80px; /* ISO card ratio ≈ 1.586 */
+  padding: 8px 10px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: #fff;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  font-size: 9px;
+  line-height: 1.15;
+}
+.mini-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.16), transparent 60%);
+  pointer-events: none;
+}
+.mini-card--visa { background: linear-gradient(135deg, #1a3a8f, #0d1f52); }
+.mini-card--mastercard { background: linear-gradient(135deg, #2b2f3a, #12141a); }
+.mini-card--rupay { background: linear-gradient(135deg, #0f6b5c, #0a3d36); }
+.mini-card--amex { background: linear-gradient(135deg, #2f7fc1, #1a4f80); }
+.mini-card--other { background: linear-gradient(135deg, #4a5168, #262a38); }
+.mini-card--disabled { filter: grayscale(1); }
+
+.mini-card-issuer {
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-card-chip {
+  width: 16px;
+  height: 12px;
+  border-radius: 2px;
+  background: linear-gradient(135deg, #e6c87a, #b38f3c);
+}
+.mini-card-bottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px;
+}
+.mini-card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.mini-card-number {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  opacity: 0.9;
+}
+.mini-card-expiry {
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+.mini-card-expiry-label {
+  font-size: 5.5px;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+.mini-card-visa {
+  font-style: italic;
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: -0.02em;
+}
+.mini-card-amex {
+  font-weight: 800;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  padding: 1px 3px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+}
+.mini-card-rupay {
+  font-weight: 800;
+  font-style: italic;
+  font-size: 11px;
+}
+.mini-card-net {
+  font-weight: 700;
+  font-size: 9px;
+}
+.mini-card-mc {
+  width: 24px;
+  height: 15px;
+}

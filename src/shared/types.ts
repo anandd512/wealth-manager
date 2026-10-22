@@ -211,6 +211,8 @@ export interface IdentityDocExtraction {
   confidence_notes: string | null
 }
 
+export type CreditCardStatus = 'active' | 'disabled'
+
 export interface CreditCard {
   id: number
   nickname: string
@@ -222,10 +224,10 @@ export interface CreditCard {
   expiry_year: number | null
   cvv: string | null
   credit_limit: number | null
-  outstanding_balance: number | null
   statement_day: number | null
   last_reminder_sent: string | null
   notes: string | null
+  status: CreditCardStatus
   created_at: string
 }
 

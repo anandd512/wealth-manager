@@ -169,17 +169,17 @@ export const DEMO_IDENTITY_DOCS: IdentityDocument[] = [
 export const DEMO_CREDIT_CARDS: CreditCard[] = [
   {
     id: 1, nickname: 'HDFC Regalia', network: 'Visa', issuer: 'HDFC Bank',
-    card_number: '****4521', name_on_card: 'DEV SHARMA',
-    expiry_month: 9, expiry_year: 28, cvv: null,
+    card_number: '4532015112834521', name_on_card: 'DEV SHARMA',
+    expiry_month: 9, expiry_year: 2028, cvv: null,
     credit_limit: 500000, statement_day: 5,
-    last_reminder_sent: null, notes: null, created_at: '2026-01-01T00:00:00Z',
+    last_reminder_sent: null, notes: null, status: 'active', created_at: '2026-01-01T00:00:00Z',
   },
   {
     id: 2, nickname: 'Axis Bank Miles & More', network: 'Mastercard', issuer: 'Axis Bank',
-    card_number: '****8834', name_on_card: 'DEV SHARMA',
-    expiry_month: 4, expiry_year: 27, cvv: null,
+    card_number: '5425233430108834', name_on_card: 'DEV SHARMA',
+    expiry_month: 4, expiry_year: 2027, cvv: null,
     credit_limit: 300000, statement_day: 15,
-    last_reminder_sent: null, notes: null, created_at: '2026-01-01T00:00:00Z',
+    last_reminder_sent: null, notes: null, status: 'active', created_at: '2026-01-01T00:00:00Z',
   },
 ]
 
