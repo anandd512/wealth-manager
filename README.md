@@ -59,6 +59,32 @@ no password reset — if you forget it, the data cannot be recovered. The
 database file lives at `%APPDATA%\Artha\wealth.db.enc` (the dev build uses the same
 folder, so running from source on a machine with the app installed opens the same data).
 
+### Troubleshooting `npm run dev`
+
+**`Error: Electron uninstall` / `getElectronPath`** — the `electron` npm package's
+postinstall step, which downloads the actual Electron binary, didn't complete (flaky
+network, antivirus, or an interrupted `npm install`). Fix:
+
+```bash
+node node_modules/electron/install.js
+```
+
+This re-downloads the binary into `node_modules/electron/dist`. If it still fails,
+delete `node_modules/electron` and reinstall.
+
+**`TypeError: Cannot read properties of undefined (reading 'whenReady')`** — the
+`ELECTRON_RUN_AS_NODE` environment variable is set, which makes `electron.exe` run as
+plain Node instead of launching the app, so `require('electron')` doesn't return the
+real API. This is commonly inherited from VS Code's integrated terminal (VS Code is
+itself an Electron app and can leak this into terminals it spawns). Fix, in that
+terminal, before running `npm run dev`:
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+```
+
+Or just run `npm run dev` from a terminal outside VS Code.
+
 ## Releasing a new version
 
 Releases are built by GitHub Actions (`.github/workflows/release.yml`) and published to
