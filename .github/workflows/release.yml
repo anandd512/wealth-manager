@@ -1,0 +1,153 @@
+name: Release
+
+# Push a tag like v0.1.1 to build the Windows installer and upload it to a draft
+# GitHub Release. Installed copies of Artha update from published releases.
+#
+# Code signing (SignPath Foundation) runs only once the SIGNPATH_API_TOKEN secret
+# exists. Until then the installer is built and released unsigned. Signing is two
+# passes: Artha.exe inside the packaged app, then the installer rebuilt around it.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the release and upload assets
+  actions: read # SignPath downloads the unsigned artifacts from this run
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      SIGN: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Read version and check it matches the tag
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      # The lockfile was generated against a private npm mirror that CI can't reach.
+      # The tarballs are identical to the public registry's (integrity hashes are
+      # still checked), so point the URLs at registry.npmjs.org.
+      - name: Use the public npm registry
+        shell: bash
+        run: sed -i 's#https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/#https://registry.npmjs.org/#g' package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck main process
+        run: npx tsc --noEmit -p tsconfig.node.json
+
+      # Builds release/win-unpacked (including resources/app-update.yml, which the
+      # auto-updater needs) and an unsigned installer plus latest.yml.
+      - name: Build
+        run: npm run dist
+
+      # ── Pass 1: sign Artha.exe ────────────────────────────────────────────────
+      - name: Upload unsigned app
+        if: env.SIGN == 'true'
+        id: unsigned-app
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-app
+          path: release/win-unpacked
+
+      - name: Sign app
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: windows-app
+          github-artifact-id: ${{ steps.unsigned-app.outputs.artifact-id }}
+          wait-for-completion: true
+          # Every release needs a manual approval in SignPath; allow time for it.
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: release/win-unpacked-signed
+          parameters: |
+            version: ${{ toJSON(env.VERSION) }}
+
+      # Rebuilding from the prepackaged folder reuses the signed Artha.exe as-is.
+      - name: Rebuild installer around the signed app
+        if: env.SIGN == 'true'
+        run: npx electron-builder --win nsis --prepackaged release/win-unpacked-signed --publish never
+
+      # ── Pass 2: sign the installer ────────────────────────────────────────────
+      - name: Upload unsigned installer
+        if: env.SIGN == 'true'
+        id: unsigned-installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-installer
+          path: release/Artha-Setup-${{ env.VERSION }}.exe
+
+      - name: Sign installer
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: windows-installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: release/signed
+          parameters: |
+            version: ${{ toJSON(env.VERSION) }}
+
+      # Signing changes the installer's bytes, so the hash/size the updater checks
+      # (latest.yml) and the block map must be regenerated.
+      - name: Use signed installer and refresh update metadata
+        if: env.SIGN == 'true'
+        shell: bash
+        run: |
+          mv -f "release/signed/Artha-Setup-$VERSION.exe" "release/Artha-Setup-$VERSION.exe"
+          node scripts/finalize-signed-installer.cjs release
+
+      - name: Verify signatures
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($f in "release/win-unpacked-signed/Artha.exe", "release/Artha-Setup-$env:VERSION.exe") {
+            $sig = Get-AuthenticodeSignature $f
+            "$f : $($sig.Status) — $($sig.SignerCertificate.Subject)" | Tee-Object -Append -FilePath $env:GITHUB_STEP_SUMMARY
+            if ($sig.Status -ne 'Valid' -or -not $sig.TimeStamperCertificate) { $failed = $true }
+          }
+          if ($failed) { throw 'A file is unsigned, untimestamped or has an invalid signature.' }
+
+      - name: Create draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --title "Artha $VERSION" \
+            --notes "Install steps: https://github.com/anandd512/wealth-manager#installing-artha | Code signing policy: https://github.com/anandd512/wealth-manager#code-signing-policy" \
+            "release/Artha-Setup-$VERSION.exe" \
+            "release/Artha-Setup-$VERSION.exe.blockmap" \
+            release/latest.yml
+
+      - name: Installer checksum
+        shell: bash
+        run: |
+          {
+            echo "### Installer SHA-256"
+            echo '```'
+            sha256sum "release/Artha-Setup-$VERSION.exe"
+            echo '```'
+            echo "Paste this into the release notes before publishing."
+          } >> "$GITHUB_STEP_SUMMARY"

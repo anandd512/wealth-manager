@@ -85,5 +85,9 @@ export const CHANNELS = {
   backupSummary: 'backup:summary',
   backupImport: 'backup:import',
 
+  updatesStatus: 'updates:status',
+  updatesSetAutoCheck: 'updates:setAutoCheck',
+  updatesCheckNow: 'updates:checkNow',
+
   authResetData: 'auth:resetData'
 } as const

@@ -389,5 +389,10 @@ export function createTourApi(): typeof window.api {
       summary:  async () => ({ exportedAt: '', documentCount: 0, hasSecrets: false }),
       import:   async () => {},
     },
+    updates: {
+      status:       async () => ({ supported: false, autoCheck: false, version: '' }),
+      setAutoCheck: async () => ({ supported: false, autoCheck: false, version: '' }),
+      checkNow:     async () => ({ status: 'unsupported' as const }),
+    },
   }
 }

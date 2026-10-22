@@ -1,9 +1,9 @@
-import nodemailer from 'nodemailer'
+import nodemailer, { type Transporter } from 'nodemailer'
 import { getSmtpConfig, getSmtpPassword } from './settings'
 import { policyTypeLabel } from '../../shared/insuranceTypes'
 import type { InsurancePolicy, IdentityDocument, CreditCard } from '../../shared/types'
 
-function buildTransporter(): { transporter: nodemailer.Transporter; from: string; to: string } {
+function buildTransporter(): { transporter: Transporter; from: string; to: string } {
   const config = getSmtpConfig()
   const password = getSmtpPassword()
   if (!config.host || !config.user || !password || !config.toAddress) {

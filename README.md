@@ -1,4 +1,4 @@
-# Wealth Manager
+# Artha
 
 A local-first desktop app (Windows, via Electron) for tracking net worth across bank
 accounts, investments, real estate, and loans — plus insurance, ID documents, credit
@@ -7,7 +7,41 @@ cards, and a password vault, all behind one master password.
 Everything lives on your machine. There is no cloud backend, no account, and no
 telemetry.
 
-## Running it
+## Installing Artha
+
+1. Download `Artha-Setup-<version>.exe` from the
+   [latest release](https://github.com/anandd512/wealth-manager/releases/latest).
+2. Optional but recommended — check the file wasn't altered on the way. In PowerShell:
+   `Get-FileHash .\Artha-Setup-<version>.exe -Algorithm SHA256` and compare the result
+   with the SHA-256 listed in the release notes.
+3. Run it. If Windows shows **"Windows protected your PC"**, click **More info → Run
+   anyway**. You'll see this for unsigned releases, and sometimes for a new signed
+   release until Windows has seen enough installs of it.
+
+On first launch Artha asks whether to check for updates automatically. If you agree, new
+releases download in the background and Artha asks you to restart. You can change this,
+or check manually, in **Settings → Help**.
+
+To uninstall, use **Windows Settings → Apps → Installed apps → Artha → Uninstall**. Your
+data folder (`%APPDATA%\Artha`) is left in place so a reinstall picks it up; delete that
+folder too if you want everything gone.
+
+**Before you start using it, know that:**
+
+- **Your master password can't be recovered.** It encrypts everything; if you forget
+  it, the data is gone. Store it in a safe place.
+- **Backups are on you.** Your data exists only on this computer. Use
+  **Settings → Data → Export backup** regularly and keep the file somewhere other than
+  this PC (a USB drive or your own cloud storage). The backup is encrypted with your
+  master password.
+- **AI auto-fill is optional and uses your own API key.** If you turn it on in
+  **Settings → AI**, each document you upload for auto-fill is sent to the provider you
+  choose (Anthropic, or your own OpenAI-compatible endpoint) to be read. The extracted
+  details are saved only on your device. Without a key, everything else works and you
+  enter details by hand.
+- Email reminders are optional too and use your own SMTP account.
+
+## Running it from source
 
 ```bash
 npm install
@@ -22,7 +56,59 @@ npm start       # preview the production build
 On first launch you'll set a **master password**. This encrypts the entire local
 database (AES-256-GCM, key derived from your password via scrypt). There is
 no password reset — if you forget it, the data cannot be recovered. The
-database file lives at `%APPDATA%/wealth-manager/wealth.db.enc`.
+database file lives at `%APPDATA%\Artha\wealth.db.enc` (the dev build uses the same
+folder, so running from source on a machine with the app installed opens the same data).
+
+## Releasing a new version
+
+Releases are built by GitHub Actions (`.github/workflows/release.yml`) and published to
+GitHub Releases, which is also where installed copies look for updates.
+
+1. Bump `version` in `package.json` (e.g. `0.1.1`) and commit.
+2. Tag and push: `git tag v0.1.1 && git push origin master v0.1.1`.
+3. The workflow builds the installer and uploads it, with `latest.yml` (used by the
+   auto-updater), to a **draft** release. Its summary lists the installer's SHA-256.
+4. Review the draft on GitHub, paste the SHA-256 into the notes, and click **Publish**.
+   Installed copies pick it up within a few hours, or on their next launch.
+
+The tag must match the `package.json` version, or the workflow fails before building.
+To build an installer locally without publishing: `npm run dist` (output in `release/`).
+
+Once code signing is set up (the `SIGNPATH_API_TOKEN` secret exists), the workflow also
+sends `Artha.exe` and then the installer to SignPath. Each signing request waits for a
+manual approval in SignPath before the workflow continues, so approve both while the run
+is in progress. See [Code signing policy](#code-signing-policy).
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
+[SignPath Foundation](https://signpath.org/).
+
+*SignPath Foundation approval is pending. Until then, releases are unsigned.*
+
+- Committers and reviewers: [Anand Deshpande](https://github.com/anandd512)
+- Approvers: [Anand Deshpande](https://github.com/anandd512)
+
+Only `Artha.exe` and the `Artha-Setup-<version>.exe` installer, built by GitHub Actions
+from this repository's source, are signed. Every signing request is approved manually.
+
+## Privacy policy
+
+This program will not transfer any information to other networked systems unless
+specifically requested by the user or the person installing or operating it.
+
+Each of these happens only when you turn it on or ask for it:
+
+- **AI auto-fill** sends the document you upload to the AI provider you chose in
+  **Settings → AI**: [Anthropic](https://www.anthropic.com/legal/privacy), or an
+  OpenAI-compatible endpoint you configure yourself (its operator's privacy policy applies).
+- **Email reminders** are sent through the SMTP server you configure.
+- **Update checks** contact [GitHub](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)
+  to look for a newer release, if you allow automatic checks or click **Check now**.
+- **Stock price lookups** query [Yahoo Finance](https://legal.yahoo.com/us/en/yahoo/privacy/index.html)
+  for the ticker you ask about.
+
+Everything else, including all your financial data, stays encrypted on your device.
 
 ## What's implemented
 
@@ -114,14 +200,12 @@ database file lives at `%APPDATA%/wealth-manager/wealth.db.enc`.
   more reliable delivery, consider enabling "Start at login" via Windows settings so
   the app is normally open, or add a Windows Task Scheduler entry that launches it
   periodically.
-- No packaged installer yet (`npm run dist` is wired to `electron-builder` with an
-  icon configured, but no code signing/publish config). Fine for running from source;
-  worth finishing if you want a double-click installer.
+- Releases are unsigned until the SignPath Foundation application is approved, so
+  Windows SmartScreen warns on install. Even signed, new releases may warn until they
+  build up reputation.
 - Single-user, single-machine by design. If you ever want it on your phone too, the
   cleanest path discussed was a small self-hosted sync server — deliberately left out
   of this version.
-- No clipboard auto-clear timer on the vault's "Copy" button — the password stays on
-  your OS clipboard until overwritten by something else.
 
 ## Project layout
 

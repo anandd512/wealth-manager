@@ -11,7 +11,9 @@ import type {
   CheckInScheduleSettings,
   SmtpConfig,
   UpcomingItemType,
-  UpcomingAction
+  UpcomingAction,
+  UpdateCheckResult,
+  UpdateStatus
 } from '../shared/types'
 
 const api = {
@@ -151,6 +153,12 @@ const api = {
     pickFile: () => ipcRenderer.invoke(CHANNELS.backupPickFile),
     summary: (path: string) => ipcRenderer.invoke(CHANNELS.backupSummary, path),
     import: (path: string) => ipcRenderer.invoke(CHANNELS.backupImport, path)
+  },
+  updates: {
+    status: (): Promise<UpdateStatus> => ipcRenderer.invoke(CHANNELS.updatesStatus),
+    setAutoCheck: (enabled: boolean): Promise<UpdateStatus> =>
+      ipcRenderer.invoke(CHANNELS.updatesSetAutoCheck, enabled),
+    checkNow: (): Promise<UpdateCheckResult> => ipcRenderer.invoke(CHANNELS.updatesCheckNow)
   }
 }
 

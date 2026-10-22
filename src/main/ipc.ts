@@ -49,6 +49,7 @@ import {
   getStoredHelloKey
 } from './windowsHello'
 import { checkReminders, startScheduler, stopScheduler } from './scheduler'
+import { checkForUpdatesNow, getUpdateStatus, setAutoCheck } from './updater'
 
 function requireUnlocked(): void {
   if (!isUnlocked()) throw new Error('App is locked')
@@ -552,4 +553,13 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     }
     return { ok: true }
   })
+
+  ipcMain.handle(CHANNELS.updatesStatus, () => getUpdateStatus())
+
+  ipcMain.handle(CHANNELS.updatesSetAutoCheck, (_e, enabled: boolean) => {
+    setAutoCheck(Boolean(enabled))
+    return getUpdateStatus()
+  })
+
+  ipcMain.handle(CHANNELS.updatesCheckNow, () => checkForUpdatesNow())
 }

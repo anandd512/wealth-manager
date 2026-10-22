@@ -334,3 +334,15 @@ export interface UpcomingItem {
   daysLeft: number
   actionLabel: string
 }
+
+export interface UpdateStatus {
+  supported: boolean
+  autoCheck: boolean
+  version: string
+}
+
+export type UpdateCheckResult =
+  | { status: 'unsupported' }
+  | { status: 'up-to-date' }
+  | { status: 'downloading'; version: string }
+  | { status: 'error'; message: string }

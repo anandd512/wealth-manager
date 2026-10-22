@@ -22,7 +22,8 @@ import type {
   CheckInScheduleSettings,
   ExtractionProvider,
   ReminderSettings,
-  SmtpConfig
+  SmtpConfig,
+  UpdateStatus
 } from '../../../shared/types'
 
 type TabId = 'data' | 'appearance' | 'security' | 'notifications' | 'ai' | 'help'
@@ -136,6 +137,30 @@ export default function Settings(): JSX.Element {
   const [importError, setImportError] = useState<string | null>(null)
   const [importBusy, setImportBusy] = useState(false)
 
+  // Updates
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null)
+
+  const toggleAutoUpdate = async (enabled: boolean): Promise<void> => {
+    setUpdateStatus(await api().updates.setAutoCheck(enabled))
+  }
+
+  const checkForUpdates = async (): Promise<void> => {
+    setUpdateBusy(true)
+    setUpdateMsg(null)
+    try {
+      const result = await api().updates.checkNow()
+      if (result.status === 'up-to-date') setUpdateMsg("You're on the latest version.")
+      else if (result.status === 'downloading')
+        setUpdateMsg(`Version ${result.version} is downloading — you'll be asked to restart when it's ready.`)
+      else if (result.status === 'error') setUpdateMsg(`Couldn't check for updates: ${result.message}`)
+      else setUpdateMsg('Updates are only available in the installed app.')
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
+
   const load = async (): Promise<void> => {
     const s: AppSettings = await api().settings.get()
     setSettings(s)
@@ -151,6 +176,7 @@ export default function Settings(): JSX.Element {
 
   useEffect(() => {
     load()
+    api().updates.status().then(setUpdateStatus)
     ;(async () => {
       const [available, enabled] = await Promise.all([
         api().auth.windowsHelloAvailable(),
@@ -966,6 +992,32 @@ export default function Settings(): JSX.Element {
       )}
 
       {/* ── HELP ─────────────────────────────────────────────────────── */}
+      {activeTab === 'help' && updateStatus && (
+        <div className="card section">
+          <div className="section-header">
+            <h2>Updates</h2>
+          </div>
+          <p className="muted" style={{ marginTop: 0 }}>
+            {updateStatus.version ? `You're running Artha ${updateStatus.version}. ` : ''}
+            Checking for updates contacts GitHub (github.com) to see if a newer version is
+            available. Nothing about you or your data is sent.
+          </p>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <input
+              type="checkbox"
+              style={{ width: 'auto' }}
+              checked={updateStatus.autoCheck}
+              onChange={(e) => toggleAutoUpdate(e.target.checked)}
+            />
+            Check for updates automatically
+          </label>
+          <button className="btn secondary" onClick={checkForUpdates} disabled={updateBusy}>
+            {updateBusy ? 'Checking…' : 'Check now'}
+          </button>
+          {updateMsg && <div className="success-text">{updateMsg}</div>}
+        </div>
+      )}
+
       {activeTab === 'help' && (
         <div className="card section">
           <div className="section-header">

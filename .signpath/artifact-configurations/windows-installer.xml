@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pass 2: the NSIS installer rebuilt around the signed app (zipped by upload-artifact).
+     Paste into the SignPath project as artifact configuration "windows-installer". -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="Artha-Setup-${version}.exe" product-name="Artha" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>
