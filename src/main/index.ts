@@ -17,6 +17,25 @@ function isWebUrl(url: string): boolean {
   }
 }
 
+// Windows' taskbar/Alt-Tab icon specifically wants a proper multi-resolution .ico —
+// a plain .png can silently fail to apply there (falling back to Electron's own
+// default icon) even though it works fine for the window's title-bar icon. This
+// only matters in dev (`npm run dev`, running the stock electron.exe); a packaged
+// build gets its icon baked into the .exe itself via electron-builder's own
+// `build.win.icon` config in package.json.
+const windowIcon = join(__dirname, '../../resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png')
+
+// Without this, Windows has no identity for the running app besides the literal path
+// to electron.exe — the same shared binary every Electron project's dev mode runs
+// from. That's enough for Windows to cache a taskbar icon against that exe path from
+// an earlier run (e.g. before this file ever set a custom icon) and keep showing it
+// even after the window's own icon is correct — the title bar updates live, but the
+// taskbar button icon on Windows is tied to this ID, not just the window's HICON.
+// See https://electronjs.org/docs/latest/tutorial/windows-taskbar.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.ananddeshpande.artha')
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -25,7 +44,7 @@ function createWindow(): void {
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,
-    icon: join(__dirname, '../../resources/icon.png'),
+    icon: windowIcon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

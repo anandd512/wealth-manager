@@ -28,14 +28,15 @@ export function computeTotals(): { totalAssets: number; totalLiabilities: number
 export function recordSnapshot(): NetWorthSnapshot {
   const { totalAssets, totalLiabilities, netWorth } = computeTotals()
   const date = todayStr()
+  const now = new Date().toISOString()
   getDb()
     .prepare(
-      `INSERT INTO net_worth_snapshots (snapshot_date, total_assets, total_liabilities, net_worth)
-       VALUES (@date, @totalAssets, @totalLiabilities, @netWorth)
+      `INSERT INTO net_worth_snapshots (snapshot_date, total_assets, total_liabilities, net_worth, updated_at)
+       VALUES (@date, @totalAssets, @totalLiabilities, @netWorth, @now)
        ON CONFLICT(snapshot_date) DO UPDATE SET
-         total_assets=@totalAssets, total_liabilities=@totalLiabilities, net_worth=@netWorth`
+         total_assets=@totalAssets, total_liabilities=@totalLiabilities, net_worth=@netWorth, updated_at=@now`
     )
-    .run({ date, totalAssets, totalLiabilities, netWorth })
+    .run({ date, totalAssets, totalLiabilities, netWorth, now })
   return getDb()
     .prepare('SELECT * FROM net_worth_snapshots WHERE snapshot_date = ?')
     .get(date) as NetWorthSnapshot
@@ -43,7 +44,7 @@ export function recordSnapshot(): NetWorthSnapshot {
 
 export function getHistory(): NetWorthSnapshot[] {
   return getDb()
-    .prepare('SELECT * FROM net_worth_snapshots ORDER BY snapshot_date')
+    .prepare('SELECT * FROM net_worth_snapshots WHERE deleted = 0 ORDER BY snapshot_date')
     .all() as NetWorthSnapshot[]
 }
 

@@ -263,13 +263,13 @@ export interface VaultEntry {
 
 export type VaultEntryInput = Omit<VaultEntry, 'id' | 'created_at' | 'password_changed_at'>
 
-export interface SmtpConfig {
-  host: string
-  port: number
-  secure: boolean
-  user: string
-  fromAddress: string
-  toAddress: string
+// Reminder emails go through the backend's Azure Communication Services Email
+// (see backend/src/functions/notifySend.ts) rather than a user-configured SMTP
+// server — `email` just needs a one-time OTP verification (src/main/services/
+// notify.ts), independent of whether cloud sync is set up at all.
+export interface NotifyStatus {
+  verified: boolean
+  email: string | null
 }
 
 export interface ReminderSettings {
@@ -300,8 +300,6 @@ export interface AppSettings {
   hasOpenAiKey: boolean
   openAiBaseUrl: string
   openAiModel: string
-  hasSmtpPassword: boolean
-  smtp: Omit<SmtpConfig, 'user'> & { user: string }
 }
 
 export interface AuthStatus {

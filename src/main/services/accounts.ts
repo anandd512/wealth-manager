@@ -1,9 +1,10 @@
+import { randomUUID } from 'crypto'
 import { getDb } from '../db'
 import type { Account, AccountCategory, AccountInput, ValueHistoryRow } from '../../shared/types'
 import { recordSnapshot } from './netWorth'
 
 export function listAccounts(): Account[] {
-  return getDb().prepare('SELECT * FROM accounts ORDER BY category, name').all() as Account[]
+  return getDb().prepare('SELECT * FROM accounts WHERE deleted = 0 ORDER BY category, name').all() as Account[]
 }
 
 export function getAccount(id: number): Account | undefined {
@@ -20,15 +21,15 @@ export function createAccount(input: AccountInput): Account {
          debit_card_number, debit_card_network, debit_card_expiry_month, debit_card_expiry_year,
          debit_card_cvv, debit_card_name_on_card, principal_amount, interest_rate, tenure_months,
          emi_amount, loan_start_date, document_path, document_original_name, purchase_price, purchase_date,
-         ownership_pct, last_updated, notes, created_at)
+         ownership_pct, last_updated, notes, created_at, sync_id)
        VALUES (@name, @category, @subtype, @institution, @currency, @is_liability, @current_value,
                @ticker, @quantity, @last_price, @last_price_at, @account_number, @ifsc_code,
                @debit_card_number, @debit_card_network, @debit_card_expiry_month, @debit_card_expiry_year,
                @debit_card_cvv, @debit_card_name_on_card, @principal_amount, @interest_rate, @tenure_months,
                @emi_amount, @loan_start_date, @document_path, @document_original_name, @purchase_price, @purchase_date,
-               @ownership_pct, @last_updated, @notes, @created_at)`
+               @ownership_pct, @last_updated, @notes, @created_at, @sync_id)`
     )
-    .run({ ...input, last_updated: now, created_at: now })
+    .run({ ...input, last_updated: now, created_at: now, sync_id: randomUUID() })
   const account = getAccount(Number(info.lastInsertRowid))!
   recordValueHistory(account.id, account.current_value, 'manual', account.principal_amount, account.quantity)
   recordSnapshot()
@@ -63,8 +64,13 @@ export function updateAccount(id: number, input: Partial<AccountInput>): Account
   return getAccount(id)!
 }
 
+// Soft delete: a hard DELETE has nothing to replicate — another device that already
+// pulled this row would never learn it was removed. Flagging `deleted` and bumping
+// `last_updated` instead gives sync.ts a tombstone to push.
 export function deleteAccount(id: number): void {
-  getDb().prepare('DELETE FROM accounts WHERE id = ?').run(id)
+  getDb()
+    .prepare('UPDATE accounts SET deleted = 1, last_updated = ? WHERE id = ?')
+    .run(new Date().toISOString(), id)
   recordSnapshot()
 }
 
@@ -75,17 +81,18 @@ export function recordValueHistory(
   investedValue?: number | null,
   quantity?: number | null
 ): void {
+  const now = new Date().toISOString()
   getDb()
     .prepare(
-      `INSERT INTO value_history (account_id, value, recorded_at, source, invested_value, quantity)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO value_history (account_id, value, recorded_at, source, invested_value, quantity, sync_id, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(accountId, value, new Date().toISOString(), source, investedValue ?? null, quantity ?? null)
+    .run(accountId, value, now, source, investedValue ?? null, quantity ?? null, randomUUID(), now)
 }
 
 export function getValueHistory(accountId: number): ValueHistoryRow[] {
   return getDb()
-    .prepare('SELECT * FROM value_history WHERE account_id = ? ORDER BY recorded_at')
+    .prepare('SELECT * FROM value_history WHERE account_id = ? AND deleted = 0 ORDER BY recorded_at')
     .all(accountId) as ValueHistoryRow[]
 }
 
@@ -122,7 +129,7 @@ export function setAccountValue(
 function recomputeCurrentValueFromHistory(accountId: number): void {
   const latest = getDb()
     .prepare(
-      `SELECT value, invested_value, quantity FROM value_history WHERE account_id = ?
+      `SELECT value, invested_value, quantity FROM value_history WHERE account_id = ? AND deleted = 0
        ORDER BY substr(recorded_at, 1, 10) DESC, id DESC LIMIT 1`
     )
     .get(accountId) as { value: number; invested_value: number | null; quantity: number | null } | undefined
@@ -150,21 +157,22 @@ export function checkInValue(
 ): Account {
   const db = getDb()
   const dateOnly = date.slice(0, 10)
+  const now = new Date().toISOString()
   const existing = db
     .prepare(
       `SELECT id FROM value_history
-       WHERE account_id = ? AND source = 'check_in' AND substr(recorded_at, 1, 10) = ?`
+       WHERE account_id = ? AND source = 'check_in' AND substr(recorded_at, 1, 10) = ? AND deleted = 0`
     )
     .get(accountId, dateOnly) as { id: number } | undefined
   if (existing) {
     db.prepare(
-      'UPDATE value_history SET value = ?, recorded_at = ?, invested_value = ?, quantity = ? WHERE id = ?'
-    ).run(value, dateOnly, investedValue ?? null, quantity ?? null, existing.id)
+      'UPDATE value_history SET value = ?, recorded_at = ?, invested_value = ?, quantity = ?, updated_at = ? WHERE id = ?'
+    ).run(value, dateOnly, investedValue ?? null, quantity ?? null, now, existing.id)
   } else {
     db.prepare(
-      `INSERT INTO value_history (account_id, value, recorded_at, source, invested_value, quantity)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(accountId, value, dateOnly, 'check_in', investedValue ?? null, quantity ?? null)
+      `INSERT INTO value_history (account_id, value, recorded_at, source, invested_value, quantity, sync_id, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(accountId, value, dateOnly, 'check_in', investedValue ?? null, quantity ?? null, randomUUID(), now)
   }
   recomputeCurrentValueFromHistory(accountId)
   recordSnapshot()
@@ -183,19 +191,24 @@ export function updateValueHistoryEntry(
     | undefined
   if (!row) throw new Error('Entry not found')
   getDb()
-    .prepare('UPDATE value_history SET value = ?, recorded_at = ?, invested_value = ?, quantity = ? WHERE id = ?')
-    .run(value, date.slice(0, 10), investedValue ?? null, quantity ?? null, historyId)
+    .prepare(
+      'UPDATE value_history SET value = ?, recorded_at = ?, invested_value = ?, quantity = ?, updated_at = ? WHERE id = ?'
+    )
+    .run(value, date.slice(0, 10), investedValue ?? null, quantity ?? null, new Date().toISOString(), historyId)
   recomputeCurrentValueFromHistory(row.account_id)
   recordSnapshot()
   return getDb().prepare('SELECT * FROM value_history WHERE id = ?').get(historyId) as ValueHistoryRow
 }
 
+// Soft delete — see src/main/services/accounts.ts's deleteAccount for why.
 export function deleteValueHistoryEntry(historyId: number): void {
   const row = getDb().prepare('SELECT * FROM value_history WHERE id = ?').get(historyId) as
     | ValueHistoryRow
     | undefined
   if (!row) return
-  getDb().prepare('DELETE FROM value_history WHERE id = ?').run(historyId)
+  getDb()
+    .prepare('UPDATE value_history SET deleted = 1, updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), historyId)
   recomputeCurrentValueFromHistory(row.account_id)
   recordSnapshot()
 }
@@ -216,7 +229,7 @@ export function getCategoryValueHistory(
   const rows = db
     .prepare(
       `SELECT account_id, value, recorded_at FROM value_history
-       WHERE account_id IN (${placeholders}) ORDER BY recorded_at ASC, id ASC`
+       WHERE account_id IN (${placeholders}) AND deleted = 0 ORDER BY recorded_at ASC, id ASC`
     )
     .all(...accountIds) as { account_id: number; value: number; recorded_at: string }[]
 

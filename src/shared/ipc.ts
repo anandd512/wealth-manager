@@ -10,6 +10,17 @@ export const CHANNELS = {
   authDisableWindowsHello: 'auth:disableWindowsHello',
   authUnlockWithWindowsHello: 'auth:unlockWithWindowsHello',
 
+  storageModeStatus: 'storageMode:status',
+  storageModeSet: 'storageMode:set',
+
+  syncStatus: 'sync:status',
+  syncRequestEmailVerification: 'sync:requestEmailVerification',
+  syncConfirmEmailVerification: 'sync:confirmEmailVerification',
+  syncRegister: 'sync:register',
+  syncLogin: 'sync:login',
+  syncLogout: 'sync:logout',
+  syncNow: 'sync:now',
+
   accountsList: 'accounts:list',
   accountsCreate: 'accounts:create',
   accountsUpdate: 'accounts:update',
@@ -74,9 +85,12 @@ export const CHANNELS = {
   settingsClearOpenAiKey: 'settings:clearOpenAiKey',
   settingsSetOpenAiBaseUrl: 'settings:setOpenAiBaseUrl',
   settingsSetOpenAiModel: 'settings:setOpenAiModel',
-  settingsSetSmtp: 'settings:setSmtp',
-  settingsSetSmtpPassword: 'settings:setSmtpPassword',
   settingsTestEmail: 'settings:testEmail',
+
+  notifyStatus: 'notify:status',
+  notifyRequestVerification: 'notify:requestVerification',
+  notifyConfirmVerification: 'notify:confirmVerification',
+  notifyDisconnect: 'notify:disconnect',
 
   remindersCheckNow: 'reminders:checkNow',
 

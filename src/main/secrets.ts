@@ -2,12 +2,19 @@ import { app, safeStorage } from 'electron'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
 
-// Secrets (API keys, SMTP app passwords) are encrypted at rest with Electron's
+// Secrets (API keys, sync/notify tokens) are encrypted at rest with Electron's
 // safeStorage, which is backed by the OS credential store (DPAPI on Windows,
 // Keychain on macOS, libsecret on Linux). They are tied to the OS user account,
 // independent of the app's own master password.
 
-type SecretKey = 'anthropicApiKey' | 'openaiApiKey' | 'smtpPassword'
+type SecretKey =
+  | 'anthropicApiKey'
+  | 'openaiApiKey'
+  | 'syncEmail'
+  | 'syncToken'
+  | 'syncDataKey'
+  | 'notifyEmail'
+  | 'notifyToken'
 
 function secretsFilePath(): string {
   return join(app.getPath('userData'), 'secrets.json')
@@ -88,7 +95,7 @@ export function reimportSecrets(importedPath: string): void {
   } catch {
     return
   }
-  const keys: SecretKey[] = ['anthropicApiKey', 'openaiApiKey', 'smtpPassword']
+  const keys: SecretKey[] = ['anthropicApiKey', 'openaiApiKey']
   for (const key of keys) {
     const raw = imported[key]
     if (!raw) continue

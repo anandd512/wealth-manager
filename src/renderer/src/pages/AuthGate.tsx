@@ -145,7 +145,7 @@ export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props)
               <p style={{ margin: '0 0 8px', fontSize: 13 }}>
                 Backup from {formatDate(importSummary.exportedAt)} — {importSummary.documentCount}{' '}
                 document(s)
-                {importSummary.hasSecrets ? ', including saved API/SMTP credentials' : ''}.
+                {importSummary.hasSecrets ? ', including saved API keys and email reminder setup' : ''}.
               </p>
               <p className="help-text" style={{ margin: '0 0 12px' }}>
                 You'll unlock it next with the master password it was created with.

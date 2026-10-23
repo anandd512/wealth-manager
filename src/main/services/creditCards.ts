@@ -1,9 +1,10 @@
+import { randomUUID } from 'crypto'
 import { getDb } from '../db'
 import { toLocalDateString, daysUntilLocalDate } from '../dateUtils'
 import type { CreditCard, CreditCardInput } from '../../shared/types'
 
 export function listCreditCards(): CreditCard[] {
-  return getDb().prepare('SELECT * FROM credit_cards ORDER BY nickname').all() as CreditCard[]
+  return getDb().prepare('SELECT * FROM credit_cards WHERE deleted = 0 ORDER BY nickname').all() as CreditCard[]
 }
 
 export function getCreditCard(id: number): CreditCard | undefined {
@@ -18,33 +19,36 @@ export function createCreditCard(input: CreditCardInput): CreditCard {
     .prepare(
       `INSERT INTO credit_cards
         (nickname, network, issuer, card_number, name_on_card, expiry_month, expiry_year,
-         cvv, credit_limit, statement_day, notes, status, created_at)
+         cvv, credit_limit, statement_day, notes, status, created_at, sync_id, updated_at)
        VALUES (@nickname, @network, @issuer, @card_number, @name_on_card, @expiry_month, @expiry_year,
-               @cvv, @credit_limit, @statement_day, @notes, @status, @created_at)`
+               @cvv, @credit_limit, @statement_day, @notes, @status, @created_at, @sync_id, @updated_at)`
     )
-    .run({ ...input, status: input.status ?? 'active', created_at: now })
+    .run({ ...input, status: input.status ?? 'active', created_at: now, sync_id: randomUUID(), updated_at: now })
   return getCreditCard(Number(info.lastInsertRowid))!
 }
 
 export function updateCreditCard(id: number, input: Partial<CreditCardInput>): CreditCard {
   const existing = getCreditCard(id)
   if (!existing) throw new Error('Card not found')
-  const merged = { ...existing, ...input }
+  const merged = { ...existing, ...input, updated_at: new Date().toISOString() }
   getDb()
     .prepare(
       `UPDATE credit_cards SET
         nickname=@nickname, network=@network, issuer=@issuer, card_number=@card_number,
         name_on_card=@name_on_card, expiry_month=@expiry_month, expiry_year=@expiry_year,
         cvv=@cvv, credit_limit=@credit_limit,
-        statement_day=@statement_day, notes=@notes, status=@status
+        statement_day=@statement_day, notes=@notes, status=@status, updated_at=@updated_at
        WHERE id=@id`
     )
     .run({ ...merged, id })
   return getCreditCard(id)!
 }
 
+// Soft delete — see src/main/services/accounts.ts's deleteAccount for why.
 export function deleteCreditCard(id: number): void {
-  getDb().prepare('DELETE FROM credit_cards WHERE id = ?').run(id)
+  getDb()
+    .prepare('UPDATE credit_cards SET deleted = 1, updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), id)
 }
 
 // Bills are due this many days after the statement is generated. Not stored

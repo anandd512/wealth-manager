@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import splashMp4 from './assets/splash.mp4'
 import logo from './assets/logo.png'
-import { NavLink, Route, Routes } from 'react-router-dom'
+import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
   Wallet,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import type { AuthStatus } from '../../shared/types'
 import AuthGate from './pages/AuthGate'
+import StorageChoiceGate from './pages/StorageChoiceGate'
 import TourMode from './components/TourMode'
 import Dashboard from './pages/Dashboard'
 import Accounts from './pages/Accounts'
@@ -43,6 +44,21 @@ export default function App(): JSX.Element {
   })
   const [status, setStatus] = useState<AuthStatus | null>(null)
   const [tourMode, setTourMode] = useState(false)
+
+  // Reset scroll to the top of the page on every route change — otherwise a tab
+  // switch can land mid-scroll, wherever the previous tab happened to be.
+  const mainRef = useRef<HTMLElement>(null)
+  const location = useLocation()
+  useEffect(() => {
+    mainRef.current?.scrollTo(0, 0)
+  }, [location.pathname])
+
+  // null = not loaded yet; 'local' | 'cloud' = already answered (possibly just now);
+  // 'unanswered' = genuinely fresh install, show the choice screen before AuthGate.
+  const [storageMode, setStorageModeState] = useState<'local' | 'cloud' | 'unanswered' | null>(null)
+  useEffect(() => {
+    window.api.storageMode.status().then((r) => setStorageModeState(r.mode ?? 'unanswered'))
+  }, [])
 
   // Item 47 — theme state
   const [theme, setTheme] = useState<'dark' | 'light'>(
@@ -164,18 +180,28 @@ export default function App(): JSX.Element {
     )
   }
 
-  if (!status) return <div className="gate">Loading…</div>
+  if (!status || storageMode === null) return <div className="gate">Loading…</div>
 
   if (tourMode) {
     return <TourMode onExit={() => setTourMode(false)} isLoggedIn={status.unlocked} />
   }
 
   if (!status.unlocked) {
+    // Only a genuinely fresh install (never initialized, never answered) sees this —
+    // see ipc.ts's storageModeStatus handler. Choosing "local" leads straight into
+    // the exact same master-password setup as always; cloud sync can be turned on
+    // from Settings any time regardless of what's picked here.
+    if (!status.initialized && storageMode === 'unanswered') {
+      return <StorageChoiceGate onChosen={(mode) => setStorageModeState(mode)} />
+    }
     return (
       <AuthGate
         initialized={status.initialized}
         onUnlocked={() => {
-          window.location.hash = '#/'
+          // A first-time cloud choice lands on Cloud Sync so there's something to do
+          // next; everyone else (including every "local" choice) goes to the
+          // dashboard exactly as before.
+          window.location.hash = !status.initialized && storageMode === 'cloud' ? '#/settings?tab=sync' : '#/'
           refreshStatus()
         }}
         onTakeTour={() => setTourMode(true)}
@@ -227,7 +253,7 @@ export default function App(): JSX.Element {
           </button>
         </div>
       </aside>
-      <main className="main">
+      <main className="main" ref={mainRef}>
         {/* Item 53 — first-run banner */}
         {hasAccounts === false && (
           <div style={{ background: 'var(--accent)', color: '#fff', borderRadius: 'var(--radius)', padding: '14px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

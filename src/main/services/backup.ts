@@ -9,7 +9,7 @@ import { documentsDir } from '../fileStore'
 // device: the master-password salt/verifier (auth.json — without it a restored
 // wealth.db.enc has no way to re-derive its own decryption key), the encrypted
 // database itself, every encrypted uploaded document, and (best-effort — see
-// secrets.ts) the OS-keychain-wrapped API keys/SMTP password. Nothing here is
+// secrets.ts) the OS-keychain-wrapped API keys/notify email verification. Nothing here is
 // decrypted or re-encrypted in a new scheme; the already-encrypted bytes are simply
 // concatenated behind a small manifest, so restoring just puts the same files back
 // and unlocks exactly like the original install, with the same master password.

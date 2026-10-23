@@ -1,12 +1,6 @@
 import { getDb } from '../db'
 import { getSecret, setSecret, hasSecret, clearSecret } from '../secrets'
-import type {
-  AppSettings,
-  CheckInScheduleSettings,
-  ExtractionProvider,
-  ReminderSettings,
-  SmtpConfig
-} from '../../shared/types'
+import type { AppSettings, CheckInScheduleSettings, ExtractionProvider, ReminderSettings } from '../../shared/types'
 
 const DEFAULT_REMINDERS: ReminderSettings = {
   daysBefore: 30,
@@ -21,15 +15,6 @@ const DEFAULT_CHECKIN_SCHEDULE: CheckInScheduleSettings = {
   weekday: 6
 }
 
-const DEFAULT_SMTP: Omit<SmtpConfig, 'user'> & { user: string } = {
-  host: '',
-  port: 587,
-  secure: false,
-  user: '',
-  fromAddress: '',
-  toAddress: ''
-}
-
 function getKv(key: string): string | null {
   const row = getDb().prepare('SELECT value FROM kv_settings WHERE key = ?').get(key) as
     | { value: string }
@@ -40,9 +25,10 @@ function getKv(key: string): string | null {
 function setKv(key: string, value: string): void {
   getDb()
     .prepare(
-      'INSERT INTO kv_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+      `INSERT INTO kv_settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
     )
-    .run(key, value)
+    .run(key, value, new Date().toISOString())
 }
 
 export function getReminderSettings(): ReminderSettings {
@@ -71,15 +57,6 @@ export function getLastCheckInNotification(): string | null {
 
 export function setLastCheckInNotification(dueDate: string): void {
   setKv('lastCheckInNotification', dueDate)
-}
-
-export function getSmtpConfig(): Omit<SmtpConfig, 'user'> & { user: string } {
-  const raw = getKv('smtpConfig')
-  return raw ? { ...DEFAULT_SMTP, ...JSON.parse(raw) } : DEFAULT_SMTP
-}
-
-export function setSmtpConfig(config: Omit<SmtpConfig, 'user'> & { user: string }): void {
-  setKv('smtpConfig', JSON.stringify(config))
 }
 
 export function getExtractionProvider(): ExtractionProvider {
@@ -120,9 +97,7 @@ export function getAppSettings(): AppSettings {
     hasAnthropicKey: hasSecret('anthropicApiKey'),
     hasOpenAiKey: hasSecret('openaiApiKey'),
     openAiBaseUrl: getOpenAiBaseUrl(),
-    openAiModel: getOpenAiModel(),
-    hasSmtpPassword: hasSecret('smtpPassword'),
-    smtp: getSmtpConfig()
+    openAiModel: getOpenAiModel()
   }
 }
 
@@ -140,12 +115,4 @@ export function setOpenAiApiKey(key: string): void {
 
 export function clearOpenAiApiKey(): void {
   clearSecret('openaiApiKey')
-}
-
-export function setSmtpPassword(password: string): void {
-  setSecret('smtpPassword', password)
-}
-
-export function getSmtpPassword(): string | null {
-  return getSecret('smtpPassword')
 }

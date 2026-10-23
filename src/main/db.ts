@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'fs'
-import { randomBytes, createCipheriv, createDecipheriv } from 'crypto'
+import { randomBytes, randomUUID, createCipheriv, createDecipheriv } from 'crypto'
 // sql.js is a WASM build of SQLite with no native compilation step — chosen specifically
 // to avoid depending on a working C++ toolchain (better-sqlite3 / SQLCipher need node-gyp).
 // The whole database is encrypted at rest with AES-256-GCM using a key derived from the
@@ -139,6 +139,16 @@ CREATE TABLE IF NOT EXISTS kv_settings (
   value TEXT NOT NULL
 );
 
+-- Sync bookkeeping (pull cursors) — deliberately a separate table from kv_settings,
+-- now that kv_settings itself is synced (see src/main/sync.ts). A cursor is this
+-- device's own progress through the pull stream; syncing it to another device would
+-- overwrite that device's independent progress with this one's, which is exactly
+-- backwards. Never added to SYNCABLE_TABLES.
+CREATE TABLE IF NOT EXISTS sync_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 -- Tracks "mark as paid" / "dismiss" actions on dashboard upcoming items. Keyed by the
 -- specific due date rather than just the item, so the next billing/renewal cycle (a new
 -- due date) naturally reappears without needing to "undo" anything.
@@ -152,6 +162,20 @@ CREATE TABLE IF NOT EXISTS upcoming_dismissals (
   UNIQUE(item_type, item_id, due_date)
 );
 `
+
+// Cloud-sync metadata (see src/main/sync.ts), appended to every synced table below.
+// `sync_id` is the stable identifier shared across devices — the local autoincrement
+// `id` is only ever meaningful on this one device. `updated_at` drives last-write-wins
+// and incremental pulls (none of these tables had a reliable "last modified" column
+// before this — `created_at` doesn't change on edits). `deleted` is a tombstone: every
+// delete* function for a synced table now sets this instead of hard-deleting, so the
+// deletion itself propagates to other devices on next sync instead of just vanishing
+// locally with nothing for them to learn from.
+const SYNC_COLUMNS: [string, string][] = [
+  ['sync_id', 'TEXT'],
+  ['updated_at', 'TEXT'],
+  ['deleted', 'INTEGER NOT NULL DEFAULT 0']
+]
 
 const MIGRATION_COLUMNS: Record<string, [string, string][]> = {
   accounts: [
@@ -172,14 +196,19 @@ const MIGRATION_COLUMNS: Record<string, [string, string][]> = {
     ['document_original_name', 'TEXT'],
     ['purchase_price', 'REAL'],
     ['purchase_date', 'TEXT'],
-    ['ownership_pct', 'REAL']
+    ['ownership_pct', 'REAL'],
+    ['sync_id', 'TEXT'],
+    ['deleted', 'INTEGER NOT NULL DEFAULT 0']
+    // Note: accounts already had `last_updated` from day one, serving the role
+    // `updated_at` plays for the other synced tables below — no need to add it here.
   ],
   insurance_policies: [
     ['vehicle_number', 'TEXT'],
     ['renewal_date', 'TEXT'],
     ['nominee_name', 'TEXT'],
     ['riders', 'TEXT'],
-    ['additional_insured', 'TEXT']
+    ['additional_insured', 'TEXT'],
+    ...SYNC_COLUMNS
   ],
   identity_documents: [
     ['date_of_birth', 'TEXT'],
@@ -188,22 +217,51 @@ const MIGRATION_COLUMNS: Record<string, [string, string][]> = {
     ['vehicle_model', 'TEXT'],
     ['insurance_valid_upto', 'TEXT'],
     ['constituency', 'TEXT'],
-    ['voter_serial_number', 'TEXT']
+    ['voter_serial_number', 'TEXT'],
+    ...SYNC_COLUMNS
   ],
   credit_cards: [
     ['statement_day', 'INTEGER'],
     ['last_reminder_sent', 'TEXT'],
-    ['status', "TEXT NOT NULL DEFAULT 'active'"]
+    ['status', "TEXT NOT NULL DEFAULT 'active'"],
+    ...SYNC_COLUMNS
   ],
   value_history: [
     ['invested_value', 'REAL'],
-    ['quantity', 'REAL']
+    ['quantity', 'REAL'],
+    ...SYNC_COLUMNS
   ],
   credential_vault: [
     ['category', 'TEXT'],
     ['totp_secret', 'TEXT'],
     ['password_changed_at', 'TEXT'],
-    ['entry_type', 'TEXT']
+    ['entry_type', 'TEXT'],
+    ...SYNC_COLUMNS
+  ],
+  // net_worth_snapshots and kv_settings don't get a `sync_id` column — each already
+  // has its own natural unique key (snapshot_date / key respectively), so sync.ts
+  // uses that directly as the sync identity instead of a redundant random id. That
+  // also means two devices recording the same date, or writing the same setting,
+  // naturally converge on one row instead of colliding or duplicating.
+  net_worth_snapshots: [
+    ['updated_at', 'TEXT'],
+    ['deleted', 'INTEGER NOT NULL DEFAULT 0']
+  ],
+  kv_settings: [
+    ['updated_at', 'TEXT'],
+    ['deleted', 'INTEGER NOT NULL DEFAULT 0']
+  ],
+  // upcoming_dismissals keeps its local `item_id` (an insurance_policies/
+  // identity_documents/credit_cards row's local autoincrement id) for all local
+  // lookups, unchanged — but that id is meaningless on another device. `item_sync_id`
+  // is the portable pointer (resolved from item_id via the relevant table's own
+  // sync_id) that actually travels in the sync payload; see sync.ts's dedicated
+  // pushUpcomingDismissals/pullUpcomingDismissals for why this table can't use the
+  // generic mechanism the others do.
+  upcoming_dismissals: [
+    ['item_sync_id', 'TEXT'],
+    ['updated_at', 'TEXT'],
+    ['deleted', 'INTEGER NOT NULL DEFAULT 0']
   ]
 }
 
@@ -240,10 +298,80 @@ function ensureColumns(raw: SqlJsDatabase, table: string): void {
   }
 }
 
+// Every pre-existing row predates the `sync_id` column, so it starts out NULL —
+// backfill before the unique index below, since SQLite only treats NULLs as
+// mutually non-conflicting, not a row genuinely missing an id to sync by.
+function backfillSyncIds(raw: SqlJsDatabase, table: string): void {
+  const rows = raw.exec(`SELECT id FROM ${table} WHERE sync_id IS NULL`)
+  for (const row of rows[0]?.values ?? []) {
+    raw.run(`UPDATE ${table} SET sync_id = ? WHERE id = ?`, [randomUUID(), row[0] as number])
+  }
+  raw.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_${table}_sync_id ON ${table}(sync_id)`)
+}
+
+// Every synced table except `accounts` got `updated_at` as a nullable ALTER TABLE
+// ADD COLUMN — which leaves it NULL on every row that existed before this migration
+// ran, since ADD COLUMN never backfills existing rows. `accounts` doesn't need this:
+// it's used `last_updated NOT NULL` since before sync existed, so every row already
+// had a value. Every *other* synced table hits it though (not just the five sharing
+// accounts' per-record pattern — kv_settings, net_worth_snapshots and
+// upcoming_dismissals went through the identical nullable-ADD-COLUMN migration too),
+// and a NULL updated_at makes the backend reject the push outright (see
+// backend/src/functions/syncPush.ts's `!item.updatedAt` check) — this is the bug
+// behind "item missing required fields" showing up for real pre-existing data.
+//
+// Falls back to `fallbackColumn` (each table's own closest substitute for "when was
+// this last touched") rather than `datetime('now')`, so pre-migration rows still
+// sort sensibly by actual history instead of all claiming "just now". kv_settings
+// has no such column at all (just `key`/`value` before this), so it's the one
+// exception that genuinely does fall back to the current time.
+function backfillUpdatedAt(raw: SqlJsDatabase, table: string, fallbackColumn: string): void {
+  raw.run(`UPDATE ${table} SET updated_at = ${fallbackColumn} WHERE updated_at IS NULL`)
+}
+
+function backfillUpdatedAtToNow(raw: SqlJsDatabase, table: string): void {
+  raw.run(`UPDATE ${table} SET updated_at = ? WHERE updated_at IS NULL`, [new Date().toISOString()])
+}
+
+const SYNCED_TABLES = [
+  'accounts',
+  'insurance_policies',
+  'identity_documents',
+  'credit_cards',
+  'value_history',
+  'credential_vault'
+]
+
+// [table, column to copy into updated_at when it's NULL] — see backfillUpdatedAt.
+const UPDATED_AT_FALLBACK: [string, string][] = [
+  ['insurance_policies', 'created_at'],
+  ['identity_documents', 'created_at'],
+  ['credit_cards', 'created_at'],
+  ['value_history', 'recorded_at'],
+  ['credential_vault', 'created_at'],
+  // snapshot_date is a plain date ("2026-10-20"), not a full ISO timestamp — still a
+  // valid, correctly-sortable fallback since this type's pull cursor only ever
+  // compares net_worth_snapshot rows against each other, never other types.
+  ['net_worth_snapshots', 'snapshot_date'],
+  ['upcoming_dismissals', 'created_at']
+]
+
+// kv_settings has no prior timestamp column to fall back to at all.
+const UPDATED_AT_FALLBACK_TO_NOW = ['kv_settings']
+
 function runMigrations(raw: SqlJsDatabase): void {
   applyColumnRenames(raw)
   for (const table of Object.keys(MIGRATION_COLUMNS)) {
     ensureColumns(raw, table)
+  }
+  for (const table of SYNCED_TABLES) {
+    backfillSyncIds(raw, table)
+  }
+  for (const [table, fallbackColumn] of UPDATED_AT_FALLBACK) {
+    backfillUpdatedAt(raw, table, fallbackColumn)
+  }
+  for (const table of UPDATED_AT_FALLBACK_TO_NOW) {
+    backfillUpdatedAtToNow(raw, table)
   }
 }
 

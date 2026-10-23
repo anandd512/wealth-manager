@@ -1,10 +1,11 @@
+import { randomUUID } from 'crypto'
 import { getDb } from '../db'
 import { todayLocalDateString, daysUntilLocalDate } from '../dateUtils'
 import type { IdentityDocument, IdentityDocumentInput } from '../../shared/types'
 
 export function listIdentityDocuments(): IdentityDocument[] {
   return getDb()
-    .prepare('SELECT * FROM identity_documents ORDER BY expiry_date IS NULL, expiry_date ASC')
+    .prepare('SELECT * FROM identity_documents WHERE deleted = 0 ORDER BY expiry_date IS NULL, expiry_date ASC')
     .all() as IdentityDocument[]
 }
 
@@ -21,12 +22,12 @@ export function createIdentityDocument(input: IdentityDocumentInput): IdentityDo
       `INSERT INTO identity_documents
         (doc_type, label, id_number, full_name, date_of_birth, issued_date, expiry_date,
          additional_info, vehicle_class, vehicle_model, insurance_valid_upto, constituency,
-         voter_serial_number, document_path, document_original_name, notes, created_at)
+         voter_serial_number, document_path, document_original_name, notes, created_at, sync_id, updated_at)
        VALUES (@doc_type, @label, @id_number, @full_name, @date_of_birth, @issued_date, @expiry_date,
                @additional_info, @vehicle_class, @vehicle_model, @insurance_valid_upto, @constituency,
-               @voter_serial_number, @document_path, @document_original_name, @notes, @created_at)`
+               @voter_serial_number, @document_path, @document_original_name, @notes, @created_at, @sync_id, @updated_at)`
     )
-    .run({ ...input, created_at: now })
+    .run({ ...input, created_at: now, sync_id: randomUUID(), updated_at: now })
   return getIdentityDocument(Number(info.lastInsertRowid))!
 }
 
@@ -36,7 +37,7 @@ export function updateIdentityDocument(
 ): IdentityDocument {
   const existing = getIdentityDocument(id)
   if (!existing) throw new Error('Document not found')
-  const merged = { ...existing, ...input }
+  const merged = { ...existing, ...input, updated_at: new Date().toISOString() }
   getDb()
     .prepare(
       `UPDATE identity_documents SET
@@ -45,15 +46,18 @@ export function updateIdentityDocument(
         additional_info=@additional_info, vehicle_class=@vehicle_class, vehicle_model=@vehicle_model,
         insurance_valid_upto=@insurance_valid_upto, constituency=@constituency,
         voter_serial_number=@voter_serial_number, document_path=@document_path,
-        document_original_name=@document_original_name, notes=@notes
+        document_original_name=@document_original_name, notes=@notes, updated_at=@updated_at
        WHERE id=@id`
     )
     .run({ ...merged, id })
   return getIdentityDocument(id)!
 }
 
+// Soft delete — see src/main/services/accounts.ts's deleteAccount for why.
 export function deleteIdentityDocument(id: number): void {
-  getDb().prepare('DELETE FROM identity_documents WHERE id = ?').run(id)
+  getDb()
+    .prepare('UPDATE identity_documents SET deleted = 1, updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), id)
 }
 
 export function markReminderSent(id: number): void {

@@ -1,0 +1,28 @@
+{
+  "name": "artha-sync-backend",
+  "version": "0.1.0",
+  "description": "Azure Functions backend for Artha cloud sync — stores only client-encrypted ciphertext, never plaintext financial data.",
+  "private": true,
+  "main": "dist/src/functions/*.js",
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "prebuild": "npm run clean",
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "npm run build && func start",
+    "prestart": "npm run build"
+  },
+  "dependencies": {
+    "@azure/communication-email": "^1.0.0",
+    "@azure/cosmos": "^4.2.0",
+    "@azure/functions": "^4.5.1",
+    "@azure/identity": "^4.5.0",
+    "@azure/keyvault-secrets": "^4.9.0",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2"
+  }
+}

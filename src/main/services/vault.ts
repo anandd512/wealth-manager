@@ -1,9 +1,10 @@
+import { randomUUID } from 'crypto'
 import { getDb } from '../db'
 import type { VaultEntry, VaultEntryInput } from '../../shared/types'
 
 export function listVaultEntries(): VaultEntry[] {
   return getDb()
-    .prepare('SELECT * FROM credential_vault ORDER BY category NULLS LAST, service_name')
+    .prepare('SELECT * FROM credential_vault WHERE deleted = 0 ORDER BY category NULLS LAST, service_name')
     .all() as VaultEntry[]
 }
 
@@ -18,14 +19,16 @@ export function createVaultEntry(input: VaultEntryInput): VaultEntry {
   const info = getDb()
     .prepare(
       `INSERT INTO credential_vault
-        (entry_type, service_name, category, url, username, password, totp_secret, password_changed_at, notes, created_at)
-       VALUES (@entry_type, @service_name, @category, @url, @username, @password, @totp_secret, @password_changed_at, @notes, @created_at)`
+        (entry_type, service_name, category, url, username, password, totp_secret, password_changed_at, notes, created_at, sync_id, updated_at)
+       VALUES (@entry_type, @service_name, @category, @url, @username, @password, @totp_secret, @password_changed_at, @notes, @created_at, @sync_id, @updated_at)`
     )
     .run({
       ...input,
       entry_type: input.entry_type ?? 'login',
       password_changed_at: input.password ? now : null,
-      created_at: now
+      created_at: now,
+      sync_id: randomUUID(),
+      updated_at: now
     })
   return getVaultEntry(Number(info.lastInsertRowid))!
 }
@@ -41,20 +44,24 @@ export function updateVaultEntry(id: number, input: Partial<VaultEntryInput>): V
     entry_type: input.entry_type ?? existing.entry_type ?? 'login',
     password_changed_at: passwordChanged && input.password
       ? now
-      : existing.password_changed_at
+      : existing.password_changed_at,
+    updated_at: now
   }
   getDb()
     .prepare(
       `UPDATE credential_vault SET
         entry_type=@entry_type, service_name=@service_name, category=@category, url=@url,
         username=@username, password=@password, totp_secret=@totp_secret,
-        password_changed_at=@password_changed_at, notes=@notes
+        password_changed_at=@password_changed_at, notes=@notes, updated_at=@updated_at
        WHERE id=@id`
     )
     .run({ ...merged, id })
   return getVaultEntry(id)!
 }
 
+// Soft delete — see src/main/services/accounts.ts's deleteAccount for why.
 export function deleteVaultEntry(id: number): void {
-  getDb().prepare('DELETE FROM credential_vault WHERE id = ?').run(id)
+  getDb()
+    .prepare('UPDATE credential_vault SET deleted = 1, updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), id)
 }

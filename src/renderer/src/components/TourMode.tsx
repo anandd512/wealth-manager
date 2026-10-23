@@ -35,6 +35,7 @@ import {
   EyeOff,
   Bell,
   Upload,
+  Cloud,
 } from 'lucide-react'
 import logo from '../assets/logo.png'
 import Dashboard from '../pages/Dashboard'
@@ -65,7 +66,7 @@ const STEPS: TourStep[] = [
     key: 'welcome', nav: 'Welcome', route: null, icon: Sparkles,
     title: 'Welcome to Artha',
     desc: 'Your personal finance command center — accounts, insurance, identity documents, credit cards, and passwords, all encrypted locally on your device.',
-    tip: 'Nothing ever leaves your device. Zero cloud. Zero tracking.',
+    tip: 'Local-first by default — nothing leaves your device unless you turn on cloud sync, which is entirely your choice.',
   },
   {
     key: 'dashboard', nav: 'Dashboard', route: '/', icon: LayoutDashboard,
@@ -116,7 +117,7 @@ const STEPS: TourStep[] = [
   {
     key: 'vault', nav: 'Passwords', route: '/vault', icon: KeyRound,
     title: 'Secure password vault',
-    desc: 'A secure home for all your logins — encrypted alongside your financial data. No LastPass subscription, no cloud sync, no third-party breach risk. Your passwords stay on your device.',
+    desc: 'A secure home for all your logins — encrypted alongside your financial data. No LastPass subscription, no third-party breach risk — and if you turn on cloud sync, your passwords sync the same end-to-end encrypted way everything else does.',
     tip: 'All your logins encrypted alongside your financial data — no separate password manager needed.',
     demoKey: 'vault',
   },
@@ -127,9 +128,15 @@ const STEPS: TourStep[] = [
     tip: 'Enable Windows Hello to unlock with your face or fingerprint instead of typing your password.',
   },
   {
+    key: 'cloudsync', nav: 'Cloud Sync', route: null, icon: Cloud,
+    title: 'Access it from your phone too',
+    desc: 'Artha stays local-only by default, but you can turn on cloud sync any time from Settings → Cloud Sync — sign in with email, Google, or Microsoft, and the same data becomes available on the Artha mobile app. Your device encrypts everything before it ever leaves — the cloud side never sees a usable copy.',
+    tip: 'Choose local-only or cloud sync when you first set up Artha. Either way, you can switch to cloud sync later from Settings without losing anything.',
+  },
+  {
     key: 'done', nav: 'Get started', route: null, icon: Star,
     title: "You're ready!",
-    desc: "Set a master password to create your encrypted vault. Your data lives on this device forever. Back up anytime with the built-in export.",
+    desc: "First, choose whether your data stays on this device or syncs to the cloud too — then set a master password to create your encrypted vault. Back up anytime with the built-in export.",
     tip: undefined,
   },
 ]
@@ -961,7 +968,7 @@ function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
   })
 
   if (!formReady) {
-    return <DemoButtonClick label='Click "Add login" to save a password' subText="Encrypted on your device — no cloud sync, no breach risk." buttonText="Add login" />
+    return <DemoButtonClick label='Click "Add login" to save a password' subText="Encrypted on your device before anything syncs anywhere." buttonText="Add login" />
   }
 
   return (
@@ -1123,7 +1130,7 @@ function OverlaySecurity({ onNext }: { onNext: () => void }): JSX.Element {
   const items = [
     { label: 'Encryption', value: 'AES-256-GCM', color: 'var(--accent)' },
     { label: 'Key derivation', value: 'scrypt — brute force resistant', color: 'var(--green)' },
-    { label: 'Storage', value: '100% local — no cloud sync', color: 'var(--green)' },
+    { label: 'Storage', value: 'Local-first — cloud sync optional', color: 'var(--green)' },
     { label: 'Auto-lock', value: '5 minutes of inactivity', color: 'var(--text-dim)' },
     { label: 'Biometrics', value: 'Windows Hello supported', color: 'var(--text-dim)' },
     { label: 'Backup', value: 'Encrypted .wmbackup export', color: 'var(--text-dim)' },
@@ -1140,6 +1147,43 @@ function OverlaySecurity({ onNext }: { onNext: () => void }): JSX.Element {
         <h2 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 8px', letterSpacing: '-0.015em' }}>Your data is truly private</h2>
         <p style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.6, marginBottom: 20, maxWidth: 360, textAlign: 'center' }}>
           Artha never sees your master password. Everything is encrypted before being written to disk.
+        </p>
+        <div style={{ width: '100%', maxWidth: 380, background: 'var(--bg-inset)', border: '1px solid var(--border-soft)', borderRadius: 10, overflow: 'hidden', marginBottom: 24 }}>
+          {items.map((item, i) => (
+            <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderBottom: i < items.length - 1 ? '1px solid var(--border-soft)' : 'none' }}>
+              <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>{item.label}</span>
+              <span style={{ color: item.color, fontWeight: 600, fontSize: 12 }}>{item.value}</span>
+            </div>
+          ))}
+        </div>
+        <button className="btn" style={{ minWidth: 200, padding: '11px 28px', fontSize: 14 }} onClick={onNext}>
+          One more step <ChevronRight size={16} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function OverlayCloudSync({ onNext }: { onNext: () => void }): JSX.Element {
+  const items = [
+    { label: 'Default', value: 'Local-only — your choice at setup', color: 'var(--text-dim)' },
+    { label: 'Turn on anytime', value: 'Settings → Cloud Sync', color: 'var(--accent)' },
+    { label: 'Sign in with', value: 'Email, Google, or Microsoft', color: 'var(--text-dim)' },
+    { label: 'What the cloud sees', value: 'Ciphertext only — never your data', color: 'var(--green)' },
+    { label: 'Also works on', value: 'The Artha mobile app', color: 'var(--text-dim)' },
+  ]
+  return (
+    <div className="tour-fullscreen-overlay">
+      <div className="tour-overlay-card">
+        <div className="tour-overlay-icon" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+          <Cloud size={28} />
+        </div>
+        <div style={{ background: 'var(--green-soft)', color: 'var(--green)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', padding: '3px 12px', borderRadius: 999, marginBottom: 14 }}>
+          Optional, end-to-end encrypted
+        </div>
+        <h2 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 8px', letterSpacing: '-0.015em' }}>Access it from your phone too</h2>
+        <p style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.6, marginBottom: 20, maxWidth: 360, textAlign: 'center' }}>
+          Your device encrypts everything before it leaves — the cloud never sees a usable copy, only you can decrypt it.
         </p>
         <div style={{ width: '100%', maxWidth: 380, background: 'var(--bg-inset)', border: '1px solid var(--border-soft)', borderRadius: 10, overflow: 'hidden', marginBottom: 24 }}>
           {items.map((item, i) => (
@@ -1415,9 +1459,10 @@ function TourInnerApp({ step, onNext, onPrev, onExit, isLoggedIn }: InnerProps):
       </div>
 
       {/* Fullscreen overlays for welcome / security / done */}
-      {current.key === 'welcome' && <OverlayWelcome onNext={onNext} />}
-      {current.key === 'security' && <OverlaySecurity onNext={onNext} />}
-      {current.key === 'done'    && <OverlayDone onExit={onExit} isLoggedIn={isLoggedIn} />}
+      {current.key === 'welcome'   && <OverlayWelcome onNext={onNext} />}
+      {current.key === 'security'  && <OverlaySecurity onNext={onNext} />}
+      {current.key === 'cloudsync' && <OverlayCloudSync onNext={onNext} />}
+      {current.key === 'done'      && <OverlayDone onExit={onExit} isLoggedIn={isLoggedIn} />}
 
       {/* Demo modals */}
       {activeDemo === 'account'      && <DemoAccountModal      onDone={handleDemoAccountDone} />}

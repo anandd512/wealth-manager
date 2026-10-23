@@ -11,13 +11,28 @@ import type {
   VaultEntryInput,
   ReminderSettings,
   CheckInScheduleSettings,
-  SmtpConfig,
   AuthStatus,
   UpcomingItemType,
   UpcomingAction
 } from '../shared/types'
 import * as auth from './auth'
 import { openDatabase, closeDatabase, rekeyDatabase, isUnlocked, decrypt, getCurrentKey } from './db'
+import {
+  syncStatus,
+  requestEmailVerification,
+  confirmEmailVerification,
+  registerSync,
+  loginSync,
+  logoutSync,
+  syncNow
+} from './sync'
+import { getStorageMode, setStorageMode, type StorageMode } from './storageMode'
+import {
+  notifyStatus,
+  requestNotifyVerification,
+  confirmNotifyVerification,
+  clearNotifyVerification
+} from './notify'
 import * as accounts from './services/accounts'
 import * as netWorth from './services/netWorth'
 import * as insurance from './services/insurance'
@@ -145,6 +160,80 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     // Keep the Windows Hello-gated key in sync so it isn't left pointing at the old one.
     if (isWindowsHelloEnabled()) enableWindowsHello(newKey)
     return { ok: true }
+  })
+
+  ipcMain.handle(CHANNELS.storageModeStatus, () => {
+    let mode = getStorageMode()
+    // A pre-existing install from before this feature already has an auth.json —
+    // it's implicitly been "local only" the whole time, so treat it as answered
+    // rather than retroactively asking. Fresh installs get `mode: null` here, which
+    // is what tells the renderer to show the choice screen.
+    if (!mode && auth.isInitialized()) {
+      setStorageMode('local')
+      mode = 'local'
+    }
+    return { mode }
+  })
+
+  ipcMain.handle(CHANNELS.storageModeSet, (_e, mode: StorageMode) => {
+    setStorageMode(mode)
+    return { ok: true }
+  })
+
+  ipcMain.handle(CHANNELS.syncStatus, () => syncStatus())
+
+  ipcMain.handle(CHANNELS.syncRequestEmailVerification, async (_e, email: string) => {
+    try {
+      await requestEmailVerification(email)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.syncConfirmEmailVerification, async (_e, email: string, code: string) => {
+    try {
+      const verificationToken = await confirmEmailVerification(email, code)
+      return { ok: true, verificationToken }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(
+    CHANNELS.syncRegister,
+    async (_e, email: string, password: string, verificationToken: string) => {
+      try {
+        await registerSync(email, password, verificationToken)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle(CHANNELS.syncLogin, async (_e, email: string, password: string) => {
+    try {
+      await loginSync(email, password)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.syncLogout, () => {
+    logoutSync()
+    return { ok: true }
+  })
+
+  ipcMain.handle(CHANNELS.syncNow, async () => {
+    requireUnlocked() // reads/writes the local SQLite tables, which need the app unlocked
+    try {
+      await syncNow()
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
   })
 
   ipcMain.handle(CHANNELS.authWindowsHelloAvailable, async () => {
@@ -484,21 +573,38 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     settings.setOpenAiModel(model)
     return { ok: true }
   })
-  ipcMain.handle(
-    CHANNELS.settingsSetSmtp,
-    (_e, config: Omit<SmtpConfig, 'user'> & { user: string }) => {
-      requireUnlocked()
-      settings.setSmtpConfig(config)
+  ipcMain.handle(CHANNELS.notifyStatus, () => notifyStatus())
+
+  ipcMain.handle(CHANNELS.notifyRequestVerification, async (_e, email: string) => {
+    try {
+      await requestNotifyVerification(email)
       return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
     }
-  )
-  ipcMain.handle(CHANNELS.settingsSetSmtpPassword, (_e, password: string) => {
-    settings.setSmtpPassword(password)
+  })
+
+  ipcMain.handle(CHANNELS.notifyConfirmVerification, async (_e, email: string, code: string) => {
+    try {
+      await confirmNotifyVerification(email, code)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.notifyDisconnect, () => {
+    clearNotifyVerification()
     return { ok: true }
   })
+
   ipcMain.handle(CHANNELS.settingsTestEmail, async () => {
-    await sendTestEmail()
-    return { ok: true }
+    try {
+      await sendTestEmail()
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
   })
 
   ipcMain.handle(CHANNELS.remindersCheckNow, async () => {

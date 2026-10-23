@@ -13,10 +13,28 @@ const daysUntil = daysUntilLocalDate
 function isDismissed(itemType: UpcomingItemType, itemId: number, dueDate: string): boolean {
   const row = getDb()
     .prepare(
-      'SELECT id FROM upcoming_dismissals WHERE item_type = ? AND item_id = ? AND due_date = ?'
+      'SELECT id FROM upcoming_dismissals WHERE item_type = ? AND item_id = ? AND due_date = ? AND deleted = 0'
     )
     .get(itemType, itemId, dueDate) as { id: number } | undefined
   return row != null
+}
+
+// item_type -> the table holding that item's real row, matching sync.ts's
+// DISMISSAL_PARENT_TABLES (duplicated rather than imported to keep this module free
+// of a dependency on the sync client — it works the same with or without sync set up).
+const DISMISSAL_PARENT_TABLES: Record<string, string> = {
+  insurance: 'insurance_policies',
+  identity: 'identity_documents',
+  credit_card: 'credit_cards'
+}
+
+function resolveItemSyncId(itemType: UpcomingItemType, itemId: number): string | null {
+  const parentTable = DISMISSAL_PARENT_TABLES[itemType]
+  if (!parentTable) return null // check_in has no parent row
+  const row = getDb().prepare(`SELECT sync_id FROM ${parentTable} WHERE id = ?`).get(itemId) as
+    | { sync_id: string | null }
+    | undefined
+  return row?.sync_id ?? null
 }
 
 export function dismissUpcomingItem(
@@ -25,13 +43,14 @@ export function dismissUpcomingItem(
   dueDate: string,
   status: UpcomingAction
 ): void {
+  const now = new Date().toISOString()
   getDb()
     .prepare(
-      `INSERT INTO upcoming_dismissals (item_type, item_id, due_date, status, created_at)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(item_type, item_id, due_date) DO UPDATE SET status = excluded.status`
+      `INSERT INTO upcoming_dismissals (item_type, item_id, item_sync_id, due_date, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(item_type, item_id, due_date) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at`
     )
-    .run(itemType, itemId, dueDate, status, new Date().toISOString())
+    .run(itemType, itemId, resolveItemSyncId(itemType, itemId), dueDate, status, now, now)
 }
 
 function nthWeekdayOfMonth(year: number, month: number, weekday: number, occurrence: number): Date {

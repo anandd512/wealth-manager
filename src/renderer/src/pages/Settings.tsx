@@ -1,5 +1,6 @@
 import { api } from '../lib/api'
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   ShieldCheck,
   BellRing,
@@ -14,24 +15,29 @@ import {
   Lock,
   HelpCircle,
   Moon,
-  Sun
+  Sun,
+  Cloud,
+  CloudCheck,
+  RefreshCw,
+  LogOut
 } from 'lucide-react'
 import { formatDate } from '../lib/format'
 import type {
   AppSettings,
   CheckInScheduleSettings,
   ExtractionProvider,
+  NotifyStatus,
   ReminderSettings,
-  SmtpConfig,
   UpdateStatus
 } from '../../../shared/types'
 
-type TabId = 'data' | 'appearance' | 'security' | 'notifications' | 'ai' | 'help'
+type TabId = 'data' | 'appearance' | 'security' | 'sync' | 'notifications' | 'ai' | 'help'
 
 const TABS: { id: TabId; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
   { id: 'data',          label: 'Data',          icon: DatabaseBackup },
   { id: 'appearance',    label: 'Appearance',    icon: Moon },
   { id: 'security',      label: 'Security',      icon: Lock },
+  { id: 'sync',          label: 'Cloud Sync',    icon: Cloud },
   { id: 'notifications', label: 'Notifications', icon: BellRing },
   { id: 'ai',            label: 'AI',            icon: Sparkles },
   { id: 'help',          label: 'Help',          icon: HelpCircle }
@@ -52,7 +58,18 @@ function ordinal(n: number): string {
 }
 
 export default function Settings(): JSX.Element {
-  const [activeTab, setActiveTab] = useState<TabId>('data')
+  const [searchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const initialTab: TabId = TABS.some((t) => t.id === requestedTab) ? (requestedTab as TabId) : 'data'
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab)
+
+  // Settings' tabs are local state, not routes, so App.tsx's route-change scroll
+  // reset never fires for them — switching tabs would otherwise leave the page
+  // scrolled wherever the previous tab happened to be.
+  useEffect(() => {
+    document.querySelector('.main')?.scrollTo(0, 0)
+  }, [activeTab])
+
   const [settings, setSettings] = useState<AppSettings | null>(null)
 
   // Reminders
@@ -78,18 +95,14 @@ export default function Settings(): JSX.Element {
   const [openAiModel, setOpenAiModel] = useState('')
   const [openAiMsg, setOpenAiMsg] = useState<string | null>(null)
 
-  // SMTP
-  const [smtpProvider, setSmtpProvider] = useState<string>('custom')
-  const [smtp, setSmtp] = useState<Omit<SmtpConfig, 'user'> & { user: string }>({
-    host: '',
-    port: 587,
-    secure: false,
-    user: '',
-    fromAddress: '',
-    toAddress: ''
-  })
-  const [smtpPassword, setSmtpPassword] = useState('')
-  const [smtpMsg, setSmtpMsg] = useState<string | null>(null)
+  // Email reminders (notify)
+  const [notifyStatus, setNotifyStatus] = useState<NotifyStatus | null>(null)
+  const [notifyEmail, setNotifyEmail] = useState('')
+  const [notifyVerificationSentTo, setNotifyVerificationSentTo] = useState<string | null>(null)
+  const [notifyCode, setNotifyCode] = useState('')
+  const [notifyBusy, setNotifyBusy] = useState(false)
+  const [notifyError, setNotifyError] = useState<string | null>(null)
+  const [notifyMsg, setNotifyMsg] = useState<string | null>(null)
   const [testBusy, setTestBusy] = useState(false)
 
   // Master password
@@ -109,6 +122,20 @@ export default function Settings(): JSX.Element {
   const [autoLockMinutes, setAutoLockMinutes] = useState<string>(
     localStorage.getItem('artha_autolock_minutes') ?? '5'
   )
+
+  // Cloud sync
+  const [syncStatus, setSyncStatus] = useState<{ connected: boolean; email: string | null } | null>(null)
+  const [syncMode, setSyncMode] = useState<'login' | 'register'>('login')
+  const [syncEmail, setSyncEmail] = useState('')
+  const [syncPassword, setSyncPassword] = useState('')
+  const [syncPasswordConfirm, setSyncPasswordConfirm] = useState('')
+  // Register mode only: null until a code's been emailed, then holds the address it
+  // was sent to (so a later email edit doesn't silently verify the wrong address).
+  const [verificationSentTo, setVerificationSentTo] = useState<string | null>(null)
+  const [verificationCode, setVerificationCode] = useState('')
+  const [syncBusy, setSyncBusy] = useState(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
 
   // Appearance
   const [theme, setTheme] = useState<'dark' | 'light'>(
@@ -168,14 +195,23 @@ export default function Settings(): JSX.Element {
     setDesktopNotifications(s.reminders.desktopNotifications)
     setEmailNotifications(s.reminders.emailNotifications)
     setCheckInSchedule(s.checkInSchedule)
-    setSmtp(s.smtp)
     setProvider(s.extractionProvider)
     setOpenAiBaseUrl(s.openAiBaseUrl)
     setOpenAiModel(s.openAiModel)
   }
 
+  const loadSyncStatus = async (): Promise<void> => {
+    setSyncStatus(await api().sync.status())
+  }
+
+  const loadNotifyStatus = async (): Promise<void> => {
+    setNotifyStatus(await api().notify.status())
+  }
+
   useEffect(() => {
     load()
+    loadSyncStatus()
+    loadNotifyStatus()
     api().updates.status().then(setUpdateStatus)
     ;(async () => {
       const [available, enabled] = await Promise.all([
@@ -287,24 +323,74 @@ export default function Settings(): JSX.Element {
     load()
   }
 
-  const saveSmtp = async (): Promise<void> => {
-    await api().settings.setSmtp(smtp)
-    if (smtpPassword) {
-      await api().settings.setSmtpPassword(smtpPassword)
-      setSmtpPassword('')
+  const requestNotifyCode = async (): Promise<void> => {
+    setNotifyError(null)
+    setNotifyMsg(null)
+    setNotifyBusy(true)
+    try {
+      const email = notifyEmail.trim().toLowerCase()
+      const result = await api().notify.requestVerification(email)
+      if (!result.ok) {
+        setNotifyError(result.error ?? 'Could not send verification code')
+        return
+      }
+      setNotifyVerificationSentTo(email)
+      setNotifyMsg(`Sent a code to ${email}.`)
+    } finally {
+      setNotifyBusy(false)
     }
-    setSmtpMsg('SMTP settings saved.')
-    load()
+  }
+
+  const confirmNotifyCode = async (): Promise<void> => {
+    if (!notifyVerificationSentTo) return
+    setNotifyError(null)
+    setNotifyMsg(null)
+    setNotifyBusy(true)
+    try {
+      const result = await api().notify.confirmVerification(notifyVerificationSentTo, notifyCode)
+      if (!result.ok) {
+        setNotifyError(result.error ?? 'Incorrect or expired code')
+        return
+      }
+      setNotifyEmail('')
+      setNotifyVerificationSentTo(null)
+      setNotifyCode('')
+      await loadNotifyStatus()
+    } finally {
+      setNotifyBusy(false)
+    }
+  }
+
+  const cancelNotifyVerification = (): void => {
+    setNotifyVerificationSentTo(null)
+    setNotifyCode('')
+    setNotifyError(null)
+    setNotifyMsg(null)
+  }
+
+  const disconnectNotify = async (): Promise<void> => {
+    setNotifyBusy(true)
+    try {
+      await api().notify.disconnect()
+      await loadNotifyStatus()
+      setNotifyMsg(null)
+      setNotifyError(null)
+    } finally {
+      setNotifyBusy(false)
+    }
   }
 
   const testEmail = async (): Promise<void> => {
     setTestBusy(true)
-    setSmtpMsg(null)
+    setNotifyMsg(null)
+    setNotifyError(null)
     try {
-      await api().settings.testEmail()
-      setSmtpMsg('Test email sent — check your inbox.')
-    } catch (e) {
-      setSmtpMsg(`Failed: ${(e as Error).message}`)
+      const result = await api().settings.testEmail()
+      if (!result.ok) {
+        setNotifyError(`Failed: ${result.error ?? 'unknown error'}`)
+        return
+      }
+      setNotifyMsg('Test email sent — check your inbox.')
     } finally {
       setTestBusy(false)
     }
@@ -330,6 +416,102 @@ export default function Settings(): JSX.Element {
     setNewPassword('')
     setConfirmPassword('')
     setPwMsg('Master password changed.')
+  }
+
+  // Login mode: straight to sync.login. Register mode: just sends the verification
+  // code — the account isn't created until confirmSyncRegistration() below.
+  const submitSyncEmailPassword = async (): Promise<void> => {
+    setSyncError(null)
+    setSyncMsg(null)
+
+    if (syncMode === 'register' && syncPassword !== syncPasswordConfirm) {
+      setSyncError("Passwords don't match.")
+      return
+    }
+
+    setSyncBusy(true)
+    try {
+      const email = syncEmail.trim().toLowerCase()
+      if (syncMode === 'login') {
+        const result = await api().sync.login(email, syncPassword)
+        if (!result.ok) {
+          setSyncError(result.error ?? 'Could not connect')
+          return
+        }
+        setSyncEmail('')
+        setSyncPassword('')
+        await loadSyncStatus()
+      } else {
+        const result = await api().sync.requestEmailVerification(email)
+        if (!result.ok) {
+          setSyncError(result.error ?? 'Could not send verification code')
+          return
+        }
+        setVerificationSentTo(email)
+        setSyncMsg(`Sent a code to ${email}.`)
+      }
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
+  const confirmSyncRegistration = async (): Promise<void> => {
+    if (!verificationSentTo) return
+    setSyncError(null)
+    setSyncMsg(null)
+    setSyncBusy(true)
+    try {
+      const confirmResult = await api().sync.confirmEmailVerification(verificationSentTo, verificationCode)
+      if (!confirmResult.ok || !confirmResult.verificationToken) {
+        setSyncError(confirmResult.error ?? 'Incorrect or expired code')
+        return
+      }
+      const registerResult = await api().sync.register(verificationSentTo, syncPassword, confirmResult.verificationToken)
+      if (!registerResult.ok) {
+        setSyncError(registerResult.error ?? 'Could not create account')
+        return
+      }
+      setSyncEmail('')
+      setSyncPassword('')
+      setSyncPasswordConfirm('')
+      setVerificationSentTo(null)
+      setVerificationCode('')
+      await loadSyncStatus()
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
+  const cancelSyncVerification = (): void => {
+    setVerificationSentTo(null)
+    setVerificationCode('')
+    setSyncError(null)
+    setSyncMsg(null)
+  }
+
+  const triggerSyncNow = async (): Promise<void> => {
+    setSyncError(null)
+    setSyncMsg(null)
+    setSyncBusy(true)
+    try {
+      const result = await api().sync.now()
+      setSyncMsg(result.ok ? 'Synced.' : null)
+      if (!result.ok) setSyncError(result.error ?? 'Sync failed')
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
+  const disconnectSync = async (): Promise<void> => {
+    setSyncBusy(true)
+    try {
+      await api().sync.logout()
+      await loadSyncStatus()
+      setSyncMsg(null)
+      setSyncError(null)
+    } finally {
+      setSyncBusy(false)
+    }
   }
 
   const exportBackup = async (): Promise<void> => {
@@ -447,9 +629,9 @@ export default function Settings(): JSX.Element {
             <p className="muted" style={{ marginTop: 0 }}>
               Export everything — every account, check-in, document, policy, card, login, and
               setting — into one encrypted file you can move to a new device. It's protected by the
-              same master password, so only you can open it. (API keys and SMTP passwords are stored
-              via Windows' own credential store and generally won't carry over to a different device
-              or Windows account — you'll just re-enter those.)
+              same master password, so only you can open it. (API keys and your email reminder
+              verification are stored via Windows' own credential store and generally won't carry
+              over to a different device or Windows account — you'll just re-verify those.)
             </p>
             <button className="btn secondary" onClick={exportBackup} disabled={exportBusy}>
               <Download size={14} /> {exportBusy ? 'Exporting…' : 'Export backup'}
@@ -466,7 +648,7 @@ export default function Settings(): JSX.Element {
                 <p style={{ margin: '0 0 8px' }}>
                   Backup from {formatDate(importSummary.exportedAt)} — {importSummary.documentCount}{' '}
                   document(s)
-                  {importSummary.hasSecrets ? ', including saved API/SMTP credentials' : ''}.
+                  {importSummary.hasSecrets ? ', including saved API keys and email reminder setup' : ''}.
                 </p>
                 <p className="error-text" style={{ margin: '0 0 12px' }}>
                   Importing replaces ALL data currently on this device and restarts the app. Your
@@ -617,6 +799,142 @@ export default function Settings(): JSX.Element {
         </>
       )}
 
+      {/* ── CLOUD SYNC ───────────────────────────────────────────────── */}
+      {activeTab === 'sync' && syncStatus && (
+        <>
+          {!syncStatus.connected && !verificationSentTo && (
+            <div className="card section" style={{ borderColor: 'var(--accent-dim)' }}>
+              <div className="section-header">
+                <h2>
+                  <Cloud size={14} /> Connect to cloud sync
+                </h2>
+              </div>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Keeps your data encrypted on this device before anything is sent — the server
+                never sees a usable copy. The same account works from the Artha mobile app.
+              </p>
+
+              <div className="form-row">
+                <div className="field">
+                  <label>Email</label>
+                  <input type="email" value={syncEmail} onChange={(e) => setSyncEmail(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label>Password</label>
+                  <input type="password" value={syncPassword} onChange={(e) => setSyncPassword(e.target.value)} />
+                </div>
+              </div>
+              {syncMode === 'register' && (
+                <div className="field" style={{ maxWidth: '50%' }}>
+                  <label>Confirm password</label>
+                  <input
+                    type="password"
+                    value={syncPasswordConfirm}
+                    onChange={(e) => setSyncPasswordConfirm(e.target.value)}
+                  />
+                </div>
+              )}
+              {syncError && <div className="error-text">{syncError}</div>}
+              {syncMsg && <div className="success-text">{syncMsg}</div>}
+              <button
+                className="btn"
+                onClick={submitSyncEmailPassword}
+                disabled={
+                  syncBusy ||
+                  !syncEmail ||
+                  !syncPassword ||
+                  (syncMode === 'register' && !syncPasswordConfirm)
+                }
+              >
+                {syncMode === 'register' ? 'Send verification code' : 'Log in'}
+              </button>
+              <p style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 8 }}>
+                {syncMode === 'register' ? 'Already have an account?' : "Don't have an account?"}{' '}
+                <a
+                  href="#"
+                  style={{ color: 'var(--accent)' }}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    setSyncMode(syncMode === 'register' ? 'login' : 'register')
+                    setSyncError(null)
+                  }}
+                >
+                  {syncMode === 'register' ? 'Log in' : 'Create one'}
+                </a>
+              </p>
+            </div>
+          )}
+
+          {!syncStatus.connected && verificationSentTo && (
+            <div className="card section" style={{ borderColor: 'var(--accent-dim)' }}>
+              <div className="section-header">
+                <h2>
+                  <Lock size={14} /> Enter your verification code
+                </h2>
+              </div>
+              <p className="muted" style={{ marginTop: 0 }}>
+                We sent a 6-digit code to {verificationSentTo}. It expires in 15 minutes.
+              </p>
+              <div className="field" style={{ maxWidth: 200 }}>
+                <label>Code</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={verificationCode}
+                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                  autoFocus
+                />
+              </div>
+              {syncError && <div className="error-text">{syncError}</div>}
+              <button
+                className="btn"
+                onClick={confirmSyncRegistration}
+                disabled={syncBusy || verificationCode.length !== 6}
+              >
+                Verify &amp; create account
+              </button>
+              <p style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 8 }}>
+                <a
+                  href="#"
+                  style={{ color: 'var(--accent)' }}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    cancelSyncVerification()
+                  }}
+                >
+                  Use a different email
+                </a>
+              </p>
+            </div>
+          )}
+
+          {syncStatus.connected && (
+            <div className="card section">
+              <div className="section-header">
+                <h2>
+                  <CloudCheck size={14} /> Connected
+                </h2>
+              </div>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Signed in as {syncStatus.email}. Syncs your accounts to the cloud, encrypted on
+                this device first.
+              </p>
+              {syncError && <div className="error-text">{syncError}</div>}
+              {syncMsg && <div className="success-text">{syncMsg}</div>}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button className="btn" onClick={triggerSyncNow} disabled={syncBusy}>
+                  <RefreshCw size={14} /> Sync now
+                </button>
+                <button className="btn secondary" onClick={disconnectSync} disabled={syncBusy}>
+                  <LogOut size={14} /> Disconnect
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
       {/* ── NOTIFICATIONS ────────────────────────────────────────────── */}
       {activeTab === 'notifications' && (
         <>
@@ -655,7 +973,7 @@ export default function Settings(): JSX.Element {
                   checked={emailNotifications}
                   onChange={(e) => setEmailNotifications(e.target.checked)}
                 />
-                Email notifications (requires SMTP setup below)
+                Email notifications (requires a verified email below)
               </label>
             </div>
             <button className="btn" onClick={saveReminders}>
@@ -774,111 +1092,91 @@ export default function Settings(): JSX.Element {
             {checkInSaved && <span className="success-text" style={{ marginLeft: 10 }}>Saved</span>}
           </div>
 
-          <div className="card section">
-            <div className="section-header">
-              <h2>
-                <Mail size={14} /> Email reminders (Gmail / Outlook)
-              </h2>
+          {notifyStatus && !notifyStatus.verified && !notifyVerificationSentTo && (
+            <div className="card section">
+              <div className="section-header">
+                <h2>
+                  <Mail size={14} /> Email reminders
+                </h2>
+              </div>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Verify an email address to receive reminders. We'll send a 6-digit code to confirm
+                it's yours — no password or SMTP setup needed.
+              </p>
+              <div className="field" style={{ maxWidth: '50%' }}>
+                <label>Email</label>
+                <input type="email" value={notifyEmail} onChange={(e) => setNotifyEmail(e.target.value)} />
+              </div>
+              {notifyError && <div className="error-text">{notifyError}</div>}
+              {notifyMsg && <div className="success-text">{notifyMsg}</div>}
+              <button className="btn" onClick={requestNotifyCode} disabled={notifyBusy || !notifyEmail}>
+                Send code
+              </button>
             </div>
-            <p className="muted" style={{ marginTop: 0 }}>
-              Send yourself reminders via email. Use an app password — not your main account password. For Gmail: Google Account → Security → App passwords → create one for "Artha".
-            </p>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-              {[
-                { id: 'gmail',   label: 'Gmail',      host: 'smtp.gmail.com',      port: 587, secure: false },
-                { id: 'outlook', label: 'Outlook',    host: 'smtp.office365.com',  port: 587, secure: false },
-                { id: 'apple',   label: 'Apple Mail', host: 'smtp.mail.me.com',    port: 587, secure: false },
-                { id: 'yahoo',   label: 'Yahoo',      host: 'smtp.mail.yahoo.com', port: 587, secure: false },
-                { id: 'custom',  label: 'Custom',     host: '',                    port: 587, secure: false },
-              ].map(p => (
-                <button
-                  key={p.id}
-                  className={smtpProvider === p.id ? 'btn' : 'btn secondary'}
-                  style={{ fontSize: 12, padding: '4px 12px' }}
-                  onClick={() => {
-                    setSmtpProvider(p.id)
-                    if (p.id !== 'custom') setSmtp(prev => ({ ...prev, host: p.host, port: p.port, secure: p.secure }))
+          )}
+
+          {notifyStatus && !notifyStatus.verified && notifyVerificationSentTo && (
+            <div className="card section">
+              <div className="section-header">
+                <h2>
+                  <Lock size={14} /> Enter your verification code
+                </h2>
+              </div>
+              <p className="muted" style={{ marginTop: 0 }}>
+                We sent a 6-digit code to {notifyVerificationSentTo}. It expires in 15 minutes.
+              </p>
+              <div className="field" style={{ maxWidth: 200 }}>
+                <label>Code</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={notifyCode}
+                  onChange={(e) => setNotifyCode(e.target.value.replace(/\D/g, ''))}
+                  autoFocus
+                />
+              </div>
+              {notifyError && <div className="error-text">{notifyError}</div>}
+              <button className="btn" onClick={confirmNotifyCode} disabled={notifyBusy || notifyCode.length !== 6}>
+                Verify email
+              </button>
+              <p style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 8 }}>
+                <a
+                  href="#"
+                  style={{ color: 'var(--accent)' }}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    cancelNotifyVerification()
                   }}
                 >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            {smtpProvider !== 'custom' && (
-              <p style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 10 }}>
-                Use an App Password, not your regular password.
+                  Use a different email
+                </a>
               </p>
-            )}
-            <div className="form-row">
-              <div className="field">
-                <label>SMTP host</label>
-                <input
-                  value={smtp.host}
-                  onChange={(e) => setSmtp({ ...smtp, host: e.target.value })}
-                  placeholder="smtp.gmail.com"
-                />
+            </div>
+          )}
+
+          {notifyStatus && notifyStatus.verified && (
+            <div className="card section">
+              <div className="section-header">
+                <h2>
+                  <Mail size={14} /> Email reminders
+                </h2>
               </div>
-              <div className="field">
-                <label>Port</label>
-                <input
-                  type="number"
-                  value={smtp.port}
-                  onChange={(e) => setSmtp({ ...smtp, port: Number(e.target.value) })}
-                />
+              <p className="muted" style={{ marginTop: 0 }}>
+                Reminders will be sent to <strong>{notifyStatus.email}</strong>.
+              </p>
+              {notifyError && <div className="error-text">{notifyError}</div>}
+              {notifyMsg && <div className="success-text">{notifyMsg}</div>}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button className="btn secondary" onClick={testEmail} disabled={testBusy}>
+                  {testBusy ? 'Sending…' : 'Send test email'}
+                </button>
+                <button className="btn secondary" onClick={disconnectNotify} disabled={notifyBusy}>
+                  <LogOut size={14} /> Use a different email
+                </button>
               </div>
             </div>
-            <div className="form-row">
-              <div className="field">
-                <label>Account email (username)</label>
-                <input value={smtp.user} onChange={(e) => setSmtp({ ...smtp, user: e.target.value })} />
-              </div>
-              <div className="field">
-                <label>
-                  App password {settings.hasSmtpPassword && <span className="badge ok">Configured</span>}
-                </label>
-                <input
-                  type="password"
-                  value={smtpPassword}
-                  onChange={(e) => setSmtpPassword(e.target.value)}
-                  placeholder={settings.hasSmtpPassword ? '••••••••••••••••' : ''}
-                />
-              </div>
-            </div>
-            <div className="form-row">
-              <div className="field">
-                <label>From address</label>
-                <input
-                  value={smtp.fromAddress}
-                  onChange={(e) => setSmtp({ ...smtp, fromAddress: e.target.value })}
-                  placeholder="defaults to account email"
-                />
-              </div>
-              <div className="field">
-                <label>Send reminders to</label>
-                <input
-                  value={smtp.toAddress}
-                  onChange={(e) => setSmtp({ ...smtp, toAddress: e.target.value })}
-                  placeholder={smtp.user || 'you@example.com'}
-                />
-              </div>
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-              <input
-                type="checkbox"
-                style={{ width: 'auto' }}
-                checked={smtp.secure}
-                onChange={(e) => setSmtp({ ...smtp, secure: e.target.checked })}
-              />
-              Use TLS (port 465 typically)
-            </label>
-            <button className="btn" onClick={saveSmtp}>
-              Save SMTP settings
-            </button>
-            <button className="btn secondary" onClick={testEmail} disabled={testBusy} style={{ marginLeft: 8 }}>
-              {testBusy ? 'Sending…' : 'Send test email'}
-            </button>
-            {smtpMsg && <div className="success-text">{smtpMsg}</div>}
-          </div>
+          )}
         </>
       )}
 

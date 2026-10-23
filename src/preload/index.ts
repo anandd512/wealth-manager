@@ -9,7 +9,6 @@ import type {
   VaultEntryInput,
   ReminderSettings,
   CheckInScheduleSettings,
-  SmtpConfig,
   UpcomingItemType,
   UpcomingAction,
   UpdateCheckResult,
@@ -30,6 +29,22 @@ const api = {
     disableWindowsHello: () => ipcRenderer.invoke(CHANNELS.authDisableWindowsHello),
     unlockWithWindowsHello: () => ipcRenderer.invoke(CHANNELS.authUnlockWithWindowsHello),
     resetData: () => ipcRenderer.invoke(CHANNELS.authResetData)
+  },
+  storageMode: {
+    status: () => ipcRenderer.invoke(CHANNELS.storageModeStatus),
+    set: (mode: 'local' | 'cloud') => ipcRenderer.invoke(CHANNELS.storageModeSet, mode)
+  },
+  sync: {
+    status: () => ipcRenderer.invoke(CHANNELS.syncStatus),
+    requestEmailVerification: (email: string) =>
+      ipcRenderer.invoke(CHANNELS.syncRequestEmailVerification, email),
+    confirmEmailVerification: (email: string, code: string) =>
+      ipcRenderer.invoke(CHANNELS.syncConfirmEmailVerification, email, code),
+    register: (email: string, password: string, verificationToken: string) =>
+      ipcRenderer.invoke(CHANNELS.syncRegister, email, password, verificationToken),
+    login: (email: string, password: string) => ipcRenderer.invoke(CHANNELS.syncLogin, email, password),
+    logout: () => ipcRenderer.invoke(CHANNELS.syncLogout),
+    now: () => ipcRenderer.invoke(CHANNELS.syncNow)
   },
   accounts: {
     list: () => ipcRenderer.invoke(CHANNELS.accountsList),
@@ -139,11 +154,14 @@ const api = {
     clearOpenAiKey: () => ipcRenderer.invoke(CHANNELS.settingsClearOpenAiKey),
     setOpenAiBaseUrl: (baseUrl: string) => ipcRenderer.invoke(CHANNELS.settingsSetOpenAiBaseUrl, baseUrl),
     setOpenAiModel: (model: string) => ipcRenderer.invoke(CHANNELS.settingsSetOpenAiModel, model),
-    setSmtp: (config: Omit<SmtpConfig, 'user'> & { user: string }) =>
-      ipcRenderer.invoke(CHANNELS.settingsSetSmtp, config),
-    setSmtpPassword: (password: string) =>
-      ipcRenderer.invoke(CHANNELS.settingsSetSmtpPassword, password),
     testEmail: () => ipcRenderer.invoke(CHANNELS.settingsTestEmail)
+  },
+  notify: {
+    status: () => ipcRenderer.invoke(CHANNELS.notifyStatus),
+    requestVerification: (email: string) => ipcRenderer.invoke(CHANNELS.notifyRequestVerification, email),
+    confirmVerification: (email: string, code: string) =>
+      ipcRenderer.invoke(CHANNELS.notifyConfirmVerification, email, code),
+    disconnect: () => ipcRenderer.invoke(CHANNELS.notifyDisconnect)
   },
   reminders: {
     checkNow: () => ipcRenderer.invoke(CHANNELS.remindersCheckNow)

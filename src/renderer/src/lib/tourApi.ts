@@ -272,6 +272,25 @@ export function createTourApi(): typeof window.api {
       unlockWithWindowsHello:  async () => ({ ok: false, error: 'Not available in tour' }),
       resetData:               async () => {},
     },
+    storageMode: {
+      status: async () => ({ mode: 'local' as const }),
+      set:    async () => ({ ok: false, error: 'Not available in tour' }),
+    },
+    sync: {
+      status:                     async () => ({ connected: false, email: null }),
+      requestEmailVerification:   async () => ({ ok: false, error: 'Not available in tour' }),
+      confirmEmailVerification:   async () => ({ ok: false, error: 'Not available in tour' }),
+      register:                   async () => ({ ok: false, error: 'Not available in tour' }),
+      login:                      async () => ({ ok: false, error: 'Not available in tour' }),
+      logout:                     async () => {},
+      now:                        async () => ({ ok: false, error: 'Not available in tour' }),
+    },
+    notify: {
+      status:              async () => ({ verified: false, email: null }),
+      requestVerification: async () => ({ ok: false, error: 'Not available in tour' }),
+      confirmVerification: async () => ({ ok: false, error: 'Not available in tour' }),
+      disconnect:          async () => {},
+    },
     accounts: {
       list:                async () => [...store.accounts],
       create:              async (input) => {
@@ -376,8 +395,6 @@ export function createTourApi(): typeof window.api {
       clearOpenAiKey:         async () => {},
       setOpenAiBaseUrl:       async () => {},
       setOpenAiModel:         async () => {},
-      setSmtp:                async () => {},
-      setSmtpPassword:        async () => {},
       testEmail:              async () => ({ ok: false, error: 'Not in tour' }),
     },
     reminders: {

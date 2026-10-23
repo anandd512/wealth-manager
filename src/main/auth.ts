@@ -17,7 +17,11 @@ function authFilePath(): string {
 // throws ERR_CRYPTO_INVALID_SCRYPT_PARAMS. Raise maxmem explicitly on every call here.
 const SCRYPT_MAXMEM = 64 * 1024 * 1024
 
-function deriveKey(password: string, saltHex: string): Buffer {
+// Exported for sync.ts — cloud sync needs to derive the same master key from a
+// known salt (fetched from the backend) without going through the local auth.json
+// verifier flow, since the salt there is for a different purpose (this device's
+// local unlock, not necessarily the same as the cloud account's).
+export function deriveKey(password: string, saltHex: string): Buffer {
   const salt = Buffer.from(saltHex, 'hex')
   // 32-byte key, used directly as the AES-256-GCM key for the encrypted database file.
   return scryptSync(password, salt, 32, { N: 1 << 15, r: 8, p: 1, maxmem: SCRYPT_MAXMEM })
