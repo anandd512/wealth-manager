@@ -58,7 +58,7 @@ interface TourStep {
   desc: string
   tip?: string
   // If set, a "Watch demo" button appears in the guide panel that launches this demo
-  demoKey?: 'account' | 'ai' | 'ai_insurance' | 'card' | 'vault'
+  demoKey?: 'account' | 'ai' | 'ai_insurance' | 'ai_identity' | 'card' | 'vault'
 }
 
 const STEPS: TourStep[] = [
@@ -113,6 +113,7 @@ const STEPS: TourStep[] = [
     title: 'All your IDs, organised',
     desc: 'Stop hunting for your Aadhaar number or passport details. Keep all your IDs in one encrypted place, with document images stored securely on your device.',
     tip: 'Upload a photo or scan and AI reads the number, name, and expiry. Your chosen AI provider reads the document, and the details are saved privately on your device.',
+    demoKey: 'ai_identity',
   },
   {
     key: 'vault', nav: 'Passwords', route: '/vault', icon: KeyRound,
@@ -771,6 +772,39 @@ function DemoInsuranceAIModal({ onDone }: { onDone: () => void }): JSX.Element {
   )
 }
 
+// Identity docs page — passport scan AI extraction demo
+const IDENTITY_PICKER_FILES = [
+  { name: 'Passport_Scan_DevSharma.pdf',     date: 'Today, 7:12 AM',      type: 'PDF' },
+  { name: 'Aadhaar_Front_Back.pdf',          date: 'Today, 6:55 AM',      type: 'PDF' },
+  { name: 'Motor_Policy_Bajaj_2026.pdf',     date: 'Yesterday, 11:30 PM', type: 'PDF' },
+  { name: 'Salary_Slip_Oct_2026.pdf',        date: 'Yesterday, 10:05 PM', type: 'PDF' },
+  { name: 'PAN_Card_Scan.pdf',               date: '18 Oct 2026, 5:26 AM',type: 'PDF' },
+  { name: 'Driving_Licence_Scan.pdf',        date: '18 Oct 2026, 4:19 AM',type: 'PDF' },
+]
+
+const AI_IDENTITY_FIELDS = {
+  'Document type': 'Passport',
+  'ID number':     'P7654321',
+  'Full name':     'Dev Sharma',
+  'Date of birth': '14 Jul 1990',
+  'Issued date':   '21 May 2020',
+  'Expiry date':   '20 May 2030',
+}
+function DemoIdentityAIModal({ onDone }: { onDone: () => void }): JSX.Element {
+  return (
+    <DemoAIModalBase
+      title="Add identity document"
+      fileName="Passport_Scan_DevSharma.pdf"
+      pickerTitle="Select ID document"
+      pickerFiles={IDENTITY_PICKER_FILES}
+      fields={AI_IDENTITY_FIELDS}
+      onDone={onDone}
+      buttonLabel="Add via photo/scan (AI)"
+      buttonHint="On the Identity page, click 'Add via photo/scan (AI)' to read an ID automatically"
+    />
+  )
+}
+
 // ─── Demo modal: Credit card manual entry ─────────────────────────────────────
 
 const CARD_DEMO = [
@@ -1126,6 +1160,38 @@ function OverlayWelcome({ onNext }: { onNext: () => void }): JSX.Element {
   )
 }
 
+// Shared header for the two-part "from Settings" mini-section (Security, then Cloud
+// Sync) — these used to read as two random standalone interstitials with a vague
+// "One more step" button; this eyebrow + 2-dot progress ties them together as one
+// walkthrough of the Settings page's own Security and Cloud Sync sections, the same
+// way the floating guide panel's dots tie together the regular page-by-page steps.
+function SettingsStepHeader({ part }: { part: 1 | 2 }): JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
+      <div style={{ width: 22, height: 22, borderRadius: 6, background: 'var(--bg-inset)', color: 'var(--text-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <SettingsIcon size={12} />
+      </div>
+      <span style={{ fontSize: 11, color: 'var(--text-faint)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+        From Settings
+      </span>
+      <div style={{ display: 'flex', gap: 3, marginLeft: 2 }}>
+        {([1, 2] as const).map((p) => (
+          <div
+            key={p}
+            style={{
+              width: p === part ? 16 : 6,
+              height: 6,
+              borderRadius: 999,
+              background: p === part ? 'var(--accent)' : p < part ? 'var(--text-faint)' : 'var(--border)',
+              transition: 'all 200ms var(--ease)',
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function OverlaySecurity({ onNext }: { onNext: () => void }): JSX.Element {
   const items = [
     { label: 'Encryption', value: 'AES-256-GCM', color: 'var(--accent)' },
@@ -1138,6 +1204,7 @@ function OverlaySecurity({ onNext }: { onNext: () => void }): JSX.Element {
   return (
     <div className="tour-fullscreen-overlay">
       <div className="tour-overlay-card">
+        <SettingsStepHeader part={1} />
         <div className="tour-overlay-icon" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
           <LockKeyhole size={28} />
         </div>
@@ -1146,7 +1213,7 @@ function OverlaySecurity({ onNext }: { onNext: () => void }): JSX.Element {
         </div>
         <h2 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 8px', letterSpacing: '-0.015em' }}>Your data is truly private</h2>
         <p style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.6, marginBottom: 20, maxWidth: 360, textAlign: 'center' }}>
-          Artha never sees your master password. Everything is encrypted before being written to disk.
+          Artha never sees your master password. Everything is encrypted before being written to disk — all configurable from Settings → Security.
         </p>
         <div style={{ width: '100%', maxWidth: 380, background: 'var(--bg-inset)', border: '1px solid var(--border-soft)', borderRadius: 10, overflow: 'hidden', marginBottom: 24 }}>
           {items.map((item, i) => (
@@ -1157,7 +1224,7 @@ function OverlaySecurity({ onNext }: { onNext: () => void }): JSX.Element {
           ))}
         </div>
         <button className="btn" style={{ minWidth: 200, padding: '11px 28px', fontSize: 14 }} onClick={onNext}>
-          One more step <ChevronRight size={16} />
+          Next: Cloud Sync <ChevronRight size={16} />
         </button>
       </div>
     </div>
@@ -1175,6 +1242,7 @@ function OverlayCloudSync({ onNext }: { onNext: () => void }): JSX.Element {
   return (
     <div className="tour-fullscreen-overlay">
       <div className="tour-overlay-card">
+        <SettingsStepHeader part={2} />
         <div className="tour-overlay-icon" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
           <Cloud size={28} />
         </div>
@@ -1183,7 +1251,7 @@ function OverlayCloudSync({ onNext }: { onNext: () => void }): JSX.Element {
         </div>
         <h2 style={{ fontSize: 22, fontWeight: 800, margin: '0 0 8px', letterSpacing: '-0.015em' }}>Access it from your phone too</h2>
         <p style={{ color: 'var(--text-dim)', fontSize: 13.5, lineHeight: 1.6, marginBottom: 20, maxWidth: 360, textAlign: 'center' }}>
-          Your device encrypts everything before it leaves — the cloud never sees a usable copy, only you can decrypt it.
+          Your device encrypts everything before it leaves — the cloud never sees a usable copy, only you can decrypt it. Turn it on anytime from Settings → Cloud Sync.
         </p>
         <div style={{ width: '100%', maxWidth: 380, background: 'var(--bg-inset)', border: '1px solid var(--border-soft)', borderRadius: 10, overflow: 'hidden', marginBottom: 24 }}>
           {items.map((item, i) => (
@@ -1194,7 +1262,7 @@ function OverlayCloudSync({ onNext }: { onNext: () => void }): JSX.Element {
           ))}
         </div>
         <button className="btn" style={{ minWidth: 200, padding: '11px 28px', fontSize: 14 }} onClick={onNext}>
-          One more step <ChevronRight size={16} />
+          Continue <ChevronRight size={16} />
         </button>
       </div>
     </div>
@@ -1209,15 +1277,15 @@ function OverlayDone({ onExit, isLoggedIn }: { onExit: () => void; isLoggedIn?: 
         <h1 style={{ fontSize: 26, fontWeight: 800, margin: '0 0 10px', letterSpacing: '-0.02em' }}>You're ready!</h1>
         <p style={{ color: 'var(--text-dim)', fontSize: 14, lineHeight: 1.65, marginBottom: 8, maxWidth: 380, textAlign: 'center' }}>
           {isLoggedIn
-            ? "You've seen everything Artha has to offer. Start exploring or head back to Settings."
+            ? "You've seen everything Artha has to offer. Let's head to your Dashboard."
             : 'Set a master password to create your encrypted vault and start tracking everything that matters.'}
         </p>
         <p style={{ color: 'var(--text-faint)', fontSize: 12, marginBottom: 28 }}>
           {isLoggedIn ? 'Your data is encrypted and stays on this device.' : 'Your data stays on this device. Export a backup anytime.'}
         </p>
         {isLoggedIn ? (
-          <button className="btn secondary" style={{ minWidth: 220, padding: '11px 28px', fontSize: 14 }} onClick={() => { window.location.hash = '#/settings'; onExit() }}>
-            Back to Settings
+          <button className="btn" style={{ minWidth: 220, padding: '11px 28px', fontSize: 14 }} onClick={() => { window.location.hash = '#/'; onExit() }}>
+            Go to Dashboard <ChevronRight size={16} />
           </button>
         ) : (
           <>
@@ -1278,7 +1346,7 @@ function GuidePanel({ step, total, onNext, onPrev, onExit, onWatchDemo }: GuideP
         {current.desc}
       </p>
 
-      {(current.demoKey === 'ai' || current.demoKey === 'ai_insurance') && (
+      {(current.demoKey === 'ai' || current.demoKey === 'ai_insurance' || current.demoKey === 'ai_identity') && (
         <div style={{ background: 'rgba(232,177,79,0.1)', border: '1px solid rgba(232,177,79,0.4)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: 'var(--amber, #e8b14f)', marginTop: 8 }}>
           ⚙ Requires an API key — configure it in Settings → AI Document Reading before using this feature.
         </div>
@@ -1298,7 +1366,7 @@ function GuidePanel({ step, total, onNext, onPrev, onExit, onWatchDemo }: GuideP
           onClick={onWatchDemo}
         >
           <Bot size={12} /> {
-            current.demoKey === 'ai' || current.demoKey === 'ai_insurance'
+            current.demoKey === 'ai' || current.demoKey === 'ai_insurance' || current.demoKey === 'ai_identity'
               ? 'Watch AI extraction demo'
               : 'Watch the demo'
           }
@@ -1354,7 +1422,7 @@ const NAV_ITEMS = [
 
 // ─── Inner app (must be inside MemoryRouter to use useNavigate) ───────────────
 
-type DemoKey = 'account' | 'ai' | 'ai_insurance' | 'card' | 'vault' | null
+type DemoKey = 'account' | 'ai' | 'ai_insurance' | 'ai_identity' | 'card' | 'vault' | null
 
 interface InnerProps {
   step: number
@@ -1406,6 +1474,7 @@ function TourInnerApp({ step, onNext, onPrev, onExit, isLoggedIn }: InnerProps):
   const handleDemoAccountDone = (): void => setActiveDemo(null)
   const handleDemoAIDone = (): void => setActiveDemo(null)
   const handleDemoInsuranceAIDone = (): void => setActiveDemo(null)
+  const handleDemoIdentityAIDone = (): void => setActiveDemo(null)
   const handleDemoCardDone = (): void => setActiveDemo(null)
   const handleDemoVaultDone = (): void => setActiveDemo(null)
 
@@ -1468,6 +1537,7 @@ function TourInnerApp({ step, onNext, onPrev, onExit, isLoggedIn }: InnerProps):
       {activeDemo === 'account'      && <DemoAccountModal      onDone={handleDemoAccountDone} />}
       {activeDemo === 'ai'           && <DemoAIModal           onDone={handleDemoAIDone} />}
       {activeDemo === 'ai_insurance' && <DemoInsuranceAIModal  onDone={handleDemoInsuranceAIDone} />}
+      {activeDemo === 'ai_identity'  && <DemoIdentityAIModal   onDone={handleDemoIdentityAIDone} />}
       {activeDemo === 'card'         && <DemoCreditCardModal   onDone={handleDemoCardDone} />}
       {activeDemo === 'vault'        && <DemoVaultModal        onDone={handleDemoVaultDone} />}
 
