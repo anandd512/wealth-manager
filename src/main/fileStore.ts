@@ -6,18 +6,25 @@ import { encrypt, decrypt, getCurrentKey } from './db'
 import { apiRequest } from './backendApi'
 import { getSecret } from './secrets'
 
-// Uploaded documents (insurance policies, ID scans) are encrypted at rest with the
-// same master-password-derived key as the database, using the same AES-256-GCM
-// envelope. They're decrypted to a temp file only when the user asks to view one,
-// and that temp copy is cleaned up when the app locks or quits.
-//
-// Cross-device: the already-encrypted bytes are also uploaded to the `files` blob
-// container (see lib/blobStorage.ts on the backend) under this same filename as the
-// blob key, so another device can fetch them lazily on first view — see
-// ensureDocumentAvailableLocally. Upload is best-effort: a failed upload leaves the
-// document fully usable on this device, just not yet available elsewhere. Unlike
-// synced data records, there's no dirty-flag retry queue for this yet — a failed
-// upload isn't retried until the document is saved again.
+// Local at-rest storage is always encrypted with this device's local master-password
+// key (getCurrentKey() — the same key the local SQLite DB uses), so a document stays
+// fully usable offline with no dependency on cloud sync ever being set up. That key
+// is device-specific — setupMasterPassword() mints a fresh random salt per install,
+// so even the same password on two devices derives two different keys — which means
+// it can never be the key used for the CLOUD copy: anything uploaded has to be
+// decryptable by every device signed into the same sync account, and only the sync
+// Data Key (derived from the account's server-issued salt — see syncCrypto.ts, same
+// key mobile uses) is shared across devices. Every upload/download here therefore
+// re-encrypts across that boundary — local-key bytes in, Data-Key bytes out to the
+// cloud, and back again on the way in — via cloudDataKey() below. (An earlier version
+// of this file uploaded the local-key-encrypted bytes directly, which any other
+// device would fail to decrypt with an "aes:gcm invalid tag" error; sync.ts's
+// backfillDocumentUploads re-uploads existing documents under the corrected scheme.)
+
+function cloudDataKey(): Buffer | null {
+  const stored = getSecret('syncDataKey')
+  return stored ? Buffer.from(stored, 'base64') : null
+}
 
 export function documentsDir(): string {
   const dir = join(app.getPath('userData'), 'documents')
@@ -57,50 +64,80 @@ async function uploadDocumentBytes(key: string, encrypted: Buffer): Promise<bool
 // Fetches a document's bytes from the cloud if a pulled record references one this
 // device hasn't uploaded/downloaded before. No-ops for anything already local, and
 // for the legacy absolute-path form (which predates sync and was never uploaded).
+// The downloaded bytes are Data-Key-encrypted (every device uploads under that key —
+// see module doc); re-encrypted with this device's own local key before being written
+// to the local cache, so the on-disk format is always local-key-encrypted regardless
+// of which device originally created the document.
 export async function ensureDocumentAvailableLocally(storedPath: string): Promise<void> {
   if (isAbsolute(storedPath)) return
   const resolved = resolveDocumentPath(storedPath)
   if (existsSync(resolved)) return
   const token = getSecret('syncToken')
-  if (!token) throw new Error('This document was uploaded on another device and cloud sync is not connected here')
+  const dataKey = cloudDataKey()
+  if (!token || !dataKey) throw new Error('This document was uploaded on another device and cloud sync is not connected here')
   const result = await apiRequest<{ data: string }>(`/api/files/download?key=${encodeURIComponent(storedPath)}`, { token })
-  writeFileSync(resolved, Buffer.from(result.data, 'base64'), { mode: 0o600 })
+  const cloudEncrypted = Buffer.from(result.data, 'base64')
+  const plaintext = decrypt(cloudEncrypted, dataKey)
+  const localEncrypted = encrypt(plaintext, getCurrentKey())
+  writeFileSync(resolved, localEncrypted, { mode: 0o600 })
 }
 
 export async function storeDocument(sourcePath: string): Promise<{ storedPath: string; originalName: string }> {
   const originalExt = extname(sourcePath)
   const plaintext = readFileSync(sourcePath)
-  const encrypted = encrypt(new Uint8Array(plaintext), getCurrentKey())
+  const localEncrypted = encrypt(new Uint8Array(plaintext), getCurrentKey())
   // The extension is kept (unencrypted, in the filename) only so the temp file we
   // decrypt to for viewing opens in the right default app; the content itself is
   // fully encrypted.
   const storedName = `${randomUUID()}${originalExt}.enc`
-  writeFileSync(join(documentsDir(), storedName), encrypted, { mode: 0o600 })
-  await uploadDocumentBytes(storedName, encrypted)
+  writeFileSync(join(documentsDir(), storedName), localEncrypted, { mode: 0o600 })
+
+  const dataKey = cloudDataKey()
+  if (dataKey) {
+    const cloudEncrypted = encrypt(new Uint8Array(plaintext), dataKey)
+    await uploadDocumentBytes(storedName, cloudEncrypted)
+  }
+
   return { storedPath: storedName, originalName: basename(sourcePath) }
 }
 
 // Re-attempts the upload for a document this device holds locally — covers records
 // whose original upload was skipped (not signed into cloud sync yet) or silently
-// failed (best-effort, no retry queue at the time). Safe to call repeatedly: a
-// re-upload just overwrites the same blob key. Returns false (nothing to do) for
-// legacy absolute-path records, records with no local file, or when sync isn't
-// connected — callers use that to decide whether to remember this one succeeded.
+// failed (best-effort, no retry queue at the time), and re-uploads any document still
+// sitting in the cloud under the old, wrong local-key encryption (see module doc).
+// Safe to call repeatedly: a re-upload just overwrites the same blob key. Returns
+// false (nothing to do) for legacy absolute-path records, records with no local
+// file, or when sync isn't connected — callers use that to decide whether to
+// remember this one succeeded.
 export async function backfillUpload(storedPath: string): Promise<boolean> {
   if (isAbsolute(storedPath)) return false
   const resolved = resolveDocumentPath(storedPath)
   if (!existsSync(resolved)) return false
-  const token = getSecret('syncToken')
-  if (!token) return false
-  const encrypted = readFileSync(resolved)
-  return uploadDocumentBytes(storedPath, encrypted)
+  const dataKey = cloudDataKey()
+  if (!dataKey) return false
+  const localEncrypted = readFileSync(resolved)
+  const plaintext = decrypt(localEncrypted, getCurrentKey())
+  const cloudEncrypted = encrypt(plaintext, dataKey)
+  return uploadDocumentBytes(storedPath, cloudEncrypted)
 }
 
 export async function openDocumentForViewing(storedPath: string): Promise<string> {
   await ensureDocumentAvailableLocally(storedPath)
   const resolved = resolveDocumentPath(storedPath)
-  const encrypted = readFileSync(resolved)
-  const plaintext = decrypt(encrypted, getCurrentKey())
+  let plaintext: Uint8Array
+  try {
+    plaintext = decrypt(readFileSync(resolved), getCurrentKey())
+  } catch (err) {
+    // A cache file written before the local-key/Data-Key fix (see module doc) can be
+    // sitting here undecryptable with this device's key — ensureDocumentAvailableLocally
+    // above would have skipped re-fetching it since it already "existed". Treat a decrypt
+    // failure on a non-legacy (relative-path) cache as exactly that: drop it and fetch a
+    // fresh, correctly re-encrypted copy once before giving up.
+    if (isAbsolute(storedPath)) throw err
+    rmSync(resolved, { force: true })
+    await ensureDocumentAvailableLocally(storedPath)
+    plaintext = decrypt(readFileSync(resolved), getCurrentKey())
+  }
   const ext = extname(resolved.replace(/\.enc$/, ''))
   const tempPath = join(tempViewDir(), `${randomUUID()}${ext}`)
   writeFileSync(tempPath, plaintext, { mode: 0o600 })

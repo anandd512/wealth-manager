@@ -602,6 +602,12 @@ async function pullValueHistory(dataKey: Buffer, token: string): Promise<void> {
 // every such file this device holds locally another chance to upload each sync,
 // using sync_meta (local-only, never synced itself) to remember one already
 // confirmed uploaded so it isn't re-sent every time.
+//
+// Key prefix is versioned (v2, not the original "uploaded_doc_") because fileStore.ts's
+// upload used to encrypt with this device's local key instead of the shared sync Data
+// Key — any document "confirmed" uploaded under the v1 key is actually sitting in blob
+// storage undecryptable by any other device. Bumping the prefix makes every such
+// document look unconfirmed again so this backfill re-uploads it correctly, once.
 const DOCUMENT_TABLES = ['accounts', 'insurance_policies', 'identity_documents']
 
 async function backfillDocumentUploads(): Promise<void> {
@@ -611,7 +617,7 @@ async function backfillDocumentUploads(): Promise<void> {
       .prepare(`SELECT DISTINCT document_path FROM ${table} WHERE document_path IS NOT NULL AND deleted = 0`)
       .all() as { document_path: string }[]
     for (const { document_path: documentPath } of rows) {
-      const metaKey = `uploaded_doc_${documentPath}`
+      const metaKey = `uploaded_doc_v2_${documentPath}`
       const already = db.prepare('SELECT value FROM sync_meta WHERE key = ?').get(metaKey)
       if (already) continue
       const uploaded = await backfillUpload(documentPath)

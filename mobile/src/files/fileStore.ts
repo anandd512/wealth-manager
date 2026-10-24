@@ -87,8 +87,19 @@ export async function backfillUpload(storedPath: string, token: string): Promise
 export async function openDocumentForViewing(storedPath: string, dataKey: Buffer, token: string): Promise<string> {
   await ensureDocumentAvailableLocally(storedPath, token)
   const file = new File(documentsDir(), storedPath)
-  const envelopeBase64 = Buffer.from(await file.bytes()).toString('base64')
-  const plaintext = decryptRecord(envelopeBase64, dataKey)
+  let plaintext: Uint8Array
+  try {
+    plaintext = decryptRecord(Buffer.from(await file.bytes()).toString('base64'), dataKey)
+  } catch (err) {
+    // A cache file downloaded before desktop's local-key/Data-Key encryption fix (see
+    // src/main/fileStore.ts) can be sitting here encrypted with the wrong key —
+    // ensureDocumentAvailableLocally above would have skipped re-fetching it since it
+    // already existed. Drop it and fetch a fresh, correctly re-encrypted copy once
+    // before giving up.
+    file.delete()
+    await ensureDocumentAvailableLocally(storedPath, token)
+    plaintext = decryptRecord(Buffer.from(await file.bytes()).toString('base64'), dataKey)
+  }
 
   const ext = storedPath.replace(/\.enc$/, '').match(/\.[^./]+$/)?.[0] ?? ''
   const tempFile = new File(tempViewDir(), `${Crypto.randomUUID()}${ext}`)
