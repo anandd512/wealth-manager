@@ -26,11 +26,14 @@ function tempViewDir(): Directory {
   return dir
 }
 
-async function uploadDocumentBytes(key: string, dataBase64: string, token: string): Promise<void> {
+async function uploadDocumentBytes(key: string, dataBase64: string, token: string): Promise<boolean> {
   try {
     await ArthaApi.uploadFile(key, dataBase64, token)
+    return true
   } catch {
-    // Best-effort — see module doc.
+    // Best-effort — see module doc. backfillUpload below is what gives a failed
+    // upload a second chance, so the caller finding out here isn't the only recovery path.
+    return false
   }
 }
 
@@ -65,6 +68,18 @@ export async function storeDocument(
   await uploadDocumentBytes(storedName, envelopeBase64, token)
 
   return { storedPath: storedName, originalName: picked.name }
+}
+
+// Re-attempts the upload for a document this device holds locally — covers records
+// whose original upload failed (best-effort, no retry queue at the time), mirroring
+// src/main/sync.ts's dedicated backfillDocumentUploads on desktop. Safe to call
+// repeatedly: a re-upload just overwrites the same blob key. Returns false (nothing
+// to do) when this device doesn't have the file cached locally.
+export async function backfillUpload(storedPath: string, token: string): Promise<boolean> {
+  const file = new File(documentsDir(), storedPath)
+  if (!file.exists) return false
+  const envelopeBase64 = Buffer.from(await file.bytes()).toString('base64')
+  return uploadDocumentBytes(storedPath, envelopeBase64, token)
 }
 
 /** Decrypts a stored document into a plaintext temp file for viewing (an <Image>

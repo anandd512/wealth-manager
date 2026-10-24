@@ -168,7 +168,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   warningBanner: { backgroundColor: '#fdecea', paddingHorizontal: 16, paddingVertical: 10 },
   warningText: { color: '#c0392b', fontSize: 12.5, fontWeight: '600' },
-  sectionHeader: { fontSize: 13, fontWeight: '700', color: '#777', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
+  sectionHeader: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#777',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 4,
+    backgroundColor: '#fff'
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

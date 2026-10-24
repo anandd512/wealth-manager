@@ -41,13 +41,16 @@ export function resolveDocumentPath(stored: string): string {
   return isAbsolute(stored) ? stored : join(documentsDir(), stored)
 }
 
-async function uploadDocumentBytes(key: string, encrypted: Buffer): Promise<void> {
+async function uploadDocumentBytes(key: string, encrypted: Buffer): Promise<boolean> {
   const token = getSecret('syncToken')
-  if (!token) return // not signed into cloud sync — stays local-only, same as before this feature existed
+  if (!token) return false // not signed into cloud sync — stays local-only, same as before this feature existed
   try {
     await apiRequest('/api/files/upload', { method: 'POST', body: { key, data: encrypted.toString('base64') }, token })
+    return true
   } catch {
-    // Best-effort — see module doc.
+    // Best-effort — see module doc. backfillUpload below is what gives a failed/skipped
+    // upload a second chance, so the caller finding out here isn't the only recovery path.
+    return false
   }
 }
 
@@ -75,6 +78,22 @@ export async function storeDocument(sourcePath: string): Promise<{ storedPath: s
   writeFileSync(join(documentsDir(), storedName), encrypted, { mode: 0o600 })
   await uploadDocumentBytes(storedName, encrypted)
   return { storedPath: storedName, originalName: basename(sourcePath) }
+}
+
+// Re-attempts the upload for a document this device holds locally — covers records
+// whose original upload was skipped (not signed into cloud sync yet) or silently
+// failed (best-effort, no retry queue at the time). Safe to call repeatedly: a
+// re-upload just overwrites the same blob key. Returns false (nothing to do) for
+// legacy absolute-path records, records with no local file, or when sync isn't
+// connected — callers use that to decide whether to remember this one succeeded.
+export async function backfillUpload(storedPath: string): Promise<boolean> {
+  if (isAbsolute(storedPath)) return false
+  const resolved = resolveDocumentPath(storedPath)
+  if (!existsSync(resolved)) return false
+  const token = getSecret('syncToken')
+  if (!token) return false
+  const encrypted = readFileSync(resolved)
+  return uploadDocumentBytes(storedPath, encrypted)
 }
 
 export async function openDocumentForViewing(storedPath: string): Promise<string> {

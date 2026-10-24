@@ -7,6 +7,7 @@ import { syncIdentityDocs } from '../sync/identityDocsSync'
 import { syncCreditCards } from '../sync/creditCardsSync'
 import { syncNetWorthSnapshots } from '../sync/netWorthSnapshotsSync'
 import { syncUpcomingDismissals } from '../sync/upcomingDismissalsSync'
+import { backfillDocumentUploads } from '../sync/documentBackfillSync'
 import { listAccounts } from '../db/accountsRepo'
 import type { Account } from '../db/accountsRepo'
 import { listPolicies } from '../db/insuranceRepo'
@@ -55,6 +56,7 @@ export function DashboardModule() {
       ])
       // Dismissals reference the other tables' sync_ids — run after they've landed.
       await syncUpcomingDismissals(dataKey, token)
+      await backfillDocumentUploads(token)
     } catch {
       // Local-first: show whatever's cached even if the network round-trip failed.
     } finally {

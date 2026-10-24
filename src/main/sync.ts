@@ -6,6 +6,7 @@ import { getSecret, setSecret, clearSecret } from './secrets'
 import { apiRequest } from './backendApi'
 import { recomputeCurrentValueFromHistory } from './services/accounts'
 import { recordSnapshot } from './services/netWorth'
+import { backfillUpload } from './fileStore'
 
 /**
  * Cloud-sync client — talks to the Azure Functions backend in /backend. Every record
@@ -592,6 +593,37 @@ async function pullValueHistory(dataKey: Buffer, token: string): Promise<void> {
   if (touchedAccountIds.size > 0) recordSnapshot()
 }
 
+// Tables whose rows can carry an attached document (src/main/fileStore.ts's
+// storeDocument), each uploaded best-effort at the point the document was added —
+// see that module's doc comment. A row's document_path can land here via the
+// generic table sync above (pulled from another device) or already have existed
+// locally before this device was ever signed into cloud sync, in both cases with
+// no guarantee the actual file bytes made it to blob storage. This backfill gives
+// every such file this device holds locally another chance to upload each sync,
+// using sync_meta (local-only, never synced itself) to remember one already
+// confirmed uploaded so it isn't re-sent every time.
+const DOCUMENT_TABLES = ['accounts', 'insurance_policies', 'identity_documents']
+
+async function backfillDocumentUploads(): Promise<void> {
+  const db = getDb()
+  for (const table of DOCUMENT_TABLES) {
+    const rows = db
+      .prepare(`SELECT DISTINCT document_path FROM ${table} WHERE document_path IS NOT NULL AND deleted = 0`)
+      .all() as { document_path: string }[]
+    for (const { document_path: documentPath } of rows) {
+      const metaKey = `uploaded_doc_${documentPath}`
+      const already = db.prepare('SELECT value FROM sync_meta WHERE key = ?').get(metaKey)
+      if (already) continue
+      const uploaded = await backfillUpload(documentPath)
+      if (uploaded) {
+        db.prepare(
+          'INSERT INTO sync_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+        ).run(metaKey, '1')
+      }
+    }
+  }
+}
+
 /** Pulls remote changes, then pushes local ones, for every table in SYNCABLE_TABLES,
  * then does the same for value_history and upcoming_dismissals via their own
  * dedicated logic (both need accounts — and for dismissals, their other parent
@@ -613,4 +645,6 @@ export async function syncNow(): Promise<void> {
 
   await pullUpcomingDismissals(dataKey, token)
   await pushUpcomingDismissals(dataKey, token)
+
+  await backfillDocumentUploads()
 }

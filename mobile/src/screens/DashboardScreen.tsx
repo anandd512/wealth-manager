@@ -17,6 +17,11 @@ function formatCurrency(value: number): string {
   return value.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 }
 
+function formatShortDate(dateStr: string): string {
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+}
+
 function formatCompact(value: number): string {
   const abs = Math.abs(value)
   if (abs >= 10_000_000) return `${(value / 10_000_000).toFixed(1)}Cr`
@@ -53,10 +58,16 @@ export function DashboardScreen({
     [policies, identityDocs, creditCards]
   )
 
-  const lineData = useMemo(
-    () => snapshots.map((s) => ({ value: s.net_worth, label: s.snapshot_date.slice(5) })),
-    [snapshots]
-  )
+  // At most 5 date labels, spread evenly, so they stay readable instead of
+  // overlapping — one per snapshot (often one per day) is illegible at phone width.
+  const lineData = useMemo(() => {
+    const maxLabels = 5
+    const stride = Math.max(1, Math.ceil(snapshots.length / maxLabels))
+    return snapshots.map((s, i) => ({
+      value: s.net_worth,
+      label: i % stride === 0 || i === snapshots.length - 1 ? formatShortDate(s.snapshot_date) : ''
+    }))
+  }, [snapshots])
 
   const pieData = useMemo(
     () =>
@@ -107,6 +118,8 @@ export function DashboardScreen({
             hideYAxisText
             xAxisColor="#eee"
             yAxisColor="transparent"
+            xAxisLabelTextStyle={{ fontSize: 10, color: '#999' }}
+            xAxisLabelsVerticalShift={2}
             noOfSections={3}
             spacing={Math.max(8, 280 / Math.max(1, lineData.length))}
             initialSpacing={8}

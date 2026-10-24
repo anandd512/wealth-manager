@@ -114,7 +114,15 @@ const styles = StyleSheet.create({
   tileLabel: { fontSize: 11, color: '#777', marginBottom: 4 },
   tileValue: { fontSize: 14, fontWeight: '700', color: '#111' },
   tileValueLarge: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  sectionHeader: { fontSize: 13, fontWeight: '700', color: '#777', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
+  sectionHeader: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#777',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 4,
+    backgroundColor: '#fff'
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
