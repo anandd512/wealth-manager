@@ -21,6 +21,7 @@ import type { NetWorthSnapshot } from '../db/netWorthSnapshotsRepo'
 import { dismissItem } from '../db/upcomingDismissalsRepo'
 import { dismissActionFor, UpcomingItem } from '../lib/upcoming'
 import { getLastSyncedAt, setLastSyncedAt } from '../sync/syncStatus'
+import { requestNotificationPermission, syncUpcomingNotifications } from '../lib/notifications'
 import { DashboardScreen } from './DashboardScreen'
 
 /** Owns loading + sync orchestration for the Dashboard tab. Unlike the other
@@ -40,11 +41,15 @@ export function DashboardModule() {
 
   const loadLocal = useCallback(() => {
     setAccounts(listAccounts())
-    setPolicies(listPolicies())
-    setIdentityDocs(listIdentityDocuments())
-    setCreditCards(listCreditCards())
+    const policiesNow = listPolicies()
+    const identityDocsNow = listIdentityDocuments()
+    const creditCardsNow = listCreditCards()
+    setPolicies(policiesNow)
+    setIdentityDocs(identityDocsNow)
+    setCreditCards(creditCardsNow)
     setSnapshots(listSnapshots())
     setLastSyncedAtState(getLastSyncedAt())
+    void syncUpcomingNotifications(policiesNow, identityDocsNow, creditCardsNow)
   }, [])
 
   const refresh = useCallback(async () => {
@@ -77,6 +82,10 @@ export function DashboardModule() {
   useEffect(() => {
     loadLocal()
     void refresh()
+    // Prompts once per install (the OS itself remembers a prior grant/denial and
+    // won't re-prompt) — syncUpcomingNotifications above no-ops silently until this
+    // resolves to granted, so declining just means no reminders, not a crash.
+    void requestNotificationPermission()
     // Only run once per unlock — refresh() itself is stable across re-renders via useCallback.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
