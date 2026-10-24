@@ -219,11 +219,11 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
       interest_rate: isLoan && interestRate ? Number(interestRate) : null,
       tenure_months: isLoan && tenureMonths ? Number(tenureMonths) : null,
       emi_amount: isLoan && emiAmount ? Number(emiAmount) : null,
-      loan_start_date: isLoan && loanStartDate ? new Date(loanStartDate).toISOString() : null,
+      loan_start_date: isLoan && loanStartDate ? loanStartDate : null,
       document_path: isLoan ? documentPath : null,
       document_original_name: isLoan ? documentOriginalName : null,
       purchase_price: showPurchaseFields && purchasePrice ? Number(purchasePrice) : null,
-      purchase_date: showPurchaseFields && purchaseDate ? new Date(purchaseDate).toISOString() : null,
+      purchase_date: showPurchaseFields && purchaseDate ? purchaseDate : null,
       ownership_pct: showOwnershipField && ownershipPct ? Number(ownershipPct) : null,
       notes: notes.trim() || null
     }

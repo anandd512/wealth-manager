@@ -47,9 +47,10 @@ function formatCurrency(value: number): string {
   return value.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 }
 
+// snapshot_date is already a plain YYYY-MM-DD string — no Date parsing needed (or
+// wanted: it'd risk a UTC-vs-local day shift for no benefit).
 function formatShortDate(dateStr: string): string {
-  const d = new Date(dateStr)
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  return dateStr
 }
 
 function formatCompact(value: number): string {

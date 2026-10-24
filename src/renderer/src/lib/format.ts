@@ -10,13 +10,6 @@ export function formatCurrency(value: number, currency = 'INR'): string {
   }
 }
 
-export function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })
-}
-
 // `Date#toISOString()` is UTC-based, which silently shifts "today" back a calendar day
 // for positive-UTC-offset timezones (IST and most of Asia/Australia) during local hours
 // before the UTC day rolls over. These stay anchored to local date components throughout.
@@ -25,6 +18,20 @@ export function toLocalDateString(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+// Every date shown in the UI is plain YYYY-MM-DD, no time component — a pure date
+// string (expiry_date, renewal_date, etc.) is returned as-is, with no Date parsing
+// at all, so there's no risk of the UTC-vs-local shift described above. A full
+// timestamp (last_updated and the like, which legitimately needs time precision for
+// sync's last-write-wins) is parsed and reduced to its local calendar date via
+// toLocalDateString — only the display changes; the stored value keeps its time.
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return '—'
+  return toLocalDateString(d)
 }
 
 export function todayLocalDateString(): string {

@@ -10,6 +10,7 @@ import { saveApiKey, loadApiKey, saveBiometricEnabled, loadBiometricEnabled } fr
 import { testAnthropicConnection, testOpenAiConnection } from '../lib/extraction'
 import { exportBackup, pickBackupFile, readBackupSummary, importBackup } from '../lib/backup'
 import { friendlyErrorMessage } from '../lib/friendlyError'
+import { toLocalDateString } from '../lib/creditCardCycle'
 
 type Provider = 'anthropic' | 'openai'
 
@@ -78,7 +79,7 @@ export function SettingsScreen({ onBack, onShowTour }: { onBack?: () => void; on
       setImporting(false)
       Alert.alert(
         'Restore this backup?',
-        `From ${new Date(summary.exportedAt).toLocaleString()} — ${summary.recordCount} records, ${summary.documentCount} documents. This overwrites any local item with the same ID. This can't be undone.`,
+        `From ${toLocalDateString(new Date(summary.exportedAt))} — ${summary.recordCount} records, ${summary.documentCount} documents. This overwrites any local item with the same ID. This can't be undone.`,
         [
           { text: 'Cancel', style: 'cancel' },
           {

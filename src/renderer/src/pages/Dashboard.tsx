@@ -378,7 +378,7 @@ export default function Dashboard(): JSX.Element {
                       contentStyle={{ background: '#141a26', border: '1px solid #232c3f', borderRadius: 10 }}
                       itemStyle={{ color: '#edf1f9' }}
                       formatter={(v: number, name: string) => [formatCurrency(v), name === 'assets' ? 'Assets' : 'Liabilities']}
-                      labelFormatter={(l: string) => new Date(l).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      labelFormatter={(l: string) => formatDate(l)}
                     />
                     <Area type="monotone" dataKey="assets" stroke="#3ecf8e" fill="url(#assetsGrad)" strokeWidth={2} />
                     <Area type="monotone" dataKey="liabilities" stroke="#ef5b5b" fill="url(#liabGrad)" strokeWidth={2} />
