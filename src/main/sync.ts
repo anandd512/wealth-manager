@@ -4,6 +4,8 @@ import { deriveSyncKeys } from './syncCrypto'
 import { deriveKey } from './auth'
 import { getSecret, setSecret, clearSecret } from './secrets'
 import { apiRequest } from './backendApi'
+import { recomputeCurrentValueFromHistory } from './services/accounts'
+import { recordSnapshot } from './services/netWorth'
 
 /**
  * Cloud-sync client — talks to the Azure Functions backend in /backend. Every record
@@ -161,12 +163,15 @@ interface SyncableTable {
 // device. It gets dedicated pushUpcomingDismissals/pullUpcomingDismissals below
 // instead, called explicitly from syncNow() after this generic list has run (so the
 // tables it points into have already arrived locally this same sync).
+//
+// value_history is the same situation — account_id is a local autoincrement id
+// referencing accounts, meaningless on a second device — so it also gets dedicated
+// pushValueHistory/pullValueHistory below instead of going through here.
 const SYNCABLE_TABLES: SyncableTable[] = [
   { table: 'accounts', type: 'account', updatedAtColumn: 'last_updated' },
   { table: 'insurance_policies', type: 'insurance_policy', updatedAtColumn: 'updated_at' },
   { table: 'identity_documents', type: 'identity_document', updatedAtColumn: 'updated_at' },
   { table: 'credit_cards', type: 'credit_card', updatedAtColumn: 'updated_at' },
-  { table: 'value_history', type: 'value_history', updatedAtColumn: 'updated_at' },
   { table: 'credential_vault', type: 'credential_vault', updatedAtColumn: 'updated_at' },
   { table: 'net_worth_snapshots', type: 'net_worth_snapshot', updatedAtColumn: 'updated_at', idColumn: 'snapshot_date' },
   {
@@ -196,6 +201,33 @@ function setCursor(type: string, cursor: string): void {
 
 function idColumnOf(table: SyncableTable): string {
   return table.idColumn ?? 'sync_id'
+}
+
+const tableColumnsCache = new Map<string, Set<string>>()
+
+// Pulled payloads are allowed to carry keys this device's schema doesn't recognize —
+// e.g. a column a newer client added, or (as happened with mobile's vault/credit
+// card/insurance/identity-document pushes before that bug was fixed) a client using
+// the wrong field name for a column that exists under a different name here. Dropping
+// unknown keys keeps one bad/unexpected field from crashing the entire sync instead
+// of just that field silently not being set.
+function tableColumns(tableName: string): Set<string> {
+  let cols = tableColumnsCache.get(tableName)
+  if (!cols) {
+    const rows = getDb().prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[]
+    cols = new Set(rows.map((r) => r.name))
+    tableColumnsCache.set(tableName, cols)
+  }
+  return cols
+}
+
+function knownColumnsOnly(tableName: string, payload: Record<string, unknown>): Record<string, unknown> {
+  const valid = tableColumns(tableName)
+  const result: Record<string, unknown> = {}
+  for (const key of Object.keys(payload)) {
+    if (valid.has(key)) result[key] = payload[key]
+  }
+  return result
 }
 
 function pushTable(table: SyncableTable, dataKey: Buffer, token: string): Promise<void> {
@@ -233,9 +265,10 @@ function pushTable(table: SyncableTable, dataKey: Buffer, token: string): Promis
   )
 }
 
-function upsertRow(table: SyncableTable, payload: Record<string, unknown>): void {
+function upsertRow(table: SyncableTable, rawPayload: Record<string, unknown>): void {
   const db = getDb()
   const idColumn = idColumnOf(table)
+  const payload = knownColumnsOnly(table.table, rawPayload)
 
   if (table.primaryKeyIsIdColumn) {
     // No separate `id` to look up — the natural key already is the primary key, so
@@ -421,11 +454,150 @@ async function pullUpcomingDismissals(dataKey: Buffer, token: string): Promise<v
   }
 }
 
+interface ValueHistoryRow {
+  id: number
+  account_id: number
+  value: number
+  recorded_at: string
+  source: string
+  invested_value: number | null
+  quantity: number | null
+  sync_id: string | null
+  updated_at: string | null
+  deleted: number
+}
+
+const VALUE_HISTORY_TYPE = 'value_history'
+
+function resolveAccountSyncId(accountId: number): string | null {
+  const row = getDb().prepare('SELECT sync_id FROM accounts WHERE id = ?').get(accountId) as
+    | { sync_id: string | null }
+    | undefined
+  return row?.sync_id ?? null
+}
+
+function resolveLocalAccountId(accountSyncId: string | null): number | null {
+  if (!accountSyncId) return null
+  const row = getDb().prepare('SELECT id FROM accounts WHERE sync_id = ?').get(accountSyncId) as
+    | { id: number }
+    | undefined
+  return row?.id ?? null
+}
+
+// account_id is a local autoincrement id, meaningless on a second device — resolved
+// here to the portable accounts.sync_id instead, same treatment as item_sync_id
+// above for upcoming_dismissals. Rows already pushed under the old generic
+// mechanism (pre-fix) have the sender's raw account_id baked into their ciphertext
+// instead of an account_sync_id — those can't be retroactively repaired (the
+// server never sees plaintext); only history pushed from here on syncs correctly.
+async function pushValueHistory(dataKey: Buffer, token: string): Promise<void> {
+  const db = getDb()
+  const rows = db.prepare('SELECT * FROM value_history').all() as ValueHistoryRow[]
+
+  const items: SyncPushItem[] = rows
+    .filter((row) => row.sync_id) // rows not yet backfilled on this run — picked up next sync
+    .flatMap((row) => {
+      const accountSyncId = resolveAccountSyncId(row.account_id)
+      if (!accountSyncId) return [] // parent account has no sync_id yet — retried next sync
+      const payload = {
+        account_sync_id: accountSyncId,
+        value: row.value,
+        recorded_at: row.recorded_at,
+        source: row.source,
+        invested_value: row.invested_value,
+        quantity: row.quantity,
+        deleted: row.deleted
+      }
+      const plaintext = Buffer.from(JSON.stringify(payload), 'utf-8')
+      return [
+        {
+          id: row.sync_id as string,
+          type: VALUE_HISTORY_TYPE,
+          ciphertext: encrypt(plaintext, dataKey).toString('base64'),
+          updatedAt: row.updated_at ?? row.recorded_at,
+          deleted: Boolean(row.deleted)
+        }
+      ]
+    })
+
+  if (items.length === 0) return
+
+  const BATCH_SIZE = 500
+  const batches: SyncPushItem[][] = []
+  for (let i = 0; i < items.length; i += BATCH_SIZE) batches.push(items.slice(i, i + BATCH_SIZE))
+  await batches.reduce<Promise<void>>(
+    (chain, batch) =>
+      chain.then(() => apiRequest('/api/sync/push', { method: 'POST', body: { items: batch }, token }).then(() => {})),
+    Promise.resolve()
+  )
+}
+
+async function pullValueHistory(dataKey: Buffer, token: string): Promise<void> {
+  const db = getDb()
+  const touchedAccountIds = new Set<number>()
+  let cursor = getCursor(VALUE_HISTORY_TYPE)
+  for (;;) {
+    const page = await apiRequest<{ items: SyncPullItem[]; cursor: string; hasMore: boolean }>(
+      `/api/sync/pull?since=${encodeURIComponent(cursor)}`,
+      { token }
+    )
+    for (const item of page.items) {
+      if (item.type !== VALUE_HISTORY_TYPE) continue
+      const plaintext = decrypt(Buffer.from(item.ciphertext, 'base64'), dataKey)
+      const payload = JSON.parse(Buffer.from(plaintext).toString('utf-8')) as {
+        account_sync_id: string
+        value: number
+        recorded_at: string
+        source: string
+        invested_value: number | null
+        quantity: number | null
+        deleted: number | boolean
+      }
+
+      const localAccountId = resolveLocalAccountId(payload.account_sync_id)
+      if (localAccountId === null) continue // parent account hasn't arrived locally yet — retried next sync
+
+      db.prepare(
+        `INSERT INTO value_history (account_id, value, recorded_at, source, invested_value, quantity, sync_id, updated_at, deleted)
+         VALUES (@account_id, @value, @recorded_at, @source, @invested_value, @quantity, @sync_id, @updated_at, @deleted)
+         ON CONFLICT(sync_id) DO UPDATE SET
+           account_id = excluded.account_id, value = excluded.value, recorded_at = excluded.recorded_at,
+           source = excluded.source, invested_value = excluded.invested_value, quantity = excluded.quantity,
+           updated_at = excluded.updated_at, deleted = excluded.deleted`
+      ).run({
+        account_id: localAccountId,
+        value: payload.value,
+        recorded_at: payload.recorded_at,
+        source: payload.source,
+        invested_value: payload.invested_value,
+        quantity: payload.quantity,
+        sync_id: item.id,
+        updated_at: item.updatedAt,
+        deleted: payload.deleted ? 1 : 0
+      })
+      touchedAccountIds.add(localAccountId)
+    }
+    cursor = page.cursor
+    setCursor(VALUE_HISTORY_TYPE, cursor)
+    if (!page.hasMore) break
+  }
+
+  // A pulled check-in should affect this account's current_value the same way a
+  // local one does (see accounts.ts's checkInValue, which calls this after every
+  // local write) — otherwise net worth silently ignores check-ins made elsewhere
+  // until something else happens to touch the account.
+  for (const accountId of touchedAccountIds) {
+    recomputeCurrentValueFromHistory(accountId)
+  }
+  if (touchedAccountIds.size > 0) recordSnapshot()
+}
+
 /** Pulls remote changes, then pushes local ones, for every table in SYNCABLE_TABLES,
- * then does the same for upcoming_dismissals via its own dedicated logic (needs the
- * tables above to have already landed locally — see DISMISSAL_PARENT_TABLES). Call
- * after unlock and periodically — see scheduler.ts for the existing pattern used by
- * reminder checks. No-ops quietly if not signed in (see syncStatus()). */
+ * then does the same for value_history and upcoming_dismissals via their own
+ * dedicated logic (both need accounts — and for dismissals, their other parent
+ * tables too — to have already landed locally this same sync). Call after unlock
+ * and periodically — see scheduler.ts for the existing pattern used by reminder
+ * checks. No-ops quietly if not signed in (see syncStatus()). */
 export async function syncNow(): Promise<void> {
   const token = sessionToken()
   const dataKey = cachedDataKey()
@@ -435,6 +607,9 @@ export async function syncNow(): Promise<void> {
     await pullTable(table, dataKey, token)
     await pushTable(table, dataKey, token)
   }
+
+  await pullValueHistory(dataKey, token)
+  await pushValueHistory(dataKey, token)
 
   await pullUpcomingDismissals(dataKey, token)
   await pushUpcomingDismissals(dataKey, token)

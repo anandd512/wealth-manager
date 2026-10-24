@@ -154,7 +154,10 @@ const api = {
     clearOpenAiKey: () => ipcRenderer.invoke(CHANNELS.settingsClearOpenAiKey),
     setOpenAiBaseUrl: (baseUrl: string) => ipcRenderer.invoke(CHANNELS.settingsSetOpenAiBaseUrl, baseUrl),
     setOpenAiModel: (model: string) => ipcRenderer.invoke(CHANNELS.settingsSetOpenAiModel, model),
-    testEmail: () => ipcRenderer.invoke(CHANNELS.settingsTestEmail)
+    testEmail: () => ipcRenderer.invoke(CHANNELS.settingsTestEmail),
+    testAnthropicKey: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(CHANNELS.settingsTestAnthropicKey),
+    testOpenAiKey: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(CHANNELS.settingsTestOpenAiKey)
   },
   notify: {
     status: () => ipcRenderer.invoke(CHANNELS.notifyStatus),

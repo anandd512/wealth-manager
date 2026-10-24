@@ -7,6 +7,7 @@ import { getDocTypeIcon } from '../lib/typeIcons'
 import { formatDate, daysUntil } from '../lib/format'
 import IdentityDocModal from '../components/IdentityDocModal'
 import ActionMenu from '../components/ActionMenu'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { ICON_VIEW, ICON_DOWNLOAD, ICON_EDIT, ICON_DELETE, ICON_SYNC } from '../lib/actionIcons'
 
 // Item 32 — inline lightbox for document images
@@ -52,12 +53,11 @@ export default function IdentityDocuments(): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [copiedIdNum, setCopiedIdNum] = useState<number | null>(null)
   const [maskedIds, setMaskedIds] = useState<Set<number>>(new Set())
-  const [undoPending, setUndoPending] = useState<{ id: number; label: string } | null>(null)
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Item 30 — search
   const [search, setSearch] = useState('')
   // Item 32 — lightbox
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; label: string } | null>(null)
 
   const load = async (): Promise<void> => {
     setDocs(await api().identityDocs.list())
@@ -68,19 +68,15 @@ export default function IdentityDocuments(): JSX.Element {
   }, [])
 
   const remove = (id: number, label: string): void => {
-    setDocs((prev) => prev.filter((d) => d.id !== id))
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    setUndoPending({ id, label })
-    undoTimerRef.current = setTimeout(async () => {
-      setUndoPending(null)
-      await api().identityDocs.remove(id)
-      load()
-    }, 5000)
+    setPendingDelete({ id, label })
   }
 
-  const undoDelete = (): void => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    setUndoPending(null)
+  const confirmRemove = async (): Promise<void> => {
+    if (!pendingDelete) return
+    const { id } = pendingDelete
+    setPendingDelete(null)
+    setDocs((prev) => prev.filter((d) => d.id !== id))
+    await api().identityDocs.remove(id)
     load()
   }
 
@@ -199,14 +195,6 @@ export default function IdentityDocuments(): JSX.Element {
 
   return (
     <div>
-      {undoPending && (
-        <div className="undo-toast">
-          <span>"{undoPending.label}" deleted</span>
-          <button className="btn secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={undoDelete}>
-            Undo
-          </button>
-        </div>
-      )}
       <div className="toolbar">
         <h1 className="page-title" style={{ marginBottom: 0 }}>
           Identity
@@ -460,6 +448,14 @@ export default function IdentityDocuments(): JSX.Element {
 
       {/* Item 32 — image lightbox */}
       {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete document"
+        message={`Delete "${pendingDelete?.label}"? This can't be undone.`}
+        onConfirm={() => void confirmRemove()}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   )
 }

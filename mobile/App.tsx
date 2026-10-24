@@ -1,6 +1,8 @@
 import React from 'react'
 import { ActivityIndicator, StyleSheet, View } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { AuthProvider, useAuth } from './src/auth/AuthContext'
 import { AuthScreen } from './src/screens/AuthScreen'
 import { UnlockScreen } from './src/screens/UnlockScreen'
@@ -27,10 +29,14 @@ function Root() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Root />
-      <StatusBar style="auto" />
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <Root />
+          <StatusBar style="auto" />
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   )
 }
 

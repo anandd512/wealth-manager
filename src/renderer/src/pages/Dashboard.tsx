@@ -18,22 +18,27 @@ const BREAKDOWN_LABELS: Record<string, string> = {
   fixed_deposits: 'Fixed Deposits'
 }
 
-function computeDelta(history: NetWorthSnapshot[], range: '1M' | '3M' | '6M' | '1Y' | 'All'): { diff: number; pct: number; label: string } | null {
+function computeDelta(history: NetWorthSnapshot[], range: '1M' | '3M' | '6M' | '1Y' | 'All'): { diff: number; pct: number | null; label: string } | null {
+  // 'All' has no real reference point to compare against — it would fall back to the
+  // very first snapshot ever recorded, which is often a small/unrepresentative
+  // starting balance (e.g. day one, before most accounts were added). Unlike the
+  // bounded ranges (a real "N days ago" net worth), there's no sensible "vs. X" to
+  // show here at all, not just a meaningless percentage — so skip the comparison
+  // entirely rather than label it misleadingly.
+  if (range === 'All') return null
   if (history.length < 2) return null
   const latest = history[history.length - 1]
   const latestTime = new Date(latest.snapshot_date).getTime()
   const rangeDays: Record<string, number> = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 }
-  const rangeLabels: Record<string, string> = { '1M': '30 days', '3M': '3 months', '6M': '6 months', '1Y': '1 year', 'All': 'all time' }
+  const rangeLabels: Record<string, string> = { '1M': '30 days', '3M': '3 months', '6M': '6 months', '1Y': '1 year' }
   let baseline = history[0]
-  if (range !== 'All') {
-    const targetTime = latestTime - rangeDays[range] * 24 * 60 * 60 * 1000
-    for (const h of history) {
-      if (new Date(h.snapshot_date).getTime() <= targetTime) baseline = h
-    }
+  const targetTime = latestTime - rangeDays[range] * 24 * 60 * 60 * 1000
+  for (const h of history) {
+    if (new Date(h.snapshot_date).getTime() <= targetTime) baseline = h
   }
   if (baseline.snapshot_date === latest.snapshot_date) return null
   const diff = latest.net_worth - baseline.net_worth
-  const pct = baseline.net_worth !== 0 ? (diff / Math.abs(baseline.net_worth)) * 100 : 0
+  const pct = baseline.net_worth !== 0 ? (diff / Math.abs(baseline.net_worth)) * 100 : null
   return { diff, pct, label: rangeLabels[range] }
 }
 
@@ -174,8 +179,8 @@ export default function Dashboard(): JSX.Element {
                 <div className={`stat-delta ${delta.diff >= 0 ? 'positive' : 'negative'}`}>
                   {delta.diff >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
                   {delta.diff >= 0 ? '+' : ''}
-                  {formatCurrency(delta.diff)} ({delta.pct >= 0 ? '+' : ''}
-                  {delta.pct.toFixed(1)}%) vs. {delta.label}
+                  {formatCurrency(delta.diff)}
+                  {delta.pct !== null && ` (${delta.pct >= 0 ? '+' : ''}${delta.pct.toFixed(1)}%)`} vs. {delta.label}
                 </div>
               )}
               {!delta && chartRange !== 'All' && (

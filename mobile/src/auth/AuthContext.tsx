@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { Buffer } from '@craftzdog/react-native-buffer'
+import { Buffer } from 'buffer'
 import { ArthaApi } from '../api/arthaApi'
 import { deriveKeys, generateSaltHex } from '../crypto/cryptoBox'
 import * as secureStore from './secureStore'

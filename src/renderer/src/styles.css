@@ -558,6 +558,16 @@ label {
   margin-top: 20px;
 }
 
+.confirm-modal {
+  width: 360px;
+}
+
+.confirm-message {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: 0;
+}
+
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }

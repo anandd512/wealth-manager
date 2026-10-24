@@ -7,6 +7,7 @@ import { cardDigits, formatCardNumber, maskCardNumber } from '../lib/cardNumber'
 import CreditCardModal from '../components/CreditCardModal'
 import MiniCard from '../components/MiniCard'
 import ActionMenu from '../components/ActionMenu'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { ICON_EDIT, ICON_DELETE } from '../lib/actionIcons'
 
 function ordinal(n: number): string {
@@ -20,8 +21,7 @@ export default function CreditCards(): JSX.Element {
   const [dueByCardId, setDueByCardId] = useState<Map<number, UpcomingItem>>(new Map())
   const [editing, setEditing] = useState<CreditCard | null>(null)
   const [showModal, setShowModal] = useState(false)
-  const [undoPending, setUndoPending] = useState<{ id: number; label: string } | null>(null)
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; label: string } | null>(null)
   const [revealed, setRevealed] = useState<Set<number>>(new Set())
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [clipboardCountdown, setClipboardCountdown] = useState<number | null>(null)
@@ -112,19 +112,15 @@ export default function CreditCards(): JSX.Element {
   }
 
   const remove = (id: number, label: string): void => {
-    setCards((prev) => prev.filter((c) => c.id !== id))
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    setUndoPending({ id, label })
-    undoTimerRef.current = setTimeout(async () => {
-      setUndoPending(null)
-      await api().creditCards.remove(id)
-      load()
-    }, 5000)
+    setPendingDelete({ id, label })
   }
 
-  const undoDelete = (): void => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    setUndoPending(null)
+  const confirmRemove = async (): Promise<void> => {
+    if (!pendingDelete) return
+    const { id } = pendingDelete
+    setPendingDelete(null)
+    setCards((prev) => prev.filter((c) => c.id !== id))
+    await api().creditCards.remove(id)
     load()
   }
 
@@ -135,14 +131,6 @@ export default function CreditCards(): JSX.Element {
 
   return (
     <div>
-      {undoPending && (
-        <div className="undo-toast">
-          <span>"{undoPending.label}" deleted</span>
-          <button className="btn secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={undoDelete}>
-            Undo
-          </button>
-        </div>
-      )}
       <div className="toolbar">
         <h1 className="page-title" style={{ marginBottom: 0 }}>
           Credit Cards
@@ -301,6 +289,14 @@ export default function CreditCards(): JSX.Element {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete card"
+        message={`Delete "${pendingDelete?.label}"? This can't be undone.`}
+        onConfirm={() => void confirmRemove()}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   )
 }

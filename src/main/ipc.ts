@@ -41,12 +41,14 @@ import * as creditCards from './services/creditCards'
 import * as vault from './services/vault'
 import { extractPolicyDetails } from './services/insuranceParser'
 import { extractIdentityDocDetails } from './services/identityDocParser'
+import { testAnthropicConnection, testOpenAiConnection } from './services/extraction'
 import { extractLoanSchedule } from './services/loanScheduleParser'
 import {
   storeDocument,
   openDocumentForViewing,
   cleanupTempViewFiles,
   resolveDocumentPath,
+  ensureDocumentAvailableLocally,
   documentsDir
 } from './fileStore'
 import { refreshAccountPrice } from './services/priceFetch'
@@ -95,6 +97,7 @@ async function downloadDocument(
     defaultPath: suggestedName ?? basename(storedPath).replace(/\.enc$/, '')
   })
   if (result.canceled || !result.filePath) return { ok: false }
+  await ensureDocumentAvailableLocally(storedPath)
   const encrypted = readFileSync(resolveDocumentPath(storedPath))
   const plaintext = decrypt(encrypted, getCurrentKey())
   writeFileSync(result.filePath, plaintext)
@@ -333,7 +336,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
   ipcMain.handle(CHANNELS.accountsExtractLoanSchedule, async (_e, sourcePath: string) => {
     requireUnlocked()
     const extraction = await extractLoanSchedule(sourcePath)
-    const { storedPath, originalName } = storeDocument(sourcePath)
+    const { storedPath, originalName } = await storeDocument(sourcePath)
     return { extraction, storedPath, originalName }
   })
   ipcMain.handle(CHANNELS.accountsReExtractLoanSchedule, async (_e, id: number) => {
@@ -341,13 +344,13 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     const account = accounts.getAccount(id)
     if (!account) throw new Error('Account not found')
     if (!account.document_path) throw new Error('This account has no document attached')
-    const tempPath = openDocumentForViewing(account.document_path)
+    const tempPath = await openDocumentForViewing(account.document_path)
     const extraction = await extractLoanSchedule(tempPath)
     return { extraction, storedPath: account.document_path, originalName: account.document_original_name }
   })
   ipcMain.handle(CHANNELS.accountsOpenDocument, async (_e, docPath: string) => {
     requireUnlocked()
-    const tempPath = openDocumentForViewing(docPath)
+    const tempPath = await openDocumentForViewing(docPath)
     await shell.openPath(tempPath)
     return { ok: true }
   })
@@ -408,7 +411,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
   ipcMain.handle(CHANNELS.insuranceExtract, async (_e, sourcePath: string) => {
     requireUnlocked()
     const extraction = await extractPolicyDetails(sourcePath)
-    const { storedPath, originalName } = storeDocument(sourcePath)
+    const { storedPath, originalName } = await storeDocument(sourcePath)
     return { extraction, storedPath, originalName }
   })
   ipcMain.handle(CHANNELS.insuranceReExtract, async (_e, id: number) => {
@@ -416,13 +419,13 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     const policy = insurance.getPolicy(id)
     if (!policy) throw new Error('Policy not found')
     if (!policy.document_path) throw new Error('This policy has no document attached')
-    const tempPath = openDocumentForViewing(policy.document_path)
+    const tempPath = await openDocumentForViewing(policy.document_path)
     const extraction = await extractPolicyDetails(tempPath)
     return { extraction, storedPath: policy.document_path, originalName: policy.document_original_name }
   })
   ipcMain.handle(CHANNELS.insuranceOpenDocument, async (_e, docPath: string) => {
     requireUnlocked()
-    const tempPath = openDocumentForViewing(docPath)
+    const tempPath = await openDocumentForViewing(docPath)
     await shell.openPath(tempPath)
     return { ok: true }
   })
@@ -460,7 +463,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
   ipcMain.handle(CHANNELS.identityDocsExtract, async (_e, sourcePath: string) => {
     requireUnlocked()
     const extraction = await extractIdentityDocDetails(sourcePath)
-    const { storedPath, originalName } = storeDocument(sourcePath)
+    const { storedPath, originalName } = await storeDocument(sourcePath)
     return { extraction, storedPath, originalName }
   })
   ipcMain.handle(CHANNELS.identityDocsReExtract, async (_e, id: number) => {
@@ -468,13 +471,13 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     const doc = identityDocs.getIdentityDocument(id)
     if (!doc) throw new Error('Document not found')
     if (!doc.document_path) throw new Error('This document has no file attached')
-    const tempPath = openDocumentForViewing(doc.document_path)
+    const tempPath = await openDocumentForViewing(doc.document_path)
     const extraction = await extractIdentityDocDetails(tempPath)
     return { extraction, storedPath: doc.document_path, originalName: doc.document_original_name }
   })
   ipcMain.handle(CHANNELS.identityDocsOpenDocument, async (_e, docPath: string) => {
     requireUnlocked()
-    const tempPath = openDocumentForViewing(docPath)
+    const tempPath = await openDocumentForViewing(docPath)
     await shell.openPath(tempPath)
     return { ok: true }
   })
@@ -601,6 +604,24 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
   ipcMain.handle(CHANNELS.settingsTestEmail, async () => {
     try {
       await sendTestEmail()
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.settingsTestAnthropicKey, async () => {
+    try {
+      await testAnthropicConnection()
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(CHANNELS.settingsTestOpenAiKey, async () => {
+    try {
+      await testOpenAiConnection()
       return { ok: true }
     } catch (err) {
       return { ok: false, error: (err as Error).message }

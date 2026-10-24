@@ -13,6 +13,7 @@ import CheckInModal from '../components/CheckInModal'
 import CheckInCelebration from '../components/CheckInCelebration'
 import AccountTrendModal from '../components/AccountTrendModal'
 import CategoryTrendModal from '../components/CategoryTrendModal'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, Wallet } from 'lucide-react'
 import { ICON_TREND, ICON_CHECK_IN } from '../lib/actionIcons'
 
@@ -50,10 +51,9 @@ export default function Accounts(): JSX.Element {
   } | null>(null)
   const [trendTarget, setTrendTarget] = useState<Account | null>(null)
   const [categoryTrend, setCategoryTrend] = useState<AccountCategory | null>(null)
-  const [undoPending, setUndoPending] = useState<{ id: number; label: string } | null>(null)
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [hoveredId, setHoveredId] = useState<number | null>(null)
   const [collapsedInstitutions, setCollapsedInstitutions] = useState<Set<string>>(new Set())
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; label: string } | null>(null)
 
   const load = async (): Promise<void> => {
     setAccounts(await api().accounts.list())
@@ -64,19 +64,15 @@ export default function Accounts(): JSX.Element {
   }, [])
 
   const remove = (id: number, label: string): void => {
-    setAccounts((prev) => prev.filter((a) => a.id !== id))
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    setUndoPending({ id, label })
-    undoTimerRef.current = setTimeout(async () => {
-      setUndoPending(null)
-      await api().accounts.remove(id)
-      load()
-    }, 5000)
+    setPendingDelete({ id, label })
   }
 
-  const undoDelete = (): void => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    setUndoPending(null)
+  const confirmRemove = async (): Promise<void> => {
+    if (!pendingDelete) return
+    const { id } = pendingDelete
+    setPendingDelete(null)
+    setAccounts((prev) => prev.filter((a) => a.id !== id))
+    await api().accounts.remove(id)
     load()
   }
 
@@ -108,14 +104,6 @@ export default function Accounts(): JSX.Element {
 
   return (
     <div>
-      {undoPending && (
-        <div className="undo-toast">
-          <span>"{undoPending.label}" deleted</span>
-          <button className="btn secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={undoDelete}>
-            Undo
-          </button>
-        </div>
-      )}
       <div className="toolbar">
         <h1 className="page-title" style={{ marginBottom: 0 }}>
           Accounts
@@ -533,6 +521,14 @@ export default function Accounts(): JSX.Element {
           onDone={() => setCelebration(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete account"
+        message={`Delete "${pendingDelete?.label}"? This can't be undone.`}
+        onConfirm={() => void confirmRemove()}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   )
 }

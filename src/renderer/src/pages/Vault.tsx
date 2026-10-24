@@ -5,6 +5,7 @@ import type { VaultEntry, VaultCategory } from '../../../shared/types'
 import { VAULT_CATEGORIES } from '../../../shared/types'
 import VaultEntryModal from '../components/VaultEntryModal'
 import ActionMenu from '../components/ActionMenu'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { ICON_EDIT, ICON_DELETE } from '../lib/actionIcons'
 
 
@@ -16,11 +17,10 @@ export default function Vault(): JSX.Element {
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<'name' | 'recent' | 'changed'>('name')
-  const [undoPending, setUndoPending] = useState<{ id: number; label: string } | null>(null)
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [clipboardCountdown, setClipboardCountdown] = useState<number | null>(null)
   const clipboardIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const revealTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; label: string } | null>(null)
 
   const load = async (): Promise<void> => {
     setEntries(await api().vault.list())
@@ -36,22 +36,16 @@ export default function Vault(): JSX.Element {
   }, [])
 
   const remove = (id: number, label: string): void => {
-    // Optimistically remove from UI
-    setEntries((prev) => prev.filter((e) => e.id !== id))
-    // Cancel any previous pending delete
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    setUndoPending({ id, label })
-    undoTimerRef.current = setTimeout(async () => {
-      setUndoPending(null)
-      await api().vault.remove(id)
-      load()
-    }, 5000)
+    setPendingDelete({ id, label })
   }
 
-  const undoDelete = (): void => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    setUndoPending(null)
-    load()  // Restore from server
+  const confirmRemove = async (): Promise<void> => {
+    if (!pendingDelete) return
+    const { id } = pendingDelete
+    setPendingDelete(null)
+    setEntries((prev) => prev.filter((e) => e.id !== id))
+    await api().vault.remove(id)
+    load()
   }
 
   const toggleReveal = (id: number): void => {
@@ -295,14 +289,6 @@ export default function Vault(): JSX.Element {
 
   return (
     <div>
-      {undoPending && (
-        <div className="undo-toast">
-          <span>"{undoPending.label}" deleted</span>
-          <button className="btn secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={undoDelete}>
-            Undo
-          </button>
-        </div>
-      )}
       <div className="toolbar">
         <h1 className="page-title" style={{ marginBottom: 0 }}>
           Vault
@@ -385,6 +371,14 @@ export default function Vault(): JSX.Element {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete entry"
+        message={`Delete "${pendingDelete?.label}"? This can't be undone.`}
+        onConfirm={() => void confirmRemove()}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   )
 }

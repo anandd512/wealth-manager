@@ -200,6 +200,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'ENABLE_ORYX_BUILD', value: 'true' }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
         { name: 'COSMOS_DATABASE', value: 'artha' }
+        // Not a secret — just the account name blobStorage.ts builds the blob
+        // endpoint URL from; auth is via the managed identity role assignment below.
+        { name: 'FILES_STORAGE_ACCOUNT_NAME', value: storage.name }
         // ACS_SENDER_ADDRESS isn't knowable until the managed domain finishes
         // provisioning (a few minutes after first deploy) — set via `az functionapp
         // config appsettings set` once you've read it back, see backend/README.md.

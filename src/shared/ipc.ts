@@ -86,6 +86,8 @@ export const CHANNELS = {
   settingsSetOpenAiBaseUrl: 'settings:setOpenAiBaseUrl',
   settingsSetOpenAiModel: 'settings:setOpenAiModel',
   settingsTestEmail: 'settings:testEmail',
+  settingsTestAnthropicKey: 'settings:testAnthropicKey',
+  settingsTestOpenAiKey: 'settings:testOpenAiKey',
 
   notifyStatus: 'notify:status',
   notifyRequestVerification: 'notify:requestVerification',

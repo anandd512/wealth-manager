@@ -293,8 +293,13 @@ export default function Settings(): JSX.Element {
   const testAiKey = async (): Promise<void> => {
     setKeyMsg('Testing…')
     try {
-      await api().settings.setAnthropicKey(anthropicKey)
-      setKeyMsg('Key is valid')
+      if (anthropicKey) await api().settings.setAnthropicKey(anthropicKey)
+      const result = await api().settings.testAnthropicKey()
+      setKeyMsg(result.ok ? 'Connected — key is valid.' : (result.error ?? 'Key test failed'))
+      if (result.ok) {
+        setAnthropicKey('')
+        load()
+      }
     } catch (e) {
       setKeyMsg((e as Error).message ?? 'Key test failed')
     }
@@ -321,6 +326,23 @@ export default function Settings(): JSX.Element {
     await api().settings.clearOpenAiKey()
     setOpenAiMsg('API key removed.')
     load()
+  }
+
+  const testOpenAi = async (): Promise<void> => {
+    setOpenAiMsg('Testing…')
+    try {
+      await api().settings.setOpenAiBaseUrl(openAiBaseUrl)
+      await api().settings.setOpenAiModel(openAiModel)
+      if (openAiKey) await api().settings.setOpenAiKey(openAiKey)
+      const result = await api().settings.testOpenAiKey()
+      setOpenAiMsg(result.ok ? 'Connected — endpoint, model, and key are valid.' : (result.error ?? 'Test failed'))
+      if (result.ok) {
+        setOpenAiKey('')
+        load()
+      }
+    } catch (e) {
+      setOpenAiMsg((e as Error).message ?? 'Test failed')
+    }
   }
 
   const requestNotifyCode = async (): Promise<void> => {
@@ -1229,7 +1251,7 @@ export default function Settings(): JSX.Element {
                 onClick={testAiKey}
                 disabled={!anthropicKey}
               >
-                Test key
+                Test connection
               </button>
               {settings.hasAnthropicKey && (
                 <button className="btn secondary" onClick={clearKey} style={{ marginLeft: 8 }}>
@@ -1277,6 +1299,14 @@ export default function Settings(): JSX.Element {
               </div>
               <button className="btn" onClick={saveOpenAi}>
                 Save
+              </button>
+              <button
+                className="btn secondary"
+                style={{ fontSize: 12, padding: '6px 14px', marginLeft: 8 }}
+                onClick={testOpenAi}
+                disabled={!openAiBaseUrl || !openAiModel}
+              >
+                Test connection
               </button>
               {settings.hasOpenAiKey && (
                 <button className="btn secondary" onClick={clearOpenAiKey} style={{ marginLeft: 8 }}>

@@ -7,6 +7,7 @@ import { getPolicyTypeIcon } from '../lib/typeIcons'
 import { formatCurrency, formatDate, daysUntil } from '../lib/format'
 import PolicyModal from '../components/PolicyModal'
 import ActionMenu from '../components/ActionMenu'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { ICON_VIEW, ICON_DOWNLOAD, ICON_EDIT, ICON_DELETE, ICON_SYNC } from '../lib/actionIcons'
 
 export default function Insurance(): JSX.Element {
@@ -21,9 +22,8 @@ export default function Insurance(): JSX.Element {
   const [extracting, setExtracting] = useState(false)
   const [syncingId, setSyncingId] = useState<number | null>(null)
   const [extractError, setExtractError] = useState<string | null>(null)
-  const [undoPending, setUndoPending] = useState<{ id: number; label: string } | null>(null)
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [showSecondary, setShowSecondary] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; label: string } | null>(null)
 
   const load = async (): Promise<void> => {
     setPolicies(await api().insurance.list())
@@ -34,19 +34,15 @@ export default function Insurance(): JSX.Element {
   }, [])
 
   const remove = (id: number, label: string): void => {
-    setPolicies((prev) => prev.filter((p) => p.id !== id))
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    setUndoPending({ id, label })
-    undoTimerRef.current = setTimeout(async () => {
-      setUndoPending(null)
-      await api().insurance.remove(id)
-      load()
-    }, 5000)
+    setPendingDelete({ id, label })
   }
 
-  const undoDelete = (): void => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    setUndoPending(null)
+  const confirmRemove = async (): Promise<void> => {
+    if (!pendingDelete) return
+    const { id } = pendingDelete
+    setPendingDelete(null)
+    setPolicies((prev) => prev.filter((p) => p.id !== id))
+    await api().insurance.remove(id)
     load()
   }
 
@@ -113,14 +109,6 @@ export default function Insurance(): JSX.Element {
 
   return (
     <div>
-      {undoPending && (
-        <div className="undo-toast">
-          <span>"{undoPending.label}" deleted</span>
-          <button className="btn secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={undoDelete}>
-            Undo
-          </button>
-        </div>
-      )}
       <div className="toolbar">
         <h1 className="page-title" style={{ marginBottom: 0 }}>
           Insurance
@@ -318,6 +306,14 @@ export default function Insurance(): JSX.Element {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete policy"
+        message={`Delete "${pendingDelete?.label}"? This can't be undone.`}
+        onConfirm={() => void confirmRemove()}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   )
 }

@@ -396,6 +396,8 @@ export function createTourApi(): typeof window.api {
       setOpenAiBaseUrl:       async () => {},
       setOpenAiModel:         async () => {},
       testEmail:              async () => ({ ok: false, error: 'Not in tour' }),
+      testAnthropicKey:       async () => ({ ok: false, error: 'Not in tour' }),
+      testOpenAiKey:          async () => ({ ok: false, error: 'Not in tour' }),
     },
     reminders: {
       checkNow: async () => {},

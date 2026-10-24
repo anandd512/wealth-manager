@@ -14,7 +14,9 @@ function effectiveValue(a: AccountTotalsRow): number {
 }
 
 export function computeTotals(): { totalAssets: number; totalLiabilities: number; netWorth: number } {
-  const accounts = getDb().prepare('SELECT is_liability, current_value, ownership_pct FROM accounts').all() as AccountTotalsRow[]
+  const accounts = getDb()
+    .prepare('SELECT is_liability, current_value, ownership_pct FROM accounts WHERE deleted = 0')
+    .all() as AccountTotalsRow[]
   let totalAssets = 0
   let totalLiabilities = 0
   for (const a of accounts) {
@@ -56,7 +58,7 @@ export function getBreakdownByCategory(): { category: string; value: number }[] 
   // computed expression.
   const rows = getDb()
     .prepare(
-      `SELECT category, subtype, current_value, ownership_pct FROM accounts WHERE is_liability = 0`
+      `SELECT category, subtype, current_value, ownership_pct FROM accounts WHERE is_liability = 0 AND deleted = 0`
     )
     .all() as (Pick<Account, 'category' | 'subtype' | 'current_value'> & { ownership_pct: number | null })[]
 

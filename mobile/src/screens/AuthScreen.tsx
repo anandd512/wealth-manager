@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useAuth } from '../auth/AuthContext'
 
 export function AuthScreen() {
@@ -46,7 +46,10 @@ export function AuthScreen() {
 
   if (verificationSentTo) {
     return (
-      <View style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <Text style={styles.title}>Check your email</Text>
         <Text style={styles.subtitle}>
           We sent a 6-digit code to {verificationSentTo}. It expires in 15 minutes.
@@ -84,12 +87,12 @@ export function AuthScreen() {
         >
           <Text style={styles.switchMode}>Use a different email</Text>
         </Pressable>
-      </View>
+      </KeyboardAvoidingView>
     )
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <Text style={styles.title}>Artha</Text>
       <Text style={styles.subtitle}>
         {mode === 'register'
@@ -147,7 +150,7 @@ export function AuthScreen() {
           {mode === 'register' ? 'Already have an account? Log in' : "Don't have an account? Register"}
         </Text>
       </Pressable>
-    </View>
+    </KeyboardAvoidingView>
   )
 }
 

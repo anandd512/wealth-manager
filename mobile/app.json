@@ -29,7 +29,15 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-local-authentication"
+      "expo-local-authentication",
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Artha needs photo access to attach a scan of an insurance policy or ID document.",
+          "cameraPermission": "Artha needs camera access to photograph an insurance policy or ID document."
+        }
+      ]
     ]
   }
 }

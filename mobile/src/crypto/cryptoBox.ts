@@ -3,7 +3,7 @@ import { hkdf } from '@noble/hashes/hkdf.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { gcm } from '@noble/ciphers/aes.js'
 import * as ExpoCrypto from 'expo-crypto'
-import { Buffer } from '@craftzdog/react-native-buffer'
+import { Buffer } from 'buffer'
 
 /**
  * Zero-knowledge crypto core for the mobile app — deliberately mirrors

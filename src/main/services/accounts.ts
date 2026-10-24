@@ -126,7 +126,10 @@ export function setAccountValue(
 // without touching last_price/last_price_at or inserting another history row.
 // Called after any check-in / history edit / history delete so current_value always
 // reflects the latest known entry, even if that edit changed which entry is newest.
-function recomputeCurrentValueFromHistory(accountId: number): void {
+// Exported so sync.ts can call it after pulling a remote value_history change —
+// a check-in made on another device should update this account's current_value
+// here too, exactly as if it had been entered locally.
+export function recomputeCurrentValueFromHistory(accountId: number): void {
   const latest = getDb()
     .prepare(
       `SELECT value, invested_value, quantity FROM value_history WHERE account_id = ? AND deleted = 0

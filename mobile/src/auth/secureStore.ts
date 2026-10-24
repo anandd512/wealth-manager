@@ -1,12 +1,19 @@
 import * as SecureStore from 'expo-secure-store'
-import { Buffer } from '@craftzdog/react-native-buffer'
+import Constants, { ExecutionEnvironment } from 'expo-constants'
+import { Buffer } from 'buffer'
 
 /**
  * Local-device-only storage (iOS Keychain / Android Keystore via expo-secure-store).
  * The Data Key is gated behind Face ID / device passcode so the app can unlock on
  * launch without retyping the master password — see CryptoBox's module doc for why
  * the key itself never needs to be re-derived unless this device is wiped.
+ *
+ * `requireAuthentication` needs NSFaceIDUsageDescription from this app's own
+ * Info.plist (already set in app.json), which only takes effect in a dev client
+ * or standalone build — Expo Go runs a fixed binary and ignores it. So it's
+ * skipped under Expo Go; the key is still Keychain-encrypted, just not Face-ID-gated.
  */
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient
 
 const SESSION_KEY = 'artha.session'
 const DATA_KEY_KEY = 'artha.dataKey'
@@ -32,22 +39,39 @@ export async function clearSession(): Promise<void> {
 
 export async function saveDataKey(dataKey: Buffer): Promise<void> {
   await SecureStore.setItemAsync(DATA_KEY_KEY, dataKey.toString('base64'), {
-    requireAuthentication: true,
     keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-    authenticationPrompt: 'Unlock Artha'
+    ...(isExpoGo ? {} : { requireAuthentication: true, authenticationPrompt: 'Unlock Artha' })
   })
 }
 
-/** Triggers the system Face ID / passcode prompt. Throws if the user cancels or
- * biometry isn't enrolled — callers should fall back to the master-password screen. */
+/** Triggers the system Face ID / passcode prompt (outside Expo Go). Throws if the
+ * user cancels or biometry isn't enrolled — callers should fall back to the
+ * master-password screen. */
 export async function loadDataKey(): Promise<Buffer | null> {
-  const raw = await SecureStore.getItemAsync(DATA_KEY_KEY, {
-    requireAuthentication: true,
-    authenticationPrompt: 'Unlock Artha'
-  })
+  const raw = await SecureStore.getItemAsync(
+    DATA_KEY_KEY,
+    isExpoGo ? undefined : { requireAuthentication: true, authenticationPrompt: 'Unlock Artha' }
+  )
   return raw ? Buffer.from(raw, 'base64') : null
 }
 
 export async function clearDataKey(): Promise<void> {
   await SecureStore.deleteItemAsync(DATA_KEY_KEY)
+}
+
+// AI provider API keys — deliberately per-device, same as desktop's secrets.ts
+// (getSecret('anthropicApiKey')/getSecret('openaiApiKey')): never synced, so a key
+// pasted on one device doesn't silently travel to another.
+const API_KEY_PREFIX = 'artha.apiKey.'
+
+export async function saveApiKey(name: string, value: string): Promise<void> {
+  await SecureStore.setItemAsync(API_KEY_PREFIX + name, value)
+}
+
+export async function loadApiKey(name: string): Promise<string | null> {
+  return SecureStore.getItemAsync(API_KEY_PREFIX + name)
+}
+
+export async function clearApiKey(name: string): Promise<void> {
+  await SecureStore.deleteItemAsync(API_KEY_PREFIX + name)
 }

@@ -1,4 +1,4 @@
-import { Buffer } from '@craftzdog/react-native-buffer'
+import { Buffer } from 'buffer'
 import { Config } from '../config'
 
 /** Thin client for the Azure Functions backend in /backend — see backend/README.md
@@ -117,5 +117,15 @@ export const ArthaApi = {
 
   pull(since: string, token: string): Promise<SyncPullResponse> {
     return request(`/api/sync/pull?since=${encodeURIComponent(since)}`, { token })
+  },
+
+  /** `data` is already client-encrypted (base64) — see mobile/src/files/fileStore.ts
+   * and backend/src/functions/filesUpload.ts. */
+  uploadFile(key: string, data: string, token: string): Promise<{ ok: true }> {
+    return request('/api/files/upload', { method: 'POST', body: JSON.stringify({ key, data }), token })
+  },
+
+  downloadFile(key: string, token: string): Promise<{ data: string }> {
+    return request(`/api/files/download?key=${encodeURIComponent(key)}`, { token })
   }
 }

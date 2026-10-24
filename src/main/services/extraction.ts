@@ -151,3 +151,35 @@ export async function extractStructured<T>(spec: ExtractionSpec): Promise<T> {
   const provider = getExtractionProvider()
   return provider === 'openai' ? extractViaOpenAi<T>(spec) : extractViaAnthropic<T>(spec)
 }
+
+// Real connectivity checks — unlike the old "Test key" button (which just re-saved
+// the key without ever calling the provider), these make an actual minimal request
+// and throw with the provider's own error message on failure, so a bad key/endpoint/
+// model is caught before the user tries a real (and slower, costlier) extraction.
+export async function testAnthropicConnection(): Promise<void> {
+  const apiKey = getSecret('anthropicApiKey')
+  if (!apiKey) throw new Error('No Anthropic API key configured. Add one first.')
+  const client = new Anthropic({ apiKey })
+  await client.messages.create({
+    model: DEFAULT_ANTHROPIC_MODEL,
+    max_tokens: 8,
+    messages: [{ role: 'user', content: 'Reply with "ok".' }]
+  })
+}
+
+export async function testOpenAiConnection(): Promise<void> {
+  const apiKey = getSecret('openaiApiKey')
+  if (!apiKey) throw new Error('No OpenAI/Azure API key configured. Add one first.')
+  const baseUrl = getOpenAiBaseUrl()
+  if (!baseUrl) throw new Error('No OpenAI-compatible endpoint configured. Add one first.')
+  const model = getOpenAiModel()
+  if (!model) throw new Error('No model/deployment name configured. Add one first.')
+  const client = new OpenAI({ apiKey, baseURL: baseUrl })
+  const response = await client.responses.create({
+    model,
+    input: [{ role: 'user', content: [{ type: 'input_text', text: 'Reply with "ok".' }] }]
+  })
+  if (!response.output_text) {
+    throw new Error('The endpoint responded but returned no text — check the model/deployment name.')
+  }
+}
