@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { LineChart, PieChart } from 'react-native-gifted-charts'
 import type { Account } from '../db/accountsRepo'
@@ -12,6 +12,35 @@ import { CATEGORY_LABELS } from '../lib/categories'
 
 const BREAKDOWN_LABELS: Record<string, string> = { ...CATEGORY_LABELS, fixed_deposits: 'Fixed Deposits' }
 const PIE_COLORS = ['#5b8def', '#3ecf8e', '#e8b14f', '#ef5b5b', '#9d7bd8', '#4fd0e8']
+
+type ChartRange = '1M' | '3M' | '6M' | '1Y' | 'All'
+const RANGE_DAYS: Record<Exclude<ChartRange, 'All'>, number> = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 }
+const RANGE_LABELS: Record<Exclude<ChartRange, 'All'>, string> = {
+  '1M': '30 days',
+  '3M': '3 months',
+  '6M': '6 months',
+  '1Y': '1 year'
+}
+const RANGES: ChartRange[] = ['1M', '3M', '6M', '1Y', 'All']
+
+// Ported from desktop's Dashboard.tsx computeDelta — 'All' has no sensible baseline
+// to compare against (often just a small day-one balance), so it shows no
+// comparison at all rather than a misleading one, same as desktop.
+function computeDelta(
+  snapshots: NetWorthSnapshot[],
+  range: ChartRange
+): { diff: number; label: string } | null {
+  if (range === 'All' || snapshots.length < 2) return null
+  const latest = snapshots[snapshots.length - 1]
+  const latestTime = new Date(latest.snapshot_date).getTime()
+  const targetTime = latestTime - RANGE_DAYS[range] * 24 * 60 * 60 * 1000
+  let baseline = snapshots[0]
+  for (const s of snapshots) {
+    if (new Date(s.snapshot_date).getTime() <= targetTime) baseline = s
+  }
+  if (baseline.snapshot_date === latest.snapshot_date) return null
+  return { diff: latest.net_worth - baseline.net_worth, label: RANGE_LABELS[range] }
+}
 
 function formatCurrency(value: number): string {
   return value.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
@@ -51,6 +80,7 @@ export function DashboardScreen({
   onRefresh,
   onDismiss
 }: Props) {
+  const [chartRange, setChartRange] = useState<ChartRange>('All')
   const totals = useMemo(() => computeTotals(accounts), [accounts])
   const breakdown = useMemo(() => getBreakdownByCategory(accounts), [accounts])
   const upcoming = useMemo(
@@ -58,16 +88,24 @@ export function DashboardScreen({
     [policies, identityDocs, creditCards]
   )
 
+  const rangedSnapshots = useMemo(() => {
+    if (chartRange === 'All') return snapshots
+    const cutoff = Date.now() - RANGE_DAYS[chartRange] * 24 * 60 * 60 * 1000
+    return snapshots.filter((s) => new Date(s.snapshot_date).getTime() >= cutoff)
+  }, [snapshots, chartRange])
+
+  const delta = useMemo(() => computeDelta(snapshots, chartRange), [snapshots, chartRange])
+
   // At most 5 date labels, spread evenly, so they stay readable instead of
   // overlapping — one per snapshot (often one per day) is illegible at phone width.
   const lineData = useMemo(() => {
     const maxLabels = 5
-    const stride = Math.max(1, Math.ceil(snapshots.length / maxLabels))
-    return snapshots.map((s, i) => ({
+    const stride = Math.max(1, Math.ceil(rangedSnapshots.length / maxLabels))
+    return rangedSnapshots.map((s, i) => ({
       value: s.net_worth,
-      label: i % stride === 0 || i === snapshots.length - 1 ? formatShortDate(s.snapshot_date) : ''
+      label: i % stride === 0 || i === rangedSnapshots.length - 1 ? formatShortDate(s.snapshot_date) : ''
     }))
-  }, [snapshots])
+  }, [rangedSnapshots])
 
   const pieData = useMemo(
     () =>
@@ -100,32 +138,55 @@ export function DashboardScreen({
         </View>
       </View>
 
-      {lineData.length > 1 && (
+      {snapshots.length > 1 && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Net worth over time</Text>
-          <LineChart
-            data={lineData}
-            height={160}
-            thickness={2.5}
-            color="#111"
-            startFillColor="#111"
-            endFillColor="#fff"
-            startOpacity={0.15}
-            endOpacity={0.02}
-            areaChart
-            hideDataPoints
-            hideRules
-            hideYAxisText
-            xAxisColor="#eee"
-            yAxisColor="transparent"
-            xAxisLabelTextStyle={{ fontSize: 10, color: '#999' }}
-            xAxisLabelsVerticalShift={2}
-            noOfSections={3}
-            spacing={Math.max(8, 280 / Math.max(1, lineData.length))}
-            initialSpacing={8}
-            endSpacing={8}
-            curved
-          />
+          <View style={styles.chartHeader}>
+            <Text style={styles.cardTitle}>Net worth over time</Text>
+            {delta && (
+              <Text style={[styles.deltaText, delta.diff < 0 && styles.deltaTextNegative]}>
+                {delta.diff >= 0 ? '+' : ''}
+                {formatCompact(delta.diff)} vs {delta.label}
+              </Text>
+            )}
+          </View>
+          <View style={styles.rangeRow}>
+            {RANGES.map((r) => (
+              <Pressable
+                key={r}
+                style={[styles.rangeChip, chartRange === r && styles.rangeChipActive]}
+                onPress={() => setChartRange(r)}
+              >
+                <Text style={[styles.rangeChipText, chartRange === r && styles.rangeChipTextActive]}>{r}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {lineData.length > 1 ? (
+            <LineChart
+              data={lineData}
+              height={160}
+              thickness={2.5}
+              color="#111"
+              startFillColor="#111"
+              endFillColor="#fff"
+              startOpacity={0.15}
+              endOpacity={0.02}
+              areaChart
+              hideDataPoints
+              hideRules
+              hideYAxisText
+              xAxisColor="#eee"
+              yAxisColor="transparent"
+              xAxisLabelTextStyle={{ fontSize: 10, color: '#999' }}
+              xAxisLabelsVerticalShift={2}
+              noOfSections={3}
+              spacing={Math.max(8, 280 / Math.max(1, lineData.length))}
+              initialSpacing={8}
+              endSpacing={8}
+              curved
+            />
+          ) : (
+            <Text style={styles.noRangeData}>No history in this range.</Text>
+          )}
         </View>
       )}
 
@@ -193,7 +254,16 @@ const styles = StyleSheet.create({
   tileValue: { fontSize: 14, fontWeight: '700', color: '#111' },
   tileValueLarge: { fontSize: 14, fontWeight: '700', color: '#fff' },
   card: { backgroundColor: '#f7f7f7', borderRadius: 12, padding: 16, marginBottom: 16 },
-  cardTitle: { fontSize: 14, fontWeight: '700', color: '#111', marginBottom: 12 },
+  cardTitle: { fontSize: 14, fontWeight: '700', color: '#111' },
+  chartHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  deltaText: { fontSize: 12, fontWeight: '700', color: '#2e7d32' },
+  deltaTextNegative: { color: '#c0392b' },
+  rangeRow: { flexDirection: 'row', gap: 6, marginBottom: 12 },
+  rangeChip: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 12, backgroundColor: '#eee' },
+  rangeChipActive: { backgroundColor: '#111' },
+  rangeChipText: { fontSize: 11, fontWeight: '600', color: '#666' },
+  rangeChipTextActive: { color: '#fff' },
+  noRangeData: { fontSize: 12.5, color: '#999', textAlign: 'center', paddingVertical: 24 },
   breakdownRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   legend: { flex: 1, gap: 8 },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },

@@ -11,7 +11,20 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.ananddeshpande.artha",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Artha uses Face ID to unlock your encrypted vault without retyping your master password every time."
+        "NSFaceIDUsageDescription": "Artha uses Face ID to unlock your encrypted vault without retyping your master password every time.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": ["C617.1"]
+          }
+        ]
       }
     },
     "android": {
@@ -36,6 +49,15 @@
         {
           "photosPermission": "Artha needs photo access to attach a scan of an insurance policy or ID document.",
           "cameraPermission": "Artha needs camera access to photograph an insurance policy or ID document."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
         }
       ]
     ]
