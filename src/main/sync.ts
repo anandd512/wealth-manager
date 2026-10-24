@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto'
+import { isAbsolute } from 'path'
 import { getDb, encrypt, decrypt } from './db'
 import { deriveSyncKeys } from './syncCrypto'
 import { deriveKey } from './auth'
@@ -6,7 +7,7 @@ import { getSecret, setSecret, clearSecret } from './secrets'
 import { apiRequest } from './backendApi'
 import { recomputeCurrentValueFromHistory } from './services/accounts'
 import { recordSnapshot } from './services/netWorth'
-import { backfillUpload } from './fileStore'
+import { backfillUpload, migrateLegacyDocument } from './fileStore'
 
 /**
  * Cloud-sync client — talks to the Azure Functions backend in /backend. Every record
@@ -608,15 +609,35 @@ async function pullValueHistory(dataKey: Buffer, token: string): Promise<void> {
 // Key — any document "confirmed" uploaded under the v1 key is actually sitting in blob
 // storage undecryptable by any other device. Bumping the prefix makes every such
 // document look unconfirmed again so this backfill re-uploads it correctly, once.
-const DOCUMENT_TABLES = ['accounts', 'insurance_policies', 'identity_documents']
+//
+// A row whose document_path is still a legacy absolute path (pre-dates the portable
+// relative-path convention — see fileStore.ts's resolveDocumentPath) is migrated to a
+// relative one first via migrateLegacyDocument, so it becomes a normal, uploadable
+// document instead of permanently excluded.
+const DOCUMENT_TABLES: Record<string, { updatedAtColumn: string }> = {
+  accounts: { updatedAtColumn: 'last_updated' },
+  insurance_policies: { updatedAtColumn: 'updated_at' },
+  identity_documents: { updatedAtColumn: 'updated_at' }
+}
 
 async function backfillDocumentUploads(): Promise<void> {
   const db = getDb()
-  for (const table of DOCUMENT_TABLES) {
+  for (const [table, { updatedAtColumn }] of Object.entries(DOCUMENT_TABLES)) {
     const rows = db
-      .prepare(`SELECT DISTINCT document_path FROM ${table} WHERE document_path IS NOT NULL AND deleted = 0`)
-      .all() as { document_path: string }[]
-    for (const { document_path: documentPath } of rows) {
+      .prepare(`SELECT id, document_path FROM ${table} WHERE document_path IS NOT NULL AND deleted = 0`)
+      .all() as { id: number; document_path: string }[]
+    for (const row of rows) {
+      let documentPath = row.document_path
+      if (isAbsolute(documentPath)) {
+        const migrated = await migrateLegacyDocument(documentPath)
+        if (!migrated) continue // file gone — nothing to migrate, try again next sync
+        db.prepare(`UPDATE ${table} SET document_path = ?, ${updatedAtColumn} = ? WHERE id = ?`).run(
+          migrated,
+          new Date().toISOString(),
+          row.id
+        )
+        documentPath = migrated
+      }
       const metaKey = `uploaded_doc_v2_${documentPath}`
       const already = db.prepare('SELECT value FROM sync_meta WHERE key = ?').get(metaKey)
       if (already) continue

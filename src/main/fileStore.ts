@@ -121,6 +121,26 @@ export async function backfillUpload(storedPath: string): Promise<boolean> {
   return uploadDocumentBytes(storedPath, cloudEncrypted)
 }
 
+// One-time migration for documents stored before the relative-path convention
+// existed (see resolveDocumentPath's comment above) — their document_path is a
+// full, machine-specific absolute path, which backfillUpload above deliberately
+// skips since it isn't a safe/portable blob key. If the file is still there, this
+// relocates its already local-key-encrypted bytes verbatim into documentsDir()
+// under a fresh portable key and returns it for the caller to write back into
+// whichever row referenced the old absolute path; nothing here touches the
+// database directly, keeping this module independent of any one table's schema.
+// Upload itself is left to the normal backfillUpload() path once the caller has
+// the new relative path. Returns null (nothing to do) if the file is gone —
+// nothing to migrate, same as any other un-backfillable record.
+export async function migrateLegacyDocument(absolutePath: string): Promise<string | null> {
+  if (!isAbsolute(absolutePath) || !existsSync(absolutePath)) return null
+  const localEncrypted = readFileSync(absolutePath)
+  const ext = extname(absolutePath.replace(/\.enc$/, ''))
+  const storedName = `${randomUUID()}${ext}.enc`
+  writeFileSync(join(documentsDir(), storedName), localEncrypted, { mode: 0o600 })
+  return storedName
+}
+
 export async function openDocumentForViewing(storedPath: string): Promise<string> {
   await ensureDocumentAvailableLocally(storedPath)
   const resolved = resolveDocumentPath(storedPath)
