@@ -50,6 +50,34 @@ export function InsuranceFormScreen({ initial, onSubmit, onCancel }: Props) {
   // identical guard for why this needs to be a ref, not state.
   const submittedRef = useRef(false)
 
+  const applyExtraction = (extraction: {
+    policy_type: InsurancePolicyType | null
+    policy_number: string | null
+    insurer: string | null
+    insured_name: string | null
+    additional_insured: string | null
+    vehicle_number: string | null
+    sum_assured: number | null
+    premium_amount: number | null
+    premium_frequency: string | null
+    start_date: string | null
+    expiry_date: string | null
+    renewal_date: string | null
+  }): void => {
+    if (extraction.policy_type) setPolicyType(extraction.policy_type)
+    if (extraction.policy_number) setPolicyNumber(extraction.policy_number)
+    if (extraction.insurer) setInsurer(extraction.insurer)
+    if (extraction.insured_name) setInsuredName(extraction.insured_name)
+    if (extraction.additional_insured) setAdditionalInsured(extraction.additional_insured)
+    if (extraction.vehicle_number) setVehicleNumber(extraction.vehicle_number)
+    if (extraction.sum_assured != null) setSumAssured(String(extraction.sum_assured))
+    if (extraction.premium_amount != null) setPremiumAmount(String(extraction.premium_amount))
+    if (extraction.premium_frequency) setPremiumFrequency(extraction.premium_frequency)
+    if (extraction.start_date) setStartDate(extraction.start_date)
+    if (extraction.expiry_date) setExpiryDate(extraction.expiry_date)
+    if (extraction.renewal_date) setRenewalDate(extraction.renewal_date)
+  }
+
   const runExtraction = async () => {
     if (!dataKey || !token) return
     const picked = await pickDocument()
@@ -59,24 +87,28 @@ export function InsuranceFormScreen({ initial, onSubmit, onCancel }: Props) {
     try {
       const ext = picked.name.slice(picked.name.lastIndexOf('.')) || '.pdf'
       const extraction = await extractPolicyDetails(picked.uri, ext)
-      if (extraction.policy_type) setPolicyType(extraction.policy_type)
-      if (extraction.policy_number) setPolicyNumber(extraction.policy_number)
-      if (extraction.insurer) setInsurer(extraction.insurer)
-      if (extraction.insured_name) setInsuredName(extraction.insured_name)
-      if (extraction.additional_insured) setAdditionalInsured(extraction.additional_insured)
-      if (extraction.vehicle_number) setVehicleNumber(extraction.vehicle_number)
-      if (extraction.sum_assured != null) setSumAssured(String(extraction.sum_assured))
-      if (extraction.premium_amount != null) setPremiumAmount(String(extraction.premium_amount))
-      if (extraction.premium_frequency) setPremiumFrequency(extraction.premium_frequency)
-      if (extraction.start_date) setStartDate(extraction.start_date)
-      if (extraction.expiry_date) setExpiryDate(extraction.expiry_date)
-      if (extraction.renewal_date) setRenewalDate(extraction.renewal_date)
-
+      applyExtraction(extraction)
       const stored = await storeDocument(picked, dataKey, token)
       setDocumentPath(stored.storedPath)
       setDocumentName(stored.originalName)
     } catch (err) {
-      setExtractError((err as Error).message)
+      setExtractError(friendlyErrorMessage(err))
+    } finally {
+      setExtracting(false)
+    }
+  }
+
+  const resyncPolicy = async () => {
+    if (!dataKey || !token || !documentPath) return
+    setExtractError(null)
+    setExtracting(true)
+    try {
+      const localUri = await openDocumentForViewing(documentPath, dataKey, token)
+      const ext = documentPath.replace(/\.enc$/, '').match(/\.[^./]+$/)?.[0] ?? '.pdf'
+      const extraction = await extractPolicyDetails(localUri, ext)
+      applyExtraction(extraction)
+    } catch (err) {
+      setExtractError(friendlyErrorMessage(err))
     } finally {
       setExtracting(false)
     }
@@ -131,6 +163,10 @@ export function InsuranceFormScreen({ initial, onSubmit, onCancel }: Props) {
       <Pressable style={styles.aiButton} onPress={() => void runExtraction()} disabled={extracting}>
         {extracting ? <ActivityIndicator color="#fff" /> : <Text style={styles.aiButtonText}>📄 Add via photo/PDF (AI)</Text>}
       </Pressable>
+      <Text style={styles.aiDisclosure}>
+        Your chosen AI provider reads the document, and the details are saved privately on your
+        device.
+      </Text>
       {extractError && <Text style={styles.error}>{extractError}</Text>}
       {documentPath && (
         <View style={styles.documentRow}>
@@ -139,6 +175,9 @@ export function InsuranceFormScreen({ initial, onSubmit, onCancel }: Props) {
           </Text>
           <Pressable onPress={() => void viewDocument()} disabled={viewing}>
             <Text style={styles.viewLink}>{viewing ? 'Opening…' : 'View'}</Text>
+          </Pressable>
+          <Pressable onPress={() => void resyncPolicy()} disabled={extracting}>
+            <Text style={styles.viewLink}>{extracting ? 'Updating…' : 'Re-sync'}</Text>
           </Pressable>
         </View>
       )}
@@ -227,6 +266,7 @@ const styles = StyleSheet.create({
   content: { padding: 24, paddingBottom: 48 },
   aiButton: { backgroundColor: '#3a3a3a', borderRadius: 8, padding: 14, alignItems: 'center' },
   aiButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  aiDisclosure: { fontSize: 11, color: '#999', marginTop: 6, lineHeight: 15 },
   documentRow: {
     flexDirection: 'row',
     alignItems: 'center',

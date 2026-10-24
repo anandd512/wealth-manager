@@ -45,6 +45,17 @@ export interface AccountFormInput {
   currency: string
   current_value: number
   notes: string | null
+  // Loan-only fields — not indexed columns on mobile's accounts table (same as
+  // desktop's ticker-less investment fields), so they live in the payload blob.
+  // undefined (vs. explicit null) leaves an existing value untouched on update,
+  // matching updateAccountValueFields' COALESCE-style convention below.
+  principal_amount?: number | null
+  interest_rate?: number | null
+  tenure_months?: number | null
+  emi_amount?: number | null
+  loan_start_date?: string | null
+  document_path?: string | null
+  document_original_name?: string | null
 }
 
 export function listAccounts(): Account[] {
@@ -58,31 +69,10 @@ export function getAccountBySyncId(syncId: string): Account | undefined {
 export function createAccount(input: AccountFormInput): Account {
   const now = new Date().toISOString()
   const syncId = Crypto.randomUUID()
-  insertRow(ACCOUNTS_CONFIG, {
-    sync_id: syncId,
-    name: input.name,
-    category: input.category,
-    subtype: input.subtype,
-    institution: input.institution,
-    currency: input.currency,
-    is_liability: CATEGORY_IS_LIABILITY[input.category] ? 1 : 0,
-    current_value: input.current_value,
-    ownership_pct: null,
-    notes: input.notes,
-    last_updated: now,
-    created_at: now
-  })
-  const created = getAccountBySyncId(syncId)
-  if (!created) throw new Error(`Account ${syncId} not found after insert`)
-  return created
-}
-
-export function updateAccount(syncId: string, input: AccountFormInput): Account {
-  const now = new Date().toISOString()
-  updateIndexedColumns(
+  insertRow(
     ACCOUNTS_CONFIG,
-    syncId,
     {
+      sync_id: syncId,
       name: input.name,
       category: input.category,
       subtype: input.subtype,
@@ -90,7 +80,51 @@ export function updateAccount(syncId: string, input: AccountFormInput): Account 
       currency: input.currency,
       is_liability: CATEGORY_IS_LIABILITY[input.category] ? 1 : 0,
       current_value: input.current_value,
-      notes: input.notes
+      ownership_pct: null,
+      notes: input.notes,
+      last_updated: now,
+      created_at: now
+    },
+    {
+      principal_amount: input.principal_amount ?? null,
+      interest_rate: input.interest_rate ?? null,
+      tenure_months: input.tenure_months ?? null,
+      emi_amount: input.emi_amount ?? null,
+      loan_start_date: input.loan_start_date ?? null,
+      document_path: input.document_path ?? null,
+      document_original_name: input.document_original_name ?? null
+    }
+  )
+  const created = getAccountBySyncId(syncId)
+  if (!created) throw new Error(`Account ${syncId} not found after insert`)
+  return created
+}
+
+export function updateAccount(syncId: string, input: AccountFormInput): Account {
+  const now = new Date().toISOString()
+  updateRow(
+    ACCOUNTS_CONFIG,
+    syncId,
+    {
+      indexed: {
+        name: input.name,
+        category: input.category,
+        subtype: input.subtype,
+        institution: input.institution,
+        currency: input.currency,
+        is_liability: CATEGORY_IS_LIABILITY[input.category] ? 1 : 0,
+        current_value: input.current_value,
+        notes: input.notes
+      },
+      payload: {
+        principal_amount: input.principal_amount,
+        interest_rate: input.interest_rate,
+        tenure_months: input.tenure_months,
+        emi_amount: input.emi_amount,
+        loan_start_date: input.loan_start_date,
+        document_path: input.document_path,
+        document_original_name: input.document_original_name
+      }
     },
     now
   )

@@ -45,6 +45,36 @@ export function IdentityDocFormScreen({ initial, onSubmit, onCancel }: Props) {
   const showVoterFields = docType === 'voter_id'
   const expiryLabel = DOC_TYPE_EXPIRY_LABELS[docType]
 
+  const applyExtraction = (extraction: {
+    doc_type: IdentityDocType | null
+    label: string | null
+    id_number: string | null
+    full_name: string | null
+    date_of_birth: string | null
+    issued_date: string | null
+    expiry_date: string | null
+    vehicle_class: string | null
+    vehicle_model: string | null
+    insurance_valid_upto: string | null
+    constituency: string | null
+    voter_serial_number: string | null
+    additional_info: string | null
+  }): void => {
+    if (extraction.doc_type) setDocType(extraction.doc_type)
+    if (extraction.label) setLabel(extraction.label)
+    if (extraction.id_number) setIdNumber(extraction.id_number)
+    if (extraction.full_name) setFullName(extraction.full_name)
+    if (extraction.date_of_birth) setDateOfBirth(extraction.date_of_birth)
+    if (extraction.issued_date) setIssuedDate(extraction.issued_date)
+    if (extraction.expiry_date) setExpiryDate(extraction.expiry_date)
+    if (extraction.vehicle_class) setVehicleClass(extraction.vehicle_class)
+    if (extraction.vehicle_model) setVehicleModel(extraction.vehicle_model)
+    if (extraction.insurance_valid_upto) setInsuranceValidUpto(extraction.insurance_valid_upto)
+    if (extraction.constituency) setConstituency(extraction.constituency)
+    if (extraction.voter_serial_number) setVoterSerialNumber(extraction.voter_serial_number)
+    if (extraction.additional_info) setAdditionalInfo(extraction.additional_info)
+  }
+
   const runExtraction = async () => {
     if (!dataKey || !token) return
     const picked = await pickDocument()
@@ -54,25 +84,28 @@ export function IdentityDocFormScreen({ initial, onSubmit, onCancel }: Props) {
     try {
       const ext = picked.name.slice(picked.name.lastIndexOf('.')) || '.pdf'
       const extraction = await extractIdentityDocDetails(picked.uri, ext)
-      if (extraction.doc_type) setDocType(extraction.doc_type)
-      if (extraction.label) setLabel(extraction.label)
-      if (extraction.id_number) setIdNumber(extraction.id_number)
-      if (extraction.full_name) setFullName(extraction.full_name)
-      if (extraction.date_of_birth) setDateOfBirth(extraction.date_of_birth)
-      if (extraction.issued_date) setIssuedDate(extraction.issued_date)
-      if (extraction.expiry_date) setExpiryDate(extraction.expiry_date)
-      if (extraction.vehicle_class) setVehicleClass(extraction.vehicle_class)
-      if (extraction.vehicle_model) setVehicleModel(extraction.vehicle_model)
-      if (extraction.insurance_valid_upto) setInsuranceValidUpto(extraction.insurance_valid_upto)
-      if (extraction.constituency) setConstituency(extraction.constituency)
-      if (extraction.voter_serial_number) setVoterSerialNumber(extraction.voter_serial_number)
-      if (extraction.additional_info) setAdditionalInfo(extraction.additional_info)
-
+      applyExtraction(extraction)
       const stored = await storeDocument(picked, dataKey, token)
       setDocumentPath(stored.storedPath)
       setDocumentName(stored.originalName)
     } catch (err) {
-      setExtractError((err as Error).message)
+      setExtractError(friendlyErrorMessage(err))
+    } finally {
+      setExtracting(false)
+    }
+  }
+
+  const resyncDocument = async () => {
+    if (!dataKey || !token || !documentPath) return
+    setExtractError(null)
+    setExtracting(true)
+    try {
+      const localUri = await openDocumentForViewing(documentPath, dataKey, token)
+      const ext = documentPath.replace(/\.enc$/, '').match(/\.[^./]+$/)?.[0] ?? '.pdf'
+      const extraction = await extractIdentityDocDetails(localUri, ext)
+      applyExtraction(extraction)
+    } catch (err) {
+      setExtractError(friendlyErrorMessage(err))
     } finally {
       setExtracting(false)
     }
@@ -130,6 +163,10 @@ export function IdentityDocFormScreen({ initial, onSubmit, onCancel }: Props) {
       <Pressable style={styles.aiButton} onPress={() => void runExtraction()} disabled={extracting}>
         {extracting ? <ActivityIndicator color="#fff" /> : <Text style={styles.aiButtonText}>📄 Add via photo/PDF (AI)</Text>}
       </Pressable>
+      <Text style={styles.aiDisclosure}>
+        Your chosen AI provider reads the document, and the details are saved privately on your
+        device.
+      </Text>
       {extractError && <Text style={styles.error}>{extractError}</Text>}
       {documentPath && (
         <View style={styles.documentRow}>
@@ -138,6 +175,9 @@ export function IdentityDocFormScreen({ initial, onSubmit, onCancel }: Props) {
           </Text>
           <Pressable onPress={() => void viewDocument()} disabled={viewing}>
             <Text style={styles.viewLink}>{viewing ? 'Opening…' : 'View'}</Text>
+          </Pressable>
+          <Pressable onPress={() => void resyncDocument()} disabled={extracting}>
+            <Text style={styles.viewLink}>{extracting ? 'Updating…' : 'Re-sync'}</Text>
           </Pressable>
         </View>
       )}
@@ -221,6 +261,7 @@ const styles = StyleSheet.create({
   content: { padding: 24, paddingBottom: 48 },
   aiButton: { backgroundColor: '#3a3a3a', borderRadius: 8, padding: 14, alignItems: 'center' },
   aiButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  aiDisclosure: { fontSize: 11, color: '#999', marginTop: 6, lineHeight: 15 },
   documentRow: {
     flexDirection: 'row',
     alignItems: 'center',
