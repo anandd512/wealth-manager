@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react'
 import { Alert, Pressable, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import * as Clipboard from 'expo-clipboard'
 import { SwipeableRow } from '../components/SwipeableRow'
+import { SearchBar, matchesSearch } from '../components/SearchBar'
 import type { CreditCard } from '../db/creditCardsRepo'
 import { maskCardNumber, cardDigits } from '../lib/cardNumber'
 import { dueDateBadge } from '../lib/creditCardCycle'
@@ -21,8 +22,10 @@ export function CreditCardListScreen({ cards, refreshing, onRefresh, onAdd, onSe
   const [revealedId, setRevealedId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [copySecondsLeft, setCopySecondsLeft] = useState(0)
+  const [query, setQuery] = useState('')
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const copyInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+  const filteredCards = cards.filter((c) => matchesSearch(query, c.nickname, c.issuer, c.network))
 
   const copyNumber = async (card: CreditCard) => {
     const digits = cardDigits(card.card_number)
@@ -49,8 +52,9 @@ export function CreditCardListScreen({ cards, refreshing, onRefresh, onAdd, onSe
 
   return (
     <View style={styles.container}>
+      {cards.length > 0 && <SearchBar value={query} onChangeText={setQuery} placeholder="Search cards…" />}
       <FlatList
-        data={cards}
+        data={filteredCards}
         keyExtractor={(item) => item.sync_id}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         renderItem={({ item }) => {
@@ -111,8 +115,12 @@ export function CreditCardListScreen({ cards, refreshing, onRefresh, onAdd, onSe
             </SwipeableRow>
           )
         }}
-        ListEmptyComponent={<Text style={styles.empty}>No cards yet. Tap "Add card" to create your first one.</Text>}
-        contentContainerStyle={cards.length === 0 ? styles.emptyContainer : undefined}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            {query ? `No cards match "${query}".` : 'No cards yet. Tap "Add card" to create your first one.'}
+          </Text>
+        }
+        contentContainerStyle={filteredCards.length === 0 ? styles.emptyContainer : undefined}
       />
 
       <Pressable style={styles.fab} onPress={onAdd}>

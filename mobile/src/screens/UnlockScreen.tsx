@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { useAuth } from '../auth/AuthContext'
+import { loadBiometricEnabled } from '../auth/secureStore'
 
 /** Shown when a session exists but the Data Key isn't in memory yet (fresh app
  * launch) — tries Face ID immediately, with a manual retry if it's declined, and a
@@ -11,12 +12,20 @@ export function UnlockScreen() {
   const [attempting, setAttempting] = useState(true)
   const [failed, setFailed] = useState(false)
   const [usePassword, setUsePassword] = useState(false)
+  const [biometricEnabled, setBiometricEnabled] = useState(true)
   const [password, setPassword] = useState('')
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    void tryUnlock()
+    loadBiometricEnabled().then((enabled) => {
+      setBiometricEnabled(enabled)
+      if (enabled) void tryUnlock()
+      else {
+        setAttempting(false)
+        setUsePassword(true)
+      }
+    })
   }, [])
 
   const tryUnlock = async () => {
@@ -57,14 +66,19 @@ export function UnlockScreen() {
           {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Unlock</Text>}
         </Pressable>
 
-        <Pressable
-          onPress={() => {
-            setUsePassword(false)
-            setPassword('')
-            setPasswordError(null)
-          }}
-        >
-          <Text style={styles.switchMode}>Use Face ID instead</Text>
+        {biometricEnabled && (
+          <Pressable
+            onPress={() => {
+              setUsePassword(false)
+              setPassword('')
+              setPasswordError(null)
+            }}
+          >
+            <Text style={styles.switchMode}>Use Face ID instead</Text>
+          </Pressable>
+        )}
+        <Pressable onPress={() => void signOut()}>
+          <Text style={styles.switchMode}>Sign out</Text>
         </Pressable>
       </KeyboardAvoidingView>
     )

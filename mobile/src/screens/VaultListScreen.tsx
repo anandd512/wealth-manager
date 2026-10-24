@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native'
 import * as Clipboard from 'expo-clipboard'
 import { SwipeableRow } from '../components/SwipeableRow'
+import { SearchBar, matchesSearch } from '../components/SearchBar'
 import type { VaultEntry } from '../db/vaultRepo'
 
 const REVEAL_MS = 15_000
@@ -82,16 +83,19 @@ export function VaultListScreen({ entries, refreshing, onRefresh, onAdd, onSelec
     [entries]
   )
 
+  const [query, setQuery] = useState('')
+
   const sections = useMemo(() => {
+    const filtered = entries.filter((e) => matchesSearch(query, e.service_name, e.username, e.url, e.category))
     const byCategory = new Map<string, VaultEntry[]>()
-    for (const entry of entries) {
+    for (const entry of filtered) {
       const key = entry.category ?? 'Uncategorized'
       const list = byCategory.get(key) ?? []
       list.push(entry)
       byCategory.set(key, list)
     }
     return Array.from(byCategory.entries()).map(([title, data]) => ({ title, data }))
-  }, [entries])
+  }, [entries, query])
 
   return (
     <View style={styles.container}>
@@ -103,6 +107,8 @@ export function VaultListScreen({ entries, refreshing, onRefresh, onAdd, onSelec
           </Text>
         </View>
       )}
+
+      {entries.length > 0 && <SearchBar value={query} onChangeText={setQuery} placeholder="Search vault…" />}
 
       <SectionList
         sections={sections}
@@ -153,8 +159,12 @@ export function VaultListScreen({ entries, refreshing, onRefresh, onAdd, onSelec
             </SwipeableRow>
           )
         }}
-        ListEmptyComponent={<Text style={styles.empty}>No entries yet. Tap "Add entry" to create your first one.</Text>}
-        contentContainerStyle={entries.length === 0 ? styles.emptyContainer : undefined}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            {query ? `No entries match "${query}".` : 'No entries yet. Tap "Add entry" to create your first one.'}
+          </Text>
+        }
+        contentContainerStyle={sections.length === 0 ? styles.emptyContainer : undefined}
       />
 
       <Pressable style={styles.fab} onPress={onAdd}>

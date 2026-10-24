@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react'
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, Platform, Pressable, Switch, StyleSheet, Text, TextInput, View } from 'react-native'
+import * as Sharing from 'expo-sharing'
 import { KeyboardAvoidingScrollView } from '../components/KeyboardAvoidingScrollView'
 import { BackHeader } from '../components/BackHeader'
 import { SwipeBack } from '../components/SwipeBack'
 import { useAuth } from '../auth/AuthContext'
 import { getSetting, setSetting } from '../db/kvSettingsRepo'
-import { saveApiKey, loadApiKey } from '../auth/secureStore'
+import { saveApiKey, loadApiKey, saveBiometricEnabled, loadBiometricEnabled } from '../auth/secureStore'
 import { testAnthropicConnection, testOpenAiConnection } from '../lib/extraction'
+import { exportBackup, pickBackupFile, readBackupSummary, importBackup } from '../lib/backup'
+import { friendlyErrorMessage } from '../lib/friendlyError'
 
 type Provider = 'anthropic' | 'openai'
 
@@ -15,7 +18,7 @@ type Provider = 'anthropic' | 'openai'
  * provider choice follows the user to mobile automatically — but the API key itself
  * is deliberately per-device (secureStore.ts), same as desktop's own secrets.ts. */
 export function SettingsScreen({ onBack }: { onBack?: () => void }) {
-  const { email, signOut } = useAuth()
+  const { email, dataKey, signOut } = useAuth()
   const [provider, setProvider] = useState<Provider>('anthropic')
   const [anthropicKey, setAnthropicKey] = useState('')
   const [openAiBaseUrl, setOpenAiBaseUrl] = useState('')
@@ -28,6 +31,10 @@ export function SettingsScreen({ onBack }: { onBack?: () => void }) {
   const [anthropicTestMsg, setAnthropicTestMsg] = useState<string | null>(null)
   const [testingOpenAi, setTestingOpenAi] = useState(false)
   const [openAiTestMsg, setOpenAiTestMsg] = useState<string | null>(null)
+  const [biometricEnabled, setBiometricEnabled] = useState(true)
+  const [exporting, setExporting] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [backupMsg, setBackupMsg] = useState<string | null>(null)
 
   useEffect(() => {
     setProvider((getSetting('extractionProvider') as Provider) ?? 'anthropic')
@@ -35,7 +42,67 @@ export function SettingsScreen({ onBack }: { onBack?: () => void }) {
     setOpenAiModel(getSetting('openAiModel') ?? '')
     loadApiKey('anthropicApiKey').then((k) => setHasAnthropicKey(Boolean(k)))
     loadApiKey('openaiApiKey').then((k) => setHasOpenAiKey(Boolean(k)))
+    loadBiometricEnabled().then(setBiometricEnabled)
   }, [])
+
+  const toggleBiometric = async (enabled: boolean) => {
+    setBiometricEnabled(enabled)
+    await saveBiometricEnabled(enabled)
+  }
+
+  const doExportBackup = async () => {
+    if (!dataKey) return
+    setBackupMsg(null)
+    setExporting(true)
+    try {
+      const { uri, documentCount } = await exportBackup(dataKey)
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri)
+      }
+      setBackupMsg(`Backup ready — ${documentCount} document${documentCount === 1 ? '' : 's'} included.`)
+    } catch (e) {
+      setBackupMsg(friendlyErrorMessage(e))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const doImportBackup = async () => {
+    if (!dataKey) return
+    setBackupMsg(null)
+    const picked = await pickBackupFile()
+    if (!picked) return
+    setImporting(true)
+    try {
+      const summary = await readBackupSummary(picked.uri, dataKey)
+      setImporting(false)
+      Alert.alert(
+        'Restore this backup?',
+        `From ${new Date(summary.exportedAt).toLocaleString()} — ${summary.recordCount} records, ${summary.documentCount} documents. This overwrites any local item with the same ID. This can't be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Restore',
+            style: 'destructive',
+            onPress: async () => {
+              setImporting(true)
+              try {
+                await importBackup(picked.uri, dataKey)
+                setBackupMsg('Backup restored. Pull to refresh any screen to see the restored data.')
+              } catch (e) {
+                setBackupMsg(friendlyErrorMessage(e))
+              } finally {
+                setImporting(false)
+              }
+            }
+          }
+        ]
+      )
+    } catch (e) {
+      setImporting(false)
+      setBackupMsg(friendlyErrorMessage(e))
+    }
+  }
 
   const changeProvider = (next: Provider) => {
     setProvider(next)
@@ -99,6 +166,40 @@ export function SettingsScreen({ onBack }: { onBack?: () => void }) {
         <Pressable onPress={() => void signOut()}>
           <Text style={styles.signOut}>Sign out</Text>
         </Pressable>
+      </View>
+
+      <Text style={styles.sectionLabel}>Security</Text>
+      <View style={styles.card}>
+        <View style={styles.switchRow}>
+          <View style={styles.switchLabelGroup}>
+            <Text style={styles.switchLabel}>Require Face ID to unlock</Text>
+            <Text style={styles.help}>
+              When off, Artha unlocks with your master password instead.
+            </Text>
+          </View>
+          <Switch value={biometricEnabled} onValueChange={toggleBiometric} />
+        </View>
+      </View>
+
+      <Text style={styles.sectionLabel}>Backup</Text>
+      <View style={styles.card}>
+        <Text style={styles.help}>
+          A belt-and-suspenders copy alongside cloud sync — encrypted the same way as everything
+          else, restorable only by signing into this same account.
+        </Text>
+        <View style={styles.buttonRow}>
+          <Pressable style={[styles.button, styles.buttonFlex]} onPress={() => void doExportBackup()} disabled={exporting}>
+            <Text style={styles.buttonText}>{exporting ? 'Exporting…' : 'Export backup'}</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.button, styles.buttonFlex, styles.buttonSecondary]}
+            onPress={() => void doImportBackup()}
+            disabled={importing}
+          >
+            <Text style={styles.buttonSecondaryText}>{importing ? 'Working…' : 'Restore backup'}</Text>
+          </Pressable>
+        </View>
+        {backupMsg && <Text style={styles.saved}>{backupMsg}</Text>}
       </View>
 
       <Text style={styles.sectionLabel}>Auto-fill from documents</Text>
@@ -205,6 +306,9 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#f7f7f7', borderRadius: 10, padding: 16 },
   email: { fontSize: 14, color: '#111', marginBottom: 10 },
   signOut: { fontSize: 14, color: '#c0392b', fontWeight: '600' },
+  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  switchLabelGroup: { flex: 1 },
+  switchLabel: { fontSize: 14, color: '#111', fontWeight: '600', marginBottom: 4 },
   help: { fontSize: 12.5, color: '#666', marginBottom: 14, lineHeight: 18 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   chip: { borderWidth: 1, borderColor: '#ddd', borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#fff' },

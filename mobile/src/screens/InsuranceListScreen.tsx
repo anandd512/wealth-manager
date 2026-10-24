@@ -1,6 +1,7 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import { SwipeableRow } from '../components/SwipeableRow'
+import { SearchBar, matchesSearch } from '../components/SearchBar'
 import type { InsurancePolicy } from '../db/insuranceRepo'
 import { policyTypeLabel, frequencyLabel, policyStatus, dateBadge } from '../lib/insuranceCategories'
 
@@ -26,6 +27,11 @@ interface Props {
 }
 
 export function InsuranceListScreen({ policies, refreshing, onRefresh, onAdd, onSelect, onDelete }: Props) {
+  const [query, setQuery] = useState('')
+  const filteredPolicies = policies.filter((p) =>
+    matchesSearch(query, policyTypeLabel(p.policy_type), p.insurer, p.policy_number, p.insured_name)
+  )
+
   const confirmDelete = (policy: InsurancePolicy) => {
     Alert.alert('Delete policy', `Remove "${policyTypeLabel(policy.policy_type)}" policy? This can't be undone.`, [
       { text: 'Cancel', style: 'cancel' },
@@ -35,8 +41,9 @@ export function InsuranceListScreen({ policies, refreshing, onRefresh, onAdd, on
 
   return (
     <View style={styles.container}>
+      {policies.length > 0 && <SearchBar value={query} onChangeText={setQuery} placeholder="Search policies…" />}
       <FlatList
-        data={policies}
+        data={filteredPolicies}
         keyExtractor={(item) => item.sync_id}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         renderItem={({ item }) => {
@@ -70,8 +77,12 @@ export function InsuranceListScreen({ policies, refreshing, onRefresh, onAdd, on
             </SwipeableRow>
           )
         }}
-        ListEmptyComponent={<Text style={styles.empty}>No policies yet. Tap "Add policy" to create your first one.</Text>}
-        contentContainerStyle={policies.length === 0 ? styles.emptyContainer : undefined}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            {query ? `No policies match "${query}".` : 'No policies yet. Tap "Add policy" to create your first one.'}
+          </Text>
+        }
+        contentContainerStyle={filteredPolicies.length === 0 ? styles.emptyContainer : undefined}
       />
 
       <Pressable style={styles.fab} onPress={onAdd}>

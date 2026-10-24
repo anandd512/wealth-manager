@@ -90,6 +90,20 @@ export async function clearOfflineUnlockInfo(): Promise<void> {
   await SecureStore.deleteItemAsync(OFFLINE_VERIFIER_KEY)
 }
 
+// Per-device preference (never synced — biometric hardware/enrollment is a device
+// property, not an account one) for whether app unlock should attempt Face ID/
+// passcode at all. Defaults to enabled; UnlockScreen checks this before trying.
+const BIOMETRIC_ENABLED_KEY = 'artha.biometricEnabled'
+
+export async function saveBiometricEnabled(enabled: boolean): Promise<void> {
+  await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, enabled ? '1' : '0')
+}
+
+export async function loadBiometricEnabled(): Promise<boolean> {
+  const raw = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY)
+  return raw !== '0'
+}
+
 // AI provider API keys — deliberately per-device, same as desktop's secrets.ts
 // (getSecret('anthropicApiKey')/getSecret('openaiApiKey')): never synced, so a key
 // pasted on one device doesn't silently travel to another.

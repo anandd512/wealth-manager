@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { Alert, Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native'
 import { SwipeableRow } from '../components/SwipeableRow'
+import { SearchBar, matchesSearch } from '../components/SearchBar'
 import type { Account } from '../db/accountsRepo'
 import { computeTotals } from '../lib/netWorth'
 import { CATEGORY_LABELS, getSubtypeLabel } from '../lib/categories'
@@ -28,11 +29,13 @@ export function AccountListScreen({
   onDeleteAccount,
   onCheckIn
 }: Props) {
+  const [query, setQuery] = useState('')
   const totals = useMemo(() => computeTotals(accounts), [accounts])
 
   const sections = useMemo(() => {
+    const filtered = accounts.filter((a) => matchesSearch(query, a.name, a.institution, getSubtypeLabel(a.category, a.subtype)))
     const byCategory = new Map<string, Account[]>()
-    for (const account of accounts) {
+    for (const account of filtered) {
       const list = byCategory.get(account.category) ?? []
       list.push(account)
       byCategory.set(account.category, list)
@@ -41,7 +44,7 @@ export function AccountListScreen({
       title: CATEGORY_LABELS[category as keyof typeof CATEGORY_LABELS] ?? category,
       data
     }))
-  }, [accounts])
+  }, [accounts, query])
 
   const confirmDelete = (account: Account) => {
     Alert.alert('Delete account', `Remove "${account.name}"? This can't be undone.`, [
@@ -66,6 +69,8 @@ export function AccountListScreen({
           <Text style={styles.tileValueLarge}>{formatCurrency(totals.netWorth)}</Text>
         </View>
       </View>
+
+      {accounts.length > 0 && <SearchBar value={query} onChangeText={setQuery} placeholder="Search accounts…" />}
 
       <SectionList
         sections={sections}
@@ -94,9 +99,13 @@ export function AccountListScreen({
           </SwipeableRow>
         )}
         ListEmptyComponent={
-          <Text style={styles.empty}>No accounts yet. Tap "Add account" to create your first one.</Text>
+          <Text style={styles.empty}>
+            {query
+              ? `No accounts match "${query}".`
+              : 'No accounts yet. Tap "Add account" to create your first one.'}
+          </Text>
         }
-        contentContainerStyle={accounts.length === 0 ? styles.emptyContainer : undefined}
+        contentContainerStyle={sections.length === 0 ? styles.emptyContainer : undefined}
       />
 
       <Pressable style={styles.fab} onPress={onAddAccount}>

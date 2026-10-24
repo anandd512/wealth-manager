@@ -6,6 +6,7 @@ import { SwipeableRow } from '../components/SwipeableRow'
 import { useAuth } from '../auth/AuthContext'
 import { openDocumentForViewing } from '../files/fileStore'
 import { friendlyErrorMessage } from '../lib/friendlyError'
+import { SearchBar, matchesSearch } from '../components/SearchBar'
 import type { IdentityDocument } from '../db/identityDocsRepo'
 import { DOC_TYPE_LABELS, DOC_TYPE_ICONS, DOC_TYPE_EXPIRY_LABELS } from '../lib/identityDocCategories'
 
@@ -48,8 +49,12 @@ export function IdentityDocListScreen({ documents, refreshing, onRefresh, onAdd,
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [copySecondsLeft, setCopySecondsLeft] = useState(0)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const copyInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+  const filteredDocuments = documents.filter((d) =>
+    matchesSearch(query, d.label, DOC_TYPE_LABELS[d.doc_type], d.full_name, d.id_number)
+  )
 
   const downloadDocument = async (doc: IdentityDocument) => {
     if (!doc.document_path || !dataKey || !token) return
@@ -92,8 +97,9 @@ export function IdentityDocListScreen({ documents, refreshing, onRefresh, onAdd,
 
   return (
     <View style={styles.container}>
+      {documents.length > 0 && <SearchBar value={query} onChangeText={setQuery} placeholder="Search documents…" />}
       <FlatList
-        data={documents}
+        data={filteredDocuments}
         keyExtractor={(item) => item.sync_id}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         renderItem={({ item }) => {
@@ -169,8 +175,12 @@ export function IdentityDocListScreen({ documents, refreshing, onRefresh, onAdd,
             </SwipeableRow>
           )
         }}
-        ListEmptyComponent={<Text style={styles.empty}>No documents yet. Tap "Add document" to create your first one.</Text>}
-        contentContainerStyle={documents.length === 0 ? styles.emptyContainer : undefined}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            {query ? `No documents match "${query}".` : 'No documents yet. Tap "Add document" to create your first one.'}
+          </Text>
+        }
+        contentContainerStyle={filteredDocuments.length === 0 ? styles.emptyContainer : undefined}
       />
 
       <Pressable style={styles.fab} onPress={onAdd}>
