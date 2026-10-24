@@ -104,6 +104,19 @@ export async function loadBiometricEnabled(): Promise<boolean> {
   return raw !== '0'
 }
 
+// Per-device — whether the onboarding tour has been shown. Not synced: a tour is a
+// one-time "orient the user on this device/install" thing, not account state, same
+// reasoning as biometricEnabled above.
+const TOUR_SEEN_KEY = 'artha.tourSeen'
+
+export async function saveTourSeen(seen: boolean): Promise<void> {
+  await SecureStore.setItemAsync(TOUR_SEEN_KEY, seen ? '1' : '0')
+}
+
+export async function loadTourSeen(): Promise<boolean> {
+  return (await SecureStore.getItemAsync(TOUR_SEEN_KEY)) === '1'
+}
+
 // AI provider API keys — deliberately per-device, same as desktop's secrets.ts
 // (getSecret('anthropicApiKey')/getSecret('openaiApiKey')): never synced, so a key
 // pasted on one device doesn't silently travel to another.

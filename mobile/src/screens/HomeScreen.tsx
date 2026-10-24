@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LayoutDashboard, Wallet, CreditCard, ShieldCheck, IdCard, KeyRound, Settings as SettingsIcon } from 'lucide-react-native'
@@ -9,6 +9,8 @@ import { CreditCardsModule } from './CreditCardsModule'
 import { InsuranceModule } from './InsuranceModule'
 import { IdentityDocsModule } from './IdentityDocsModule'
 import { SettingsScreen } from './SettingsScreen'
+import { TourScreen } from './TourScreen'
+import { loadTourSeen, saveTourSeen } from '../auth/secureStore'
 
 type Tab = 'dashboard' | 'accounts' | 'cards' | 'insurance' | 'ids' | 'vault' | 'settings'
 
@@ -29,7 +31,21 @@ const DATA_TABS: { key: Tab; label: string; icon: typeof Wallet }[] = [
  * exactly (Dashboard, Accounts, Credit Cards, Insurance, IDs, Vault). */
 export function HomeScreen() {
   const [tab, setTab] = useState<Tab>('dashboard')
+  const [showTour, setShowTour] = useState(false)
   const insets = useSafeAreaInsets()
+
+  useEffect(() => {
+    loadTourSeen().then((seen) => setShowTour(!seen))
+  }, [])
+
+  const dismissTour = () => {
+    setShowTour(false)
+    void saveTourSeen(true)
+  }
+
+  if (showTour) {
+    return <TourScreen onDone={dismissTour} />
+  }
 
   return (
     <View style={styles.container}>
@@ -52,7 +68,9 @@ export function HomeScreen() {
         {tab === 'vault' && <VaultModule />}
         {tab === 'insurance' && <InsuranceModule />}
         {tab === 'ids' && <IdentityDocsModule />}
-        {tab === 'settings' && <SettingsScreen onBack={() => setTab('dashboard')} />}
+        {tab === 'settings' && (
+          <SettingsScreen onBack={() => setTab('dashboard')} onShowTour={() => setShowTour(true)} />
+        )}
       </View>
       {tab !== 'settings' && (
         <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>

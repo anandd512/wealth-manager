@@ -17,7 +17,7 @@ type Provider = 'anthropic' | 'openai'
  * `openAiBaseUrl`/`openAiModel` sync via kv_settings (same as desktop), so the
  * provider choice follows the user to mobile automatically — but the API key itself
  * is deliberately per-device (secureStore.ts), same as desktop's own secrets.ts. */
-export function SettingsScreen({ onBack }: { onBack?: () => void }) {
+export function SettingsScreen({ onBack, onShowTour }: { onBack?: () => void; onShowTour?: () => void }) {
   const { email, dataKey, signOut } = useAuth()
   const [provider, setProvider] = useState<Provider>('anthropic')
   const [anthropicKey, setAnthropicKey] = useState('')
@@ -168,6 +168,17 @@ export function SettingsScreen({ onBack }: { onBack?: () => void }) {
         </Pressable>
       </View>
 
+      {onShowTour && (
+        <>
+          <Text style={styles.sectionLabel}>Help</Text>
+          <View style={styles.card}>
+            <Pressable onPress={onShowTour}>
+              <Text style={styles.tourLink}>Show tour again</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
+
       <Text style={styles.sectionLabel}>Security</Text>
       <View style={styles.card}>
         <View style={styles.switchRow}>
@@ -306,6 +317,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#f7f7f7', borderRadius: 10, padding: 16 },
   email: { fontSize: 14, color: '#111', marginBottom: 10 },
   signOut: { fontSize: 14, color: '#c0392b', fontWeight: '600' },
+  tourLink: { fontSize: 14, color: '#111', fontWeight: '600' },
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   switchLabelGroup: { flex: 1 },
   switchLabel: { fontSize: 14, color: '#111', fontWeight: '600', marginBottom: 4 },
