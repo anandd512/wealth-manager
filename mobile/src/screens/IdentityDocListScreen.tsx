@@ -1,7 +1,10 @@
 import React, { useRef, useState } from 'react'
 import { Alert, Pressable, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import * as Clipboard from 'expo-clipboard'
+import * as Sharing from 'expo-sharing'
 import { SwipeableRow } from '../components/SwipeableRow'
+import { useAuth } from '../auth/AuthContext'
+import { openDocumentForViewing } from '../files/fileStore'
 import type { IdentityDocument } from '../db/identityDocsRepo'
 import { DOC_TYPE_LABELS, DOC_TYPE_ICONS, DOC_TYPE_EXPIRY_LABELS } from '../lib/identityDocCategories'
 
@@ -39,11 +42,30 @@ interface Props {
 }
 
 export function IdentityDocListScreen({ documents, refreshing, onRefresh, onAdd, onSelect, onDelete }: Props) {
+  const { dataKey, token } = useAuth()
   const [revealedId, setRevealedId] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [copySecondsLeft, setCopySecondsLeft] = useState(0)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const copyInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const downloadDocument = async (doc: IdentityDocument) => {
+    if (!doc.document_path || !dataKey || !token) return
+    setDownloadingId(doc.sync_id)
+    try {
+      const localUri = await openDocumentForViewing(doc.document_path, dataKey, token)
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(localUri)
+      } else {
+        Alert.alert('Document ready', localUri)
+      }
+    } catch (err) {
+      Alert.alert('Could not open document', (err as Error).message)
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   const copyIdNumber = async (doc: IdentityDocument) => {
     if (!doc.id_number) return
@@ -80,6 +102,7 @@ export function IdentityDocListScreen({ documents, refreshing, onRefresh, onAdd,
           const isAadhaar = item.doc_type === 'aadhaar'
           const revealed = revealedId === item.sync_id
           const copied = copiedId === item.sync_id
+          const downloading = downloadingId === item.sync_id
           return (
             <SwipeableRow
               rightAction={{ label: 'Edit', color: '#2e7d32', onPress: () => onSelect(item.sync_id) }}
@@ -126,6 +149,21 @@ export function IdentityDocListScreen({ documents, refreshing, onRefresh, onAdd,
                     </Pressable>
                   </View>
                 )}
+                {item.document_path && (
+                  <Pressable
+                    style={styles.downloadRow}
+                    onPress={(e) => {
+                      e.stopPropagation()
+                      void downloadDocument(item)
+                    }}
+                    disabled={downloading}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.downloadText}>
+                      {downloading ? 'Opening…' : `📎 ${item.document_original_name ?? 'Download document'}`}
+                    </Text>
+                  </Pressable>
+                )}
               </Pressable>
             </SwipeableRow>
           )
@@ -157,6 +195,8 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 11, fontWeight: '700' },
   idRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   idText: { fontSize: 13, color: '#555', flex: 1 },
+  downloadRow: { marginTop: 8 },
+  downloadText: { fontSize: 12, color: '#111', fontWeight: '600' },
   actionButton: { borderWidth: 1, borderColor: '#ddd', borderRadius: 12, paddingVertical: 3, paddingHorizontal: 8 },
   actionButtonText: { fontSize: 11, color: '#333', fontWeight: '600' },
   empty: { textAlign: 'center', color: '#999', marginTop: 48, paddingHorizontal: 32 },
