@@ -13,10 +13,16 @@ interface Props {
 export function BackHeader({ title, onBack }: Props) {
   return (
     <View style={styles.header}>
-      <Pressable onPress={onBack} hitSlop={12} style={styles.backButton}>
+      <Pressable
+        onPress={onBack}
+        hitSlop={12}
+        style={styles.backButton}
+        accessibilityRole="button"
+        accessibilityLabel="Back"
+      >
         <ChevronLeft size={26} color="#111" />
       </Pressable>
-      <Text style={styles.title} numberOfLines={1}>
+      <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
         {title}
       </Text>
       <View style={styles.spacer} />

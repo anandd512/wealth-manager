@@ -12,6 +12,7 @@ import {
   ValueHistoryEntry
 } from '../db/valueHistoryRepo'
 import { CHECKIN_INVESTED_VALUE_SUBTYPES, CHECKIN_QUANTITY_SUBTYPES } from '../lib/categories'
+import { haptics } from '../lib/haptics'
 
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10)
@@ -61,6 +62,7 @@ export function CheckInScreen({ account, onDone, onCancel }: Props) {
     } else {
       checkIn(account.sync_id, date, valueNumber, investedNum, qtyNum)
     }
+    haptics.success()
     refreshEntries()
     onDone()
   }

@@ -39,6 +39,8 @@ export function HomeScreen() {
           onPress={() => setTab('settings')}
           hitSlop={10}
           style={[styles.settingsButton, tab === 'settings' && styles.settingsButtonActive]}
+          accessibilityRole="button"
+          accessibilityLabel="Settings"
         >
           <SettingsIcon size={20} color={tab === 'settings' ? '#111' : '#777'} />
         </Pressable>
@@ -58,7 +60,15 @@ export function HomeScreen() {
             const Icon = t.icon
             const active = tab === t.key
             return (
-              <Pressable key={t.key} style={styles.tabItem} onPress={() => setTab(t.key)} hitSlop={4}>
+              <Pressable
+                key={t.key}
+                style={styles.tabItem}
+                onPress={() => setTab(t.key)}
+                hitSlop={4}
+                accessibilityRole="tab"
+                accessibilityLabel={t.label}
+                accessibilityState={{ selected: active }}
+              >
                 <Icon size={22} color={active ? '#111' : '#999'} strokeWidth={active ? 2.4 : 2} />
                 <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t.label}</Text>
               </Pressable>

@@ -2,6 +2,7 @@ import React, { useRef } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import Swipeable, { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable'
 import Animated, { SharedValue, useAnimatedStyle } from 'react-native-reanimated'
+import * as Haptics from 'expo-haptics'
 
 interface Action {
   label: string
@@ -31,7 +32,12 @@ function ActionPanel({
   }))
   return (
     <Animated.View style={[styles.actionPanel, { backgroundColor: action.color }, style]}>
-      <Pressable style={styles.actionPressable} onPress={action.onPress}>
+      <Pressable
+        style={styles.actionPressable}
+        onPress={action.onPress}
+        accessibilityRole="button"
+        accessibilityLabel={action.label}
+      >
         <Text style={styles.actionLabel}>{action.label}</Text>
       </Pressable>
     </Animated.View>
@@ -47,6 +53,7 @@ export function SwipeableRow({ rightAction, leftAction, children }: Props) {
 
   const runAndClose = (action: Action) => {
     ref.current?.close()
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
     action.onPress()
   }
 
@@ -56,6 +63,7 @@ export function SwipeableRow({ rightAction, leftAction, children }: Props) {
       friction={2}
       leftThreshold={40}
       rightThreshold={40}
+      onSwipeableWillOpen={() => void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
       renderLeftActions={(progress) => (
         <ActionPanel action={{ ...rightAction, onPress: () => runAndClose(rightAction) }} progress={progress} side="left" />
       )}

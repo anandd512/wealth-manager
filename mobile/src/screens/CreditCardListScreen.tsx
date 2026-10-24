@@ -3,6 +3,7 @@ import { Alert, Pressable, FlatList, RefreshControl, StyleSheet, Text, View } fr
 import * as Clipboard from 'expo-clipboard'
 import { SwipeableRow } from '../components/SwipeableRow'
 import { SearchBar, matchesSearch } from '../components/SearchBar'
+import { haptics } from '../lib/haptics'
 import type { CreditCard } from '../db/creditCardsRepo'
 import { maskCardNumber, cardDigits } from '../lib/cardNumber'
 import { dueDateBadge } from '../lib/creditCardCycle'
@@ -46,7 +47,7 @@ export function CreditCardListScreen({ cards, refreshing, onRefresh, onAdd, onSe
   const confirmDelete = (card: CreditCard) => {
     Alert.alert('Delete card', `Remove "${card.nickname}"? This can't be undone.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => onDelete(card.sync_id) }
+      { text: 'Delete', style: 'destructive', onPress: () => { haptics.warning(); onDelete(card.sync_id) } }
     ])
   }
 

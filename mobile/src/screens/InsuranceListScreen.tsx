@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import { SwipeableRow } from '../components/SwipeableRow'
 import { SearchBar, matchesSearch } from '../components/SearchBar'
+import { haptics } from '../lib/haptics'
 import type { InsurancePolicy } from '../db/insuranceRepo'
 import { policyTypeLabel, frequencyLabel, policyStatus, dateBadge } from '../lib/insuranceCategories'
 
@@ -35,7 +36,7 @@ export function InsuranceListScreen({ policies, refreshing, onRefresh, onAdd, on
   const confirmDelete = (policy: InsurancePolicy) => {
     Alert.alert('Delete policy', `Remove "${policyTypeLabel(policy.policy_type)}" policy? This can't be undone.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => onDelete(policy.sync_id) }
+      { text: 'Delete', style: 'destructive', onPress: () => { haptics.warning(); onDelete(policy.sync_id) } }
     ])
   }
 

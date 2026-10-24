@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { Alert, Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native'
 import { SwipeableRow } from '../components/SwipeableRow'
 import { SearchBar, matchesSearch } from '../components/SearchBar'
+import { haptics } from '../lib/haptics'
 import type { Account } from '../db/accountsRepo'
 import { computeTotals } from '../lib/netWorth'
 import { CATEGORY_LABELS, getSubtypeLabel } from '../lib/categories'
@@ -49,7 +50,7 @@ export function AccountListScreen({
   const confirmDelete = (account: Account) => {
     Alert.alert('Delete account', `Remove "${account.name}"? This can't be undone.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => onDeleteAccount(account.sync_id) }
+      { text: 'Delete', style: 'destructive', onPress: () => { haptics.warning(); onDeleteAccount(account.sync_id) } }
     ])
   }
 

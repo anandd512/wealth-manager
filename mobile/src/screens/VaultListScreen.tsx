@@ -3,6 +3,7 @@ import { Alert, Pressable, RefreshControl, SectionList, StyleSheet, Text, View }
 import * as Clipboard from 'expo-clipboard'
 import { SwipeableRow } from '../components/SwipeableRow'
 import { SearchBar, matchesSearch } from '../components/SearchBar'
+import { haptics } from '../lib/haptics'
 import type { VaultEntry } from '../db/vaultRepo'
 
 const REVEAL_MS = 15_000
@@ -74,7 +75,7 @@ export function VaultListScreen({ entries, refreshing, onRefresh, onAdd, onSelec
   const confirmDelete = (entry: VaultEntry) => {
     Alert.alert('Delete entry', `Remove "${entry.service_name}"? This can't be undone.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => onDelete(entry.sync_id) }
+      { text: 'Delete', style: 'destructive', onPress: () => { haptics.warning(); onDelete(entry.sync_id) } }
     ])
   }
 

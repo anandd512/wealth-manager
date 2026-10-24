@@ -8,6 +8,7 @@ import { openDocumentForViewing } from '../files/fileStore'
 import { friendlyErrorMessage } from '../lib/friendlyError'
 import { SearchBar, matchesSearch } from '../components/SearchBar'
 import { DocumentThumbnail } from '../components/DocumentThumbnail'
+import { haptics } from '../lib/haptics'
 import type { IdentityDocument } from '../db/identityDocsRepo'
 import { DOC_TYPE_LABELS, DOC_TYPE_ICONS, DOC_TYPE_EXPIRY_LABELS } from '../lib/identityDocCategories'
 
@@ -92,7 +93,7 @@ export function IdentityDocListScreen({ documents, refreshing, onRefresh, onAdd,
   const confirmDelete = (doc: IdentityDocument) => {
     Alert.alert('Delete document', `Remove this ${DOC_TYPE_LABELS[doc.doc_type]}? This can't be undone.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => onDelete(doc.sync_id) }
+      { text: 'Delete', style: 'destructive', onPress: () => { haptics.warning(); onDelete(doc.sync_id) } }
     ])
   }
 
