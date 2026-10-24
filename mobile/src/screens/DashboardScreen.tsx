@@ -9,6 +9,7 @@ import type { NetWorthSnapshot } from '../db/netWorthSnapshotsRepo'
 import { computeTotals, getBreakdownByCategory } from '../lib/netWorth'
 import { getUpcomingItems, UpcomingItem } from '../lib/upcoming'
 import { CATEGORY_LABELS } from '../lib/categories'
+import { formatRelativeSync } from '../sync/syncStatus'
 
 const BREAKDOWN_LABELS: Record<string, string> = { ...CATEGORY_LABELS, fixed_deposits: 'Fixed Deposits' }
 const PIE_COLORS = ['#5b8def', '#3ecf8e', '#e8b14f', '#ef5b5b', '#9d7bd8', '#4fd0e8']
@@ -68,6 +69,8 @@ interface Props {
   refreshing: boolean
   onRefresh: () => void
   onDismiss: (item: UpcomingItem) => void
+  lastSyncedAt: string | null
+  syncFailed: boolean
 }
 
 export function DashboardScreen({
@@ -78,7 +81,9 @@ export function DashboardScreen({
   creditCards,
   refreshing,
   onRefresh,
-  onDismiss
+  onDismiss,
+  lastSyncedAt,
+  syncFailed
 }: Props) {
   const [chartRange, setChartRange] = useState<ChartRange>('All')
   const totals = useMemo(() => computeTotals(accounts), [accounts])
@@ -123,6 +128,10 @@ export function DashboardScreen({
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
+      <Text style={[styles.syncStatus, syncFailed && styles.syncStatusFailed]}>
+        {syncFailed ? "Sync failed — showing last known data. Pull to retry." : formatRelativeSync(lastSyncedAt)}
+      </Text>
+
       <View style={styles.tiles}>
         <View style={styles.tile}>
           <Text style={styles.tileLabel}>Assets</Text>
@@ -247,6 +256,8 @@ export function DashboardScreen({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16, paddingBottom: 48 },
+  syncStatus: { fontSize: 11, color: '#999', textAlign: 'center', marginBottom: 10 },
+  syncStatusFailed: { color: '#c0392b', fontWeight: '600' },
   tiles: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   tile: { flex: 1, backgroundColor: '#f5f5f5', borderRadius: 10, padding: 10 },
   tileNetWorth: { backgroundColor: '#111' },

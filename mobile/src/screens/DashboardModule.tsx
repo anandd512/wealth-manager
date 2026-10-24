@@ -20,6 +20,7 @@ import { listSnapshots } from '../db/netWorthSnapshotsRepo'
 import type { NetWorthSnapshot } from '../db/netWorthSnapshotsRepo'
 import { dismissItem } from '../db/upcomingDismissalsRepo'
 import { dismissActionFor, UpcomingItem } from '../lib/upcoming'
+import { getLastSyncedAt, setLastSyncedAt } from '../sync/syncStatus'
 import { DashboardScreen } from './DashboardScreen'
 
 /** Owns loading + sync orchestration for the Dashboard tab. Unlike the other
@@ -34,6 +35,8 @@ export function DashboardModule() {
   const [creditCards, setCreditCards] = useState<CreditCard[]>([])
   const [snapshots, setSnapshots] = useState<NetWorthSnapshot[]>([])
   const [refreshing, setRefreshing] = useState(false)
+  const [lastSyncedAt, setLastSyncedAtState] = useState<string | null>(null)
+  const [syncFailed, setSyncFailed] = useState(false)
 
   const loadLocal = useCallback(() => {
     setAccounts(listAccounts())
@@ -41,6 +44,7 @@ export function DashboardModule() {
     setIdentityDocs(listIdentityDocuments())
     setCreditCards(listCreditCards())
     setSnapshots(listSnapshots())
+    setLastSyncedAtState(getLastSyncedAt())
   }, [])
 
   const refresh = useCallback(async () => {
@@ -57,8 +61,13 @@ export function DashboardModule() {
       // Dismissals reference the other tables' sync_ids — run after they've landed.
       await syncUpcomingDismissals(dataKey, token)
       await backfillDocumentUploads(token)
+      setLastSyncedAt(new Date().toISOString())
+      setSyncFailed(false)
     } catch {
-      // Local-first: show whatever's cached even if the network round-trip failed.
+      // Local-first: show whatever's cached even if the network round-trip failed —
+      // but the last-synced indicator now makes that staleness visible instead of
+      // silently pretending everything's current.
+      setSyncFailed(true)
     } finally {
       loadLocal()
       setRefreshing(false)
@@ -90,6 +99,8 @@ export function DashboardModule() {
       refreshing={refreshing}
       onRefresh={() => void refresh()}
       onDismiss={handleDismiss}
+      lastSyncedAt={lastSyncedAt}
+      syncFailed={syncFailed}
     />
   )
 }

@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext'
 import { openDocumentForViewing } from '../files/fileStore'
 import { friendlyErrorMessage } from '../lib/friendlyError'
 import { SearchBar, matchesSearch } from '../components/SearchBar'
+import { DocumentThumbnail } from '../components/DocumentThumbnail'
 import type { IdentityDocument } from '../db/identityDocsRepo'
 import { DOC_TYPE_LABELS, DOC_TYPE_ICONS, DOC_TYPE_EXPIRY_LABELS } from '../lib/identityDocCategories'
 
@@ -117,6 +118,15 @@ export function IdentityDocListScreen({ documents, refreshing, onRefresh, onAdd,
             >
               <Pressable style={styles.row} onPress={() => onSelect(item.sync_id)}>
                 <View style={styles.rowTop}>
+                  {item.document_path && dataKey && token && (
+                    <DocumentThumbnail
+                      documentPath={item.document_path}
+                      documentOriginalName={item.document_original_name}
+                      dataKey={dataKey}
+                      token={token}
+                      onPress={() => void downloadDocument(item)}
+                    />
+                  )}
                   <View style={styles.rowText}>
                     <Text style={styles.rowName}>
                       {DOC_TYPE_ICONS[item.doc_type]} {item.label || DOC_TYPE_LABELS[item.doc_type]}

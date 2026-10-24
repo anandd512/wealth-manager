@@ -49,6 +49,13 @@ export async function ensureDocumentAvailableLocally(storedPath: string, token: 
   await file.write(new Uint8Array(bytes))
 }
 
+/** True if this device already has the document's (still-encrypted) bytes cached —
+ * a cheap local existence check, not a decrypt, so list screens can decide whether
+ * to show an inline thumbnail without triggering a network fetch for every row. */
+export function isDocumentCachedLocally(storedPath: string): boolean {
+  return new File(documentsDir(), storedPath).exists
+}
+
 export async function storeDocument(
   picked: { uri: string; name: string },
   dataKey: Buffer,
