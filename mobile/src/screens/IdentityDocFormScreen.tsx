@@ -10,6 +10,7 @@ import { DOC_TYPES, DOC_TYPE_EXPIRY_LABELS, IdentityDocType } from '../lib/ident
 import { pickDocument } from '../files/pickDocument'
 import { storeDocument, openDocumentForViewing } from '../files/fileStore'
 import { extractIdentityDocDetails } from '../lib/identityDocExtraction'
+import { friendlyErrorMessage } from '../lib/friendlyError'
 
 interface Props {
   initial: IdentityDocument | null
@@ -88,7 +89,7 @@ export function IdentityDocFormScreen({ initial, onSubmit, onCancel }: Props) {
         Alert.alert('Document ready', localUri)
       }
     } catch (err) {
-      Alert.alert('Could not open document', (err as Error).message)
+      Alert.alert('Could not open document', friendlyErrorMessage(err))
     } finally {
       setViewing(false)
     }

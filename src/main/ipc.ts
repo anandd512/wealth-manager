@@ -51,7 +51,6 @@ import {
   ensureDocumentAvailableLocally,
   documentsDir
 } from './fileStore'
-import { refreshAccountPrice } from './services/priceFetch'
 import * as settings from './services/settings'
 import { sendTestEmail } from './services/email'
 import { getUpcomingItems, dismissUpcomingItem } from './services/upcoming'
@@ -325,10 +324,6 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
   ipcMain.handle(CHANNELS.accountsCategoryHistory, (_e, category: AccountCategory) => {
     requireUnlocked()
     return accounts.getCategoryValueHistory(category)
-  })
-  ipcMain.handle(CHANNELS.accountsRefreshPrice, async (_e, id: number) => {
-    requireUnlocked()
-    return refreshAccountPrice(id)
   })
   ipcMain.handle(CHANNELS.accountsPickDocument, async () => {
     return pickDocumentFile(getWindow(), 'Select loan repayment schedule')

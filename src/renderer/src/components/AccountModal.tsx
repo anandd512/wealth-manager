@@ -14,7 +14,6 @@ import {
   CATEGORY_LABELS,
   SUBTYPES_BY_CATEGORY,
   SUBTYPES_WITH_ACCOUNT_NUMBER,
-  SUPPORTS_TICKER,
   MANUAL_QUANTITY_SUBTYPES
 } from '../lib/categories'
 import { ICON_VIEW, ICON_DOWNLOAD } from '../lib/actionIcons'
@@ -40,7 +39,6 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
   const [name, setName] = useState(account?.name ?? initial?.name ?? '')
   const [institution, setInstitution] = useState(account?.institution ?? '')
   const [currentValue, setCurrentValue] = useState(String(account?.current_value ?? ''))
-  const [ticker, setTicker] = useState(account?.ticker ?? '')
   const [quantity, setQuantity] = useState(account?.quantity != null ? String(account.quantity) : '')
   const [accountNumber, setAccountNumber] = useState(account?.account_number ?? '')
   const [ifscCode, setIfscCode] = useState(account?.ifsc_code ?? '')
@@ -92,9 +90,8 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
   const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [scheduleSummary, setScheduleSummary] = useState<string | null>(null)
 
-  const showTicker = SUPPORTS_TICKER.includes(subtype)
   const showManualQuantity = MANUAL_QUANTITY_SUBTYPES.includes(subtype)
-  const showQuantity = showTicker || showManualQuantity
+  const showQuantity = showManualQuantity
   const showAccountNumber = category === 'bank' || SUBTYPES_WITH_ACCOUNT_NUMBER.includes(subtype)
   const showBankExtras = category === 'bank'
   const isLoan = category === 'loan'
@@ -204,10 +201,7 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
       currency: 'INR',
       is_liability: CATEGORY_IS_LIABILITY[category] ? 1 : 0,
       current_value: value,
-      ticker: showTicker && ticker.trim() ? ticker.trim().toUpperCase() : null,
       quantity: showQuantity && quantity ? Number(quantity) : null,
-      last_price: account?.last_price ?? null,
-      last_price_at: account?.last_price_at ?? null,
       account_number: showAccountNumber && accountNumber.trim() ? accountNumber.trim() : null,
       ifsc_code: showBankExtras && ifscCode.trim() ? ifscCode.trim().toUpperCase() : null,
       debit_card_number:
@@ -452,34 +446,13 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
           </div>
         )}
 
-        {showTicker && (
-          <div className="form-row">
-            <div className="field">
-              <label>Ticker symbol</label>
-              <input
-                value={ticker}
-                onChange={(e) => setTicker(e.target.value)}
-                placeholder="e.g. RELIANCE.NS, AAPL"
-              />
-              <div className="help-text">
-                Used to auto-fetch the latest price. For NSE use .NS suffix, for BSE use .BO. For
-                a US-listed stock the value is converted to rupees automatically using the live
-                exchange rate at sync time.
-              </div>
-            </div>
-            <div className="field">
-              <label>Quantity held</label>
-              <input value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-            </div>
-          </div>
-        )}
-        {!showTicker && subtype === 'physical_gold' && !isEditing && (
+        {subtype === 'physical_gold' && !isEditing && (
           <div className="field">
             <label>Weight in grams (optional)</label>
             <input value={quantity} onChange={(e) => setQuantity(e.target.value)} />
           </div>
         )}
-        {!showTicker && subtype === 'rsu' && !isEditing && (
+        {subtype === 'rsu' && !isEditing && (
           <div className="field">
             <label>Quantity</label>
             <input

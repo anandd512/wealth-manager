@@ -30,7 +30,6 @@ export const CHANNELS = {
   accountsUpdateValueHistory: 'accounts:updateValueHistory',
   accountsDeleteValueHistory: 'accounts:deleteValueHistory',
   accountsCategoryHistory: 'accounts:categoryHistory',
-  accountsRefreshPrice: 'accounts:refreshPrice',
   accountsPickDocument: 'accounts:pickDocument',
   accountsExtractLoanSchedule: 'accounts:extractLoanSchedule',
   accountsReExtractLoanSchedule: 'accounts:reExtractLoanSchedule',

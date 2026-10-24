@@ -91,7 +91,6 @@ export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX
       username: username.trim() || null,
       password: password || null,
       notes: notes.trim() || null,
-      totp_secret: null,
       entry_type: 'login'
     }
     setBusy(true)

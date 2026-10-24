@@ -5,6 +5,17 @@ import { gcm } from '@noble/ciphers/aes.js'
 import * as ExpoCrypto from 'expo-crypto'
 import { Buffer } from 'buffer'
 
+// Confirms a typed password re-derives the SAME Data Key — a local-only correctness
+// check, not a secret in its own right (the Data Key it's derived from is already
+// gated behind biometrics/passcode in SecureStore, so this verifier's only job is
+// giving immediate "wrong password" feedback during offline unlock instead of
+// leaving the user stuck on a confusing downstream decrypt failure). Cached
+// alongside the account's KDF salt after the first successful login/register — see
+// AuthContext's unlockWithPassword, which is what offline unlock actually uses.
+export function deriveVerifier(dataKey: Buffer): string {
+  return Buffer.from(sha256(dataKey)).toString('hex')
+}
+
 /**
  * Zero-knowledge crypto core for the mobile app — deliberately mirrors
  * src/main/auth.ts and src/main/db.ts in the Electron app almost line-for-line.

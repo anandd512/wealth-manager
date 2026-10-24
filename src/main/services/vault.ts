@@ -19,8 +19,8 @@ export function createVaultEntry(input: VaultEntryInput): VaultEntry {
   const info = getDb()
     .prepare(
       `INSERT INTO credential_vault
-        (entry_type, service_name, category, url, username, password, totp_secret, password_changed_at, notes, created_at, sync_id, updated_at)
-       VALUES (@entry_type, @service_name, @category, @url, @username, @password, @totp_secret, @password_changed_at, @notes, @created_at, @sync_id, @updated_at)`
+        (entry_type, service_name, category, url, username, password, password_changed_at, notes, created_at, sync_id, updated_at)
+       VALUES (@entry_type, @service_name, @category, @url, @username, @password, @password_changed_at, @notes, @created_at, @sync_id, @updated_at)`
     )
     .run({
       ...input,
@@ -51,7 +51,7 @@ export function updateVaultEntry(id: number, input: Partial<VaultEntryInput>): V
     .prepare(
       `UPDATE credential_vault SET
         entry_type=@entry_type, service_name=@service_name, category=@category, url=@url,
-        username=@username, password=@password, totp_secret=@totp_secret,
+        username=@username, password=@password,
         password_changed_at=@password_changed_at, notes=@notes, updated_at=@updated_at
        WHERE id=@id`
     )

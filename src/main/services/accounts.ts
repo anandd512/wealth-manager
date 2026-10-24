@@ -96,32 +96,6 @@ export function getValueHistory(accountId: number): ValueHistoryRow[] {
     .all(accountId) as ValueHistoryRow[]
 }
 
-export function setAccountValue(
-  id: number,
-  value: number,
-  source: string,
-  priceInfo?: { last_price: number; ticker: string }
-): Account {
-  const now = new Date().toISOString()
-  const existing = getAccount(id)
-  if (!existing) throw new Error('Account not found')
-  getDb()
-    .prepare(
-      `UPDATE accounts SET current_value = ?, last_updated = ?, last_price = ?, last_price_at = ?
-       WHERE id = ?`
-    )
-    .run(
-      value,
-      now,
-      priceInfo ? priceInfo.last_price : existing.last_price,
-      priceInfo ? now : existing.last_price_at,
-      id
-    )
-  recordValueHistory(id, value, source)
-  recordSnapshot()
-  return getAccount(id)!
-}
-
 // Sets current_value from whichever value_history entry is most recent (by date),
 // without touching last_price/last_price_at or inserting another history row.
 // Called after any check-in / history edit / history delete so current_value always

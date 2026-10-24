@@ -1,4 +1,4 @@
-import { openDatabaseSync, SQLiteDatabase } from 'expo-sqlite'
+import { openDatabaseSync, deleteDatabaseSync, SQLiteDatabase } from 'expo-sqlite'
 import { createTable } from './tableStore'
 import { ACCOUNTS_CONFIG, VAULT_CONFIG, CREDIT_CARDS_CONFIG, INSURANCE_CONFIG, IDENTITY_DOCS_CONFIG } from './tableConfigs'
 
@@ -60,4 +60,21 @@ export function getDb(): SQLiteDatabase {
   createTable(INSURANCE_CONFIG)
   createTable(IDENTITY_DOCS_CONFIG)
   return db
+}
+
+// Used by the "forgot password" flow (see AuthContext.wipeLocalData) — a lost
+// master password on mobile is unrecoverable (it's the only key, zero-knowledge
+// design), so the only way forward is a clean local slate. Closes and deletes the
+// SQLite file outright rather than dropping tables, so a stale handle can't
+// resurrect data mid-wipe; the next getDb() call recreates it from scratch.
+export function wipeLocalDb(): void {
+  if (db) {
+    db.closeSync()
+    db = null
+  }
+  try {
+    deleteDatabaseSync('artha.db')
+  } catch {
+    // Nothing to delete (fresh install) — fine.
+  }
 }

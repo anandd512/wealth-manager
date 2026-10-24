@@ -59,6 +59,37 @@ export async function clearDataKey(): Promise<void> {
   await SecureStore.deleteItemAsync(DATA_KEY_KEY)
 }
 
+// Cached after the first successful login/register so unlock can fall back to a
+// typed master password with no network round-trip — see AuthContext's
+// unlockWithPassword. Not biometric-gated (it has to be readable precisely when
+// biometric unlock has failed), but it's still Keychain/Keystore-encrypted at rest
+// like everything else here, and on its own it reveals nothing: the salt is
+// non-secret by design (KDF salts aren't secrets) and the verifier is a one-way
+// hash of the Data Key, not the Data Key itself.
+const OFFLINE_SALT_KEY = 'artha.offlineSalt'
+const OFFLINE_VERIFIER_KEY = 'artha.offlineVerifier'
+
+export interface OfflineUnlockInfo {
+  saltHex: string
+  verifier: string
+}
+
+export async function saveOfflineUnlockInfo(info: OfflineUnlockInfo): Promise<void> {
+  await SecureStore.setItemAsync(OFFLINE_SALT_KEY, info.saltHex)
+  await SecureStore.setItemAsync(OFFLINE_VERIFIER_KEY, info.verifier)
+}
+
+export async function loadOfflineUnlockInfo(): Promise<OfflineUnlockInfo | null> {
+  const saltHex = await SecureStore.getItemAsync(OFFLINE_SALT_KEY)
+  const verifier = await SecureStore.getItemAsync(OFFLINE_VERIFIER_KEY)
+  return saltHex && verifier ? { saltHex, verifier } : null
+}
+
+export async function clearOfflineUnlockInfo(): Promise<void> {
+  await SecureStore.deleteItemAsync(OFFLINE_SALT_KEY)
+  await SecureStore.deleteItemAsync(OFFLINE_VERIFIER_KEY)
+}
+
 // AI provider API keys — deliberately per-device, same as desktop's secrets.ts
 // (getSecret('anthropicApiKey')/getSecret('openaiApiKey')): never synced, so a key
 // pasted on one device doesn't silently travel to another.

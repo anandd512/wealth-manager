@@ -39,10 +39,7 @@ export interface Account {
   currency: string
   is_liability: 0 | 1
   current_value: number
-  ticker: string | null
   quantity: number | null
-  last_price: number | null
-  last_price_at: string | null
   account_number: string | null
   ifsc_code: string | null
   debit_card_number: string | null
@@ -255,7 +252,6 @@ export interface VaultEntry {
   url: string | null
   username: string | null
   password: string | null
-  totp_secret: string | null
   password_changed_at: string | null
   notes: string | null
   created_at: string
@@ -307,17 +303,6 @@ export interface AuthStatus {
   unlocked: boolean
 }
 
-export interface PriceQuote {
-  ticker: string
-  price: number | null
-  currency: string | null
-  asOf: string | null
-  error: string | null
-  // Populated when the quote's currency isn't INR and was converted using a live
-  // FX rate so the stored account value stays in rupees.
-  fxRate: number | null
-  convertedValueInr: number | null
-}
 
 export type UpcomingItemType = 'insurance' | 'identity' | 'credit_card' | 'check_in'
 export type UpcomingAction = 'paid' | 'dismissed'

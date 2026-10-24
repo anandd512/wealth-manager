@@ -111,11 +111,9 @@ export function getSubtypeIcon(subtype: AccountSubtype): LucideIcon {
   return SUBTYPE_ICONS[subtype] ?? Folder
 }
 
-export const SUPPORTS_TICKER: AccountSubtype[] = ['stock']
-
-// Subtypes where quantity is meaningful but there's no ticker-based auto-sync —
-// value is entered manually (e.g. RSUs from a broker portal like Morgan Stanley
-// StockConnect, which already reports quantity and INR value directly).
+// Subtypes where quantity is meaningful — value is entered manually (e.g. RSUs from
+// a broker portal like Morgan Stanley StockConnect, which already reports quantity
+// and INR value directly).
 export const MANUAL_QUANTITY_SUBTYPES: AccountSubtype[] = ['physical_gold', 'rsu']
 
 // Subtypes (besides 'bank', which always shows it) where an account/folio/PRAN

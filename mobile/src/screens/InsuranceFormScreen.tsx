@@ -10,6 +10,7 @@ import { POLICY_TYPES, VEHICLE_POLICY_TYPES, PREMIUM_FREQUENCIES, InsurancePolic
 import { pickDocument } from '../files/pickDocument'
 import { storeDocument, openDocumentForViewing } from '../files/fileStore'
 import { extractPolicyDetails } from '../lib/insuranceExtraction'
+import { friendlyErrorMessage } from '../lib/friendlyError'
 
 interface Props {
   initial: InsurancePolicy | null
@@ -92,7 +93,7 @@ export function InsuranceFormScreen({ initial, onSubmit, onCancel }: Props) {
         Alert.alert('Document ready', localUri)
       }
     } catch (err) {
-      Alert.alert('Could not open document', (err as Error).message)
+      Alert.alert('Could not open document', friendlyErrorMessage(err))
     } finally {
       setViewing(false)
     }

@@ -20,10 +20,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   currency TEXT NOT NULL DEFAULT 'INR',
   is_liability INTEGER NOT NULL DEFAULT 0,
   current_value REAL NOT NULL DEFAULT 0,
-  ticker TEXT,
   quantity REAL,
-  last_price REAL,
-  last_price_at TEXT,
   account_number TEXT,
   ifsc_code TEXT,
   debit_card_number TEXT,
@@ -128,7 +125,6 @@ CREATE TABLE IF NOT EXISTS credential_vault (
   url TEXT,
   username TEXT,
   password TEXT,
-  totp_secret TEXT,
   password_changed_at TEXT,
   notes TEXT,
   created_at TEXT NOT NULL
@@ -233,7 +229,6 @@ const MIGRATION_COLUMNS: Record<string, [string, string][]> = {
   ],
   credential_vault: [
     ['category', 'TEXT'],
-    ['totp_secret', 'TEXT'],
     ['password_changed_at', 'TEXT'],
     ['entry_type', 'TEXT'],
     ...SYNC_COLUMNS

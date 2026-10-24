@@ -79,7 +79,6 @@ const api = {
       ipcRenderer.invoke(CHANNELS.accountsDeleteValueHistory, historyId),
     categoryHistory: (category: AccountCategory) =>
       ipcRenderer.invoke(CHANNELS.accountsCategoryHistory, category),
-    refreshPrice: (id: number) => ipcRenderer.invoke(CHANNELS.accountsRefreshPrice, id),
     pickDocument: () => ipcRenderer.invoke(CHANNELS.accountsPickDocument),
     extractLoanSchedule: (sourcePath: string) =>
       ipcRenderer.invoke(CHANNELS.accountsExtractLoanSchedule, sourcePath),

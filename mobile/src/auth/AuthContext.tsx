@@ -1,8 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Buffer } from 'buffer'
 import { ArthaApi } from '../api/arthaApi'
-import { deriveKeys, generateSaltHex } from '../crypto/cryptoBox'
+import { deriveKeys, deriveVerifier, generateSaltHex } from '../crypto/cryptoBox'
 import * as secureStore from './secureStore'
+import { wipeLocalDb } from '../db/db'
 
 interface AuthState {
   status: 'loading' | 'locked' | 'unlocked' | 'signedOut'
@@ -17,7 +18,9 @@ interface AuthContextValue extends AuthState {
   register: (email: string, password: string, verificationCode: string) => Promise<void>
   login: (email: string, password: string) => Promise<void>
   unlockWithBiometrics: () => Promise<boolean>
+  unlockWithPassword: (password: string) => Promise<boolean>
   signOut: () => Promise<void>
+  wipeDeviceAndStartOver: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -68,6 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const result = await ArthaApi.register(email, saltHex, SCRYPT_KDF_PARAMS, authKey, verificationToken)
       await secureStore.saveSession({ email, userId: result.userId, token: result.token })
       await secureStore.saveDataKey(dataKey)
+      await secureStore.saveOfflineUnlockInfo({ saltHex, verifier: deriveVerifier(dataKey) })
       setState({ status: 'unlocked', email, token: result.token, dataKey, error: null })
     } catch (err) {
       setState((s) => ({ ...s, error: (err as Error).message }))
@@ -84,6 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const result = await ArthaApi.login(email, authKey)
       await secureStore.saveSession({ email, userId: result.userId, token: result.token })
       await secureStore.saveDataKey(dataKey)
+      await secureStore.saveOfflineUnlockInfo({ saltHex, verifier: deriveVerifier(dataKey) })
       setState({ status: 'unlocked', email, token: result.token, dataKey, error: null })
     } catch (err) {
       setState((s) => ({ ...s, error: (err as Error).message }))
@@ -103,15 +108,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // Falls back on a typed master password when biometric/passcode unlock isn't
+  // available — the one path that works with zero network connectivity, closing the
+  // gap where a cloud-sync user with no signal otherwise couldn't reach their own
+  // already-downloaded local data. Re-derives the same Data Key deterministically
+  // from the cached KDF salt (see register/login above) and checks it against the
+  // cached verifier before trusting it; re-saves to the biometric-gated key too so
+  // the next biometric unlock succeeds again.
+  const unlockWithPassword = useCallback(async (password: string): Promise<boolean> => {
+    try {
+      const info = await secureStore.loadOfflineUnlockInfo()
+      const session = await secureStore.loadSession()
+      if (!info || !session) return false
+      const { dataKey } = await deriveKeys(password, info.saltHex)
+      if (deriveVerifier(dataKey) !== info.verifier) return false
+      await secureStore.saveDataKey(dataKey)
+      setState({ status: 'unlocked', email: session.email, token: session.token, dataKey, error: null })
+      return true
+    } catch {
+      return false
+    }
+  }, [])
+
   const signOut = useCallback(async () => {
     await secureStore.clearSession()
     await secureStore.clearDataKey()
+    await secureStore.clearOfflineUnlockInfo()
+    setState({ status: 'signedOut', email: null, token: null, dataKey: null, error: null })
+  }, [])
+
+  // "Forgot password" escape hatch — zero-knowledge means a lost master password is
+  // genuinely unrecoverable (it's the only key, nothing server-side can reset it),
+  // so the only way forward is a clean slate on this device: wipe the local cache
+  // and every cached credential, then return to sign-in so the user can either log
+  // in correctly if the password does come back to them, or register fresh.
+  // Mirrors desktop's AuthGate "Reset all data & start fresh" for the same reason,
+  // though it only ever touches this device — there's no account-deletion endpoint
+  // on the backend, so the old cloud account (if any) is untouched either way.
+  const wipeDeviceAndStartOver = useCallback(async () => {
+    wipeLocalDb()
+    await secureStore.clearSession()
+    await secureStore.clearDataKey()
+    await secureStore.clearOfflineUnlockInfo()
+    await secureStore.clearApiKey('anthropicApiKey')
+    await secureStore.clearApiKey('openaiApiKey')
     setState({ status: 'signedOut', email: null, token: null, dataKey: null, error: null })
   }, [])
 
   const value = useMemo(
-    () => ({ ...state, requestEmailVerification, register, login, unlockWithBiometrics, signOut }),
-    [state, requestEmailVerification, register, login, unlockWithBiometrics, signOut]
+    () => ({
+      ...state,
+      requestEmailVerification,
+      register,
+      login,
+      unlockWithBiometrics,
+      unlockWithPassword,
+      signOut,
+      wipeDeviceAndStartOver
+    }),
+    [
+      state,
+      requestEmailVerification,
+      register,
+      login,
+      unlockWithBiometrics,
+      unlockWithPassword,
+      signOut,
+      wipeDeviceAndStartOver
+    ]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

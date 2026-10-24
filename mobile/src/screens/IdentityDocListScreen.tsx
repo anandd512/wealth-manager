@@ -5,6 +5,7 @@ import * as Sharing from 'expo-sharing'
 import { SwipeableRow } from '../components/SwipeableRow'
 import { useAuth } from '../auth/AuthContext'
 import { openDocumentForViewing } from '../files/fileStore'
+import { friendlyErrorMessage } from '../lib/friendlyError'
 import type { IdentityDocument } from '../db/identityDocsRepo'
 import { DOC_TYPE_LABELS, DOC_TYPE_ICONS, DOC_TYPE_EXPIRY_LABELS } from '../lib/identityDocCategories'
 
@@ -61,7 +62,7 @@ export function IdentityDocListScreen({ documents, refreshing, onRefresh, onAdd,
         Alert.alert('Document ready', localUri)
       }
     } catch (err) {
-      Alert.alert('Could not open document', (err as Error).message)
+      Alert.alert('Could not open document', friendlyErrorMessage(err))
     } finally {
       setDownloadingId(null)
     }
