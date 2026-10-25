@@ -53,6 +53,23 @@ npm run build   # production build to out/
 npm start       # preview the production build
 ```
 
+### Running everything at once (desktop + backend + mobile)
+
+This repo is actually three apps — the desktop app (root), the Azure Functions
+backend (`backend/`), and the Expo mobile app (`mobile/`) — each normally started
+with its own `npm` command in its own terminal. `npm run artha` starts all three
+together, each in its own window:
+
+```bash
+npm run artha
+```
+
+Before starting each one, it frees up the port that app needs (desktop 5173,
+backend 7071, mobile/Metro 8081) by stopping whatever process is already listening
+on it — in practice that's almost always a leftover copy of the same dev server from
+a previous run, so the new one safely reuses the same port instead of drifting to
+the next free one. See `scripts/dev-all.ps1`.
+
 On first launch you'll set a **master password**. This encrypts the entire local
 database (AES-256-GCM, key derived from your password via scrypt). There is
 no password reset — if you forget it, the data cannot be recovered. The
