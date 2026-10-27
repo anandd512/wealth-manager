@@ -12,6 +12,12 @@ import { getExtractionProvider, getOpenAiBaseUrl, getOpenAiModel } from './setti
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-5'
 
+// Thrown by both provider paths when the response was cut off mid-generation
+// (ran out of its token budget before finishing) — exported so a caller whose
+// documents can legitimately be this long (e.g. a many-page bank statement) can
+// catch it specifically and retry in smaller pieces instead of just failing.
+export const TRUNCATED_MESSAGE = 'The document was too long to read in one pass — try a shorter file.'
+
 export function mimeTypeFor(filePath: string): { mime: string; kind: 'document' | 'image' } {
   const ext = extname(filePath).toLowerCase()
   switch (ext) {
@@ -38,6 +44,9 @@ interface ExtractionSpec {
   schemaName: string
   properties: JsonSchemaProperties
   requiredFields: string[]
+  // Overrides the 1024-token default — needed for extractions whose output is
+  // structurally larger than a single flat object (e.g. an array of months).
+  maxTokens?: number
 }
 
 async function extractViaAnthropic<T>(spec: ExtractionSpec): Promise<T> {
@@ -66,7 +75,7 @@ async function extractViaAnthropic<T>(spec: ExtractionSpec): Promise<T> {
 
   const response = await client.messages.create({
     model: DEFAULT_ANTHROPIC_MODEL,
-    max_tokens: 1024,
+    max_tokens: spec.maxTokens ?? 1024,
     tools: [tool],
     tool_choice: { type: 'tool', name: spec.schemaName },
     messages: [
@@ -76,6 +85,13 @@ async function extractViaAnthropic<T>(spec: ExtractionSpec): Promise<T> {
       }
     ]
   })
+
+  // A response cut off mid-generation leaves the tool call's JSON truncated — caught
+  // here before trusting (possibly partial/malformed) toolUse.input, rather than
+  // silently returning however much the model got through.
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error(TRUNCATED_MESSAGE)
+  }
 
   const toolUse = response.content.find(
     (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
@@ -133,8 +149,15 @@ async function extractViaOpenAi<T>(spec: ExtractionSpec): Promise<T> {
         },
         strict: true
       }
-    }
+    },
+    ...(spec.maxTokens ? { max_output_tokens: spec.maxTokens } : {})
   })
+
+  // Same truncation guard as the Anthropic path — the Responses API reports this as
+  // status 'incomplete' rather than a stop_reason.
+  if (response.status === 'incomplete' && response.incomplete_details?.reason === 'max_output_tokens') {
+    throw new Error(TRUNCATED_MESSAGE)
+  }
 
   const text = response.output_text
   if (!text) {

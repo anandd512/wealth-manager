@@ -9,8 +9,10 @@ import PolicyModal from '../components/PolicyModal'
 import ActionMenu from '../components/ActionMenu'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { ICON_VIEW, ICON_DOWNLOAD, ICON_EDIT, ICON_DELETE, ICON_SYNC } from '../lib/actionIcons'
+import { useDecryptedUpload } from '../lib/useDecryptedUpload'
 
 export default function Insurance(): JSX.Element {
+  const { ensureDecrypted, modal: passwordModal } = useDecryptedUpload()
   const [policies, setPolicies] = useState<InsurancePolicy[]>([])
   const [editing, setEditing] = useState<InsurancePolicy | null>(null)
   const [showModal, setShowModal] = useState(false)
@@ -52,7 +54,8 @@ export default function Insurance(): JSX.Element {
     if (!path) return
     setExtracting(true)
     try {
-      const result = await api().insurance.extract(path)
+      const decryptedPath = await ensureDecrypted(path)
+      const result = await api().insurance.extract(decryptedPath)
       setPrefill(result)
       setEditing(null)
       setShowModal(true)
@@ -314,6 +317,8 @@ export default function Insurance(): JSX.Element {
         onConfirm={() => void confirmRemove()}
         onCancel={() => setPendingDelete(null)}
       />
+
+      {passwordModal}
     </div>
   )
 }

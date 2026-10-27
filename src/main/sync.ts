@@ -182,7 +182,14 @@ const SYNCABLE_TABLES: SyncableTable[] = [
     updatedAtColumn: 'updated_at',
     idColumn: 'key',
     primaryKeyIsIdColumn: true
-  }
+  },
+  // A real transaction ledger — default random sync_id, no natural key needed (two
+  // transactions can legitimately share every other field).
+  { table: 'cash_flow_transactions', type: 'cash_flow_transaction', updatedAtColumn: 'updated_at' },
+  // One row per statement upload — see db.ts's cash_flow_imports comment.
+  { table: 'cash_flow_imports', type: 'cash_flow_import', updatedAtColumn: 'updated_at' },
+  // Recurring-transaction templates — see db.ts's cash_flow_recurring comment.
+  { table: 'cash_flow_recurring', type: 'cash_flow_recurring', updatedAtColumn: 'updated_at' }
 ]
 
 // Cursors live in their own never-synced table (sync_meta), not kv_settings — see
@@ -617,7 +624,13 @@ async function pullValueHistory(dataKey: Buffer, token: string): Promise<void> {
 const DOCUMENT_TABLES: Record<string, { updatedAtColumn: string }> = {
   accounts: { updatedAtColumn: 'last_updated' },
   insurance_policies: { updatedAtColumn: 'updated_at' },
-  identity_documents: { updatedAtColumn: 'updated_at' }
+  identity_documents: { updatedAtColumn: 'updated_at' },
+  // Statement PDFs — one row per upload here is enough to backfill the file itself;
+  // every cash_flow_transactions row from that same import points at the same
+  // document_path, resolved via fileStore.ts regardless of which table referenced
+  // it. Without this, "View statement" on a second device fails whenever the
+  // original upload's cloud copy didn't land (e.g. offline at the time).
+  cash_flow_imports: { updatedAtColumn: 'updated_at' }
 }
 
 async function backfillDocumentUploads(): Promise<void> {

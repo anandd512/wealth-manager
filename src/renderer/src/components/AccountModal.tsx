@@ -6,9 +6,10 @@ import type {
   AccountCategory,
   AccountInput,
   AccountSubtype,
-  LoanScheduleExtraction
+  LoanScheduleExtraction,
+  RsuStatementExtraction
 } from '../../../shared/types'
-import { formatCurrency } from '../lib/format'
+import { formatCurrency, formatDate } from '../lib/format'
 import {
   CATEGORY_IS_LIABILITY,
   CATEGORY_LABELS,
@@ -17,6 +18,7 @@ import {
   MANUAL_QUANTITY_SUBTYPES
 } from '../lib/categories'
 import { ICON_VIEW, ICON_DOWNLOAD } from '../lib/actionIcons'
+import { useDecryptedUpload } from '../lib/useDecryptedUpload'
 
 interface Props {
   account: Account | null
@@ -34,6 +36,7 @@ interface Props {
 const CARD_NETWORKS = ['Visa', 'Mastercard', 'RuPay', 'Amex', 'Other']
 
 export default function AccountModal({ account, initial, autoSync, onClose, onSaved }: Props): JSX.Element {
+  const { ensureDecrypted, modal: passwordModal } = useDecryptedUpload()
   const [category, setCategory] = useState<AccountCategory>(account?.category ?? initial?.category ?? 'bank')
   const [subtype, setSubtype] = useState<AccountSubtype>(account?.subtype ?? initial?.subtype ?? 'savings')
   const [name, setName] = useState(account?.name ?? initial?.name ?? '')
@@ -89,20 +92,27 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
   const [scheduleExtracting, setScheduleExtracting] = useState(false)
   const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [scheduleSummary, setScheduleSummary] = useState<string | null>(null)
+  const [rsuExtracting, setRsuExtracting] = useState(false)
+  const [rsuError, setRsuError] = useState<string | null>(null)
+  const [rsuSummary, setRsuSummary] = useState<string | null>(null)
+  const [rsuConfidenceNotes, setRsuConfidenceNotes] = useState<string | null>(null)
 
   const showManualQuantity = MANUAL_QUANTITY_SUBTYPES.includes(subtype)
   const showQuantity = showManualQuantity
   const showAccountNumber = category === 'bank' || SUBTYPES_WITH_ACCOUNT_NUMBER.includes(subtype)
   const showBankExtras = category === 'bank'
   const isLoan = category === 'loan'
+  const isRsu = subtype === 'rsu'
   const isEditing = Boolean(account)
   const isVehicle = subtype === 'vehicle'
   const showPurchaseFields = isVehicle || subtype === 'home' || subtype === 'land' || category === 'real_estate'
   const showOwnershipField = category === 'real_estate'
-  // Loans keep an editable value here — it's the one entry point for the sync-from-schedule
-  // review flow. For every other account, current value / invested amount / quantity are only
-  // ever changed via Check-in once the account exists, so history stays consistent.
-  const hideValueFieldsOnEdit = isEditing && !isLoan
+  // Loans and RSU accounts keep an editable value here — it's the one entry point for the
+  // sync-from-schedule / sync-from-statement review flow (updateAccount records a value_history
+  // row automatically when current_value changes, so history stays consistent either way). For
+  // every other account, current value / invested amount / quantity are only ever changed via
+  // Check-in once the account exists.
+  const hideValueFieldsOnEdit = isEditing && !isLoan && !isRsu
 
   const applyScheduleExtraction = (
     extraction: LoanScheduleExtraction,
@@ -145,7 +155,8 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
     if (!path) return
     setScheduleExtracting(true)
     try {
-      const result = await api().accounts.extractLoanSchedule(path)
+      const decryptedPath = await ensureDecrypted(path)
+      const result = await api().accounts.extractLoanSchedule(decryptedPath)
       applyScheduleExtraction(result.extraction, result.storedPath, result.originalName)
     } catch (e) {
       setScheduleError((e as Error).message)
@@ -168,9 +179,80 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
     }
   }
 
+  const applyRsuExtraction = (
+    extraction: RsuStatementExtraction,
+    storedPath: string,
+    originalName: string | null
+  ): void => {
+    if (extraction.total_value != null) setCurrentValue(String(extraction.total_value))
+    if (extraction.vested_shares != null) setQuantity(String(extraction.vested_shares))
+    setDocumentPath(storedPath)
+    setDocumentOriginalName(originalName)
+
+    const parts: string[] = []
+    if (extraction.vested_shares != null) parts.push(`${extraction.vested_shares} vested shares`)
+    if (extraction.unvested_shares) parts.push(`${extraction.unvested_shares} unvested (not counted)`)
+    if (extraction.total_value != null) {
+      const conversion =
+        extraction.currency && extraction.currency !== 'INR' && extraction.total_value_native != null && extraction.exchange_rate_used
+          ? ` (converted from ${formatCurrency(extraction.total_value_native, extraction.currency)}` +
+            `${extraction.cash_balance_native ? ` + ${formatCurrency(extraction.cash_balance_native, extraction.currency)} cash` : ''}` +
+            ` at today's rate of ₹${extraction.exchange_rate_used.toFixed(2)}/${extraction.currency})`
+          : ''
+      parts.push(`value ${formatCurrency(extraction.total_value)}${conversion}`)
+    }
+    const asOf = extraction.as_of_date ? ` as of ${formatDate(extraction.as_of_date)}` : ''
+    const summary = parts.length > 0 ? `From RSU statement: ${parts.join(', ')}${asOf}.` : null
+    setRsuSummary(summary)
+    // Surfaces things like a failed live exchange-rate lookup — otherwise the model
+    // could flag a real problem (e.g. total_value left null) with nothing in the UI
+    // ever showing why.
+    setRsuConfidenceNotes(extraction.confidence_notes)
+    if (summary) {
+      // Replaces a PRIOR auto-summary rather than appending another one each time the
+      // statement is re-synced — matched by its fixed "From RSU statement:" prefix,
+      // which only this code ever writes.
+      setNotes((prev) => {
+        const withoutPrior = (prev ?? '').replace(/(^|\n\n)From RSU statement:.*(?=\n\n|$)/s, '').trim()
+        return withoutPrior ? `${withoutPrior}\n\n${summary}` : summary
+      })
+    }
+  }
+
+  const uploadRsuStatement = async (): Promise<void> => {
+    setRsuError(null)
+    const path = await api().accounts.pickDocument()
+    if (!path) return
+    setRsuExtracting(true)
+    try {
+      const decryptedPath = await ensureDecrypted(path)
+      const result = await api().accounts.extractRsuStatement(decryptedPath)
+      applyRsuExtraction(result.extraction, result.storedPath, result.originalName)
+    } catch (e) {
+      setRsuError((e as Error).message)
+    } finally {
+      setRsuExtracting(false)
+    }
+  }
+
+  const resyncRsuStatement = async (): Promise<void> => {
+    if (!account) return
+    setRsuError(null)
+    setRsuExtracting(true)
+    try {
+      const result = await api().accounts.reExtractRsuStatement(account.id)
+      applyRsuExtraction(result.extraction, result.storedPath, result.originalName)
+    } catch (e) {
+      setRsuError((e as Error).message)
+    } finally {
+      setRsuExtracting(false)
+    }
+  }
+
   useEffect(() => {
     if (autoSync && account && account.document_path) {
-      resyncSchedule()
+      if (isRsu) resyncRsuStatement()
+      else resyncSchedule()
     }
     // Only ever auto-run once, right when the modal opens for this purpose.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -220,8 +302,8 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
       tenure_months: isLoan && tenureMonths ? Number(tenureMonths) : null,
       emi_amount: isLoan && emiAmount ? Number(emiAmount) : null,
       loan_start_date: isLoan && loanStartDate ? loanStartDate : null,
-      document_path: isLoan ? documentPath : null,
-      document_original_name: isLoan ? documentOriginalName : null,
+      document_path: isLoan || isRsu ? documentPath : null,
+      document_original_name: isLoan || isRsu ? documentOriginalName : null,
       purchase_price: showPurchaseFields && purchasePrice ? Number(purchasePrice) : null,
       purchase_date: showPurchaseFields && purchaseDate ? purchaseDate : null,
       ownership_pct: showOwnershipField && ownershipPct ? Number(ownershipPct) : null,
@@ -253,6 +335,7 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
   }
 
   return (
+    <>
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>{account ? 'Edit account' : 'Add account'}</h2>
@@ -463,6 +546,57 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
           </div>
         )}
 
+        {isRsu && (
+          <>
+            <div className="subsection-label">RSU statement</div>
+            <div className="field">
+              <button
+                type="button"
+                className="btn secondary small"
+                onClick={uploadRsuStatement}
+                disabled={rsuExtracting}
+              >
+                <Upload size={13} />
+                {rsuExtracting
+                  ? 'Reading statement…'
+                  : documentPath
+                    ? 'Replace RSU statement'
+                    : 'Upload RSU statement (auto-fill)'}
+              </button>
+              {documentPath && (
+                <>
+                  <button
+                    type="button"
+                    className="btn secondary small"
+                    style={{ marginLeft: 6 }}
+                    onClick={() => api().accounts.openDocument(documentPath)}
+                  >
+                    <ICON_VIEW size={13} /> View
+                  </button>
+                  <button
+                    type="button"
+                    className="btn secondary small"
+                    style={{ marginLeft: 6 }}
+                    onClick={() => api().accounts.downloadDocument(documentPath, documentOriginalName)}
+                  >
+                    <ICON_DOWNLOAD size={13} /> Download
+                  </button>
+                </>
+              )}
+              <div className="help-text">
+                Upload your broker's RSU/stock plan statement (e.g. Morgan Stanley StockConnect) and AI
+                fills in current value and share count by reading the account summary. Your chosen AI
+                provider reads the document, and the details are saved privately on your device.
+              </div>
+              {rsuSummary && <div className="success-text">{rsuSummary}</div>}
+              {rsuConfidenceNotes && (
+                <div style={{ color: 'var(--amber)', fontSize: 12, marginTop: 4 }}>⚠ {rsuConfidenceNotes}</div>
+              )}
+              {rsuError && <div className="error-text">{rsuError}</div>}
+            </div>
+          </>
+        )}
+
         {showBankExtras && (
           <div className="field">
             {!showDebitCard ? (
@@ -631,5 +765,7 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
         </div>
       </div>
     </div>
+    {passwordModal}
+    </>
   )
 }

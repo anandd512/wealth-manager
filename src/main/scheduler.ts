@@ -21,6 +21,7 @@ import {
   sendIdentityDocReminderEmail,
   sendCreditCardReminderEmail
 } from './services/email'
+import { formatLocalDate } from './dateUtils'
 
 let intervalHandle: NodeJS.Timeout | null = null
 
@@ -31,7 +32,7 @@ export async function checkReminders(): Promise<void> {
   const policies = getPoliciesNeedingReminder(settings.daysBefore)
   for (const policy of policies) {
     const label = policy.policy_type ? `${policy.policy_type} policy` : 'Insurance policy'
-    const expiry = policy.expiry_date?.slice(0, 10) ?? 'unknown date'
+    const expiry = policy.expiry_date ? formatLocalDate(policy.expiry_date) : 'unknown date'
 
     if (settings.desktopNotifications && Notification.isSupported()) {
       new Notification({
@@ -54,7 +55,7 @@ export async function checkReminders(): Promise<void> {
   const docs = getDocsNeedingReminder(settings.daysBefore)
   for (const doc of docs) {
     const label = doc.label || doc.doc_type.replace(/_/g, ' ')
-    const expiry = doc.expiry_date?.slice(0, 10) ?? 'unknown date'
+    const expiry = doc.expiry_date ? formatLocalDate(doc.expiry_date) : 'unknown date'
 
     if (settings.desktopNotifications && Notification.isSupported()) {
       new Notification({
@@ -79,7 +80,7 @@ export async function checkReminders(): Promise<void> {
     if (settings.desktopNotifications && Notification.isSupported()) {
       new Notification({
         title: 'Credit card payment due',
-        body: `${card.nickname} payment due ${dueDate}. Pay before the due date to avoid late fees.`
+        body: `${card.nickname} payment due ${formatLocalDate(dueDate)}. Pay before the due date to avoid late fees.`
       }).show()
     }
 

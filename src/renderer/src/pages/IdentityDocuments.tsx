@@ -9,6 +9,7 @@ import IdentityDocModal from '../components/IdentityDocModal'
 import ActionMenu from '../components/ActionMenu'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { ICON_VIEW, ICON_DOWNLOAD, ICON_EDIT, ICON_DELETE, ICON_SYNC } from '../lib/actionIcons'
+import { useDecryptedUpload } from '../lib/useDecryptedUpload'
 
 // Item 32 — inline lightbox for document images
 function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }): JSX.Element {
@@ -38,6 +39,7 @@ function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }): 
 }
 
 export default function IdentityDocuments(): JSX.Element {
+  const { ensureDecrypted, modal: passwordModal } = useDecryptedUpload()
   const [docs, setDocs] = useState<IdentityDocument[]>([])
   const [editing, setEditing] = useState<IdentityDocument | null>(null)
   const [showModal, setShowModal] = useState(false)
@@ -102,7 +104,8 @@ export default function IdentityDocuments(): JSX.Element {
     if (!path) return
     setExtracting(true)
     try {
-      const result = await api().identityDocs.extract(path)
+      const decryptedPath = await ensureDecrypted(path)
+      const result = await api().identityDocs.extract(decryptedPath)
       setPrefill(result)
       setEditing(null)
       setShowModal(true)
@@ -456,6 +459,8 @@ export default function IdentityDocuments(): JSX.Element {
         onConfirm={() => void confirmRemove()}
         onCancel={() => setPendingDelete(null)}
       />
+
+      {passwordModal}
     </div>
   )
 }

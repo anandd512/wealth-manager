@@ -12,7 +12,8 @@ import {
   Settings as SettingsIcon,
   LockKeyhole,
   Sun,
-  Moon
+  Moon,
+  Receipt
 } from 'lucide-react'
 import type { AuthStatus } from '../../shared/types'
 import AuthGate from './pages/AuthGate'
@@ -20,6 +21,7 @@ import StorageChoiceGate from './pages/StorageChoiceGate'
 import TourMode from './components/TourMode'
 import Dashboard from './pages/Dashboard'
 import Accounts from './pages/Accounts'
+import CashFlow from './pages/CashFlow'
 import Insurance from './pages/Insurance'
 import IdentityDocuments from './pages/IdentityDocuments'
 import CreditCards from './pages/CreditCards'
@@ -29,6 +31,7 @@ import Settings from './pages/Settings'
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/accounts', label: 'Accounts', icon: Wallet, end: false },
+  { to: '/cashflow', label: 'Cash Flow', icon: Receipt, end: false },
   { to: '/cards', label: 'Credit Cards', icon: CreditCardIcon, end: false },
   { to: '/insurance', label: 'Insurance', icon: ShieldCheck, end: false },
   { to: '/ids', label: 'IDs', icon: IdCard, end: false },
@@ -267,6 +270,7 @@ export default function App(): JSX.Element {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/accounts" element={<Accounts />} />
+          <Route path="/cashflow" element={<CashFlow />} />
           <Route path="/insurance" element={<Insurance />} />
           <Route path="/ids" element={<IdentityDocuments />} />
           <Route path="/cards" element={<CreditCards />} />

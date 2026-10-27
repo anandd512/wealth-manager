@@ -54,6 +54,7 @@ export default function Accounts(): JSX.Element {
   const [hoveredId, setHoveredId] = useState<number | null>(null)
   const [collapsedInstitutions, setCollapsedInstitutions] = useState<Set<string>>(new Set())
   const [pendingDelete, setPendingDelete] = useState<{ id: number; label: string } | null>(null)
+  const [pendingTxnChoice, setPendingTxnChoice] = useState<{ id: number; label: string; syncId: string; count: number } | null>(null)
 
   const load = async (): Promise<void> => {
     setAccounts(await api().accounts.list())
@@ -63,8 +64,18 @@ export default function Accounts(): JSX.Element {
     load()
   }, [])
 
-  const remove = (id: number, label: string): void => {
-    setPendingDelete({ id, label })
+  // Cash-flow transactions reference an account by its sync_id, which deleting the
+  // account doesn't touch on its own — if any exist, ask whether to keep them
+  // (unlinked, still in the ledger) or delete them too, before the normal
+  // delete-account confirmation.
+  const remove = async (id: number, label: string): Promise<void> => {
+    const syncId = await api().accounts.syncId(id)
+    const count = syncId ? await api().cashFlow.accountTransactionCount(syncId) : 0
+    if (syncId && count > 0) {
+      setPendingTxnChoice({ id, label, syncId, count })
+    } else {
+      setPendingDelete({ id, label })
+    }
   }
 
   const confirmRemove = async (): Promise<void> => {
@@ -74,6 +85,22 @@ export default function Accounts(): JSX.Element {
     setAccounts((prev) => prev.filter((a) => a.id !== id))
     await api().accounts.remove(id)
     load()
+  }
+
+  const keepTransactionsUnlinked = async (): Promise<void> => {
+    if (!pendingTxnChoice) return
+    const { id, label, syncId } = pendingTxnChoice
+    setPendingTxnChoice(null)
+    await api().cashFlow.unlinkAccount(syncId)
+    setPendingDelete({ id, label })
+  }
+
+  const deleteTransactionsToo = async (): Promise<void> => {
+    if (!pendingTxnChoice) return
+    const { id, label, syncId } = pendingTxnChoice
+    setPendingTxnChoice(null)
+    await api().cashFlow.deleteForAccount(syncId)
+    setPendingDelete({ id, label })
   }
 
   const grouped = accounts.reduce<Record<string, Account[]>>((acc, a) => {
@@ -520,6 +547,33 @@ export default function Accounts(): JSX.Element {
           currency={celebration.currency}
           onDone={() => setCelebration(null)}
         />
+      )}
+
+      {pendingTxnChoice && (
+        // A plain ConfirmDialog's Cancel button would be ambiguous here — it needs
+        // to mean "abort, don't delete the account at all", not "proceed with the
+        // other option" — so this is a genuine 3-way choice rather than binary.
+        <div className="modal-backdrop" onClick={() => setPendingTxnChoice(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Cash flow transactions linked to this account</h2>
+            <p className="confirm-message">
+              "{pendingTxnChoice.label}" has {pendingTxnChoice.count} cash flow transaction
+              {pendingTxnChoice.count === 1 ? '' : 's'}. Delete them too, or keep them in your ledger (no longer
+              linked to any account)?
+            </p>
+            <div className="modal-actions">
+              <button className="btn secondary" onClick={() => setPendingTxnChoice(null)}>
+                Cancel — don't delete account
+              </button>
+              <button className="btn secondary" onClick={() => void keepTransactionsUnlinked()}>
+                Keep transactions
+              </button>
+              <button className="btn danger" onClick={() => void deleteTransactionsToo()}>
+                Delete them too
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <ConfirmDialog

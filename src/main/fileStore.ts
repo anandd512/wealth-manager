@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'fs'
 import { join, extname, basename, isAbsolute } from 'path'
 import { randomUUID } from 'crypto'
 import { encrypt, decrypt, getCurrentKey } from './db'
@@ -39,6 +39,31 @@ function tempViewDir(): string {
 }
 
 const openedTempFiles = new Set<string>()
+
+// A crash (or a force-quit mid-extraction) skips cleanupTempViewFiles entirely, since
+// that only knows about files THIS session opened — any decrypted-document or
+// statement-chunk temp file from a previous session that never got cleaned up would
+// otherwise sit there indefinitely. Called once at app startup (before anything in
+// this session has had a chance to populate them), this sweeps every temp
+// directory/file this app has ever created by its 'artha-' prefix, regardless of
+// which session made it.
+export function clearStaleTempFiles(): void {
+  const tempRoot = app.getPath('temp')
+  let entries: string[]
+  try {
+    entries = readdirSync(tempRoot)
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith('artha-')) continue
+    try {
+      rmSync(join(tempRoot, entry), { recursive: true, force: true })
+    } catch {
+      // best-effort
+    }
+  }
+}
 
 // document_path values are stored relative to documentsDir() (just the filename) so the
 // database never bakes in a machine-specific absolute path — that's what makes restoring
@@ -163,6 +188,35 @@ export async function openDocumentForViewing(storedPath: string): Promise<string
   writeFileSync(tempPath, plaintext, { mode: 0o600 })
   openedTempFiles.add(tempPath)
   return tempPath
+}
+
+// Writes an already-decrypted (PDF-password-unlocked) buffer to a temp file that can
+// stand in for the original picked path in an extract/store call. Uses a random
+// *directory* (rather than renaming the file itself) so the original basename is
+// preserved — storeDocument's document_original_name and extraction.ts's mimeTypeFor
+// both derive from the final path component, and losing the real filename here would
+// silently replace it with a meaningless UUID for every password-protected upload.
+export function writeDecryptedPdfToTemp(originalPath: string, bytes: Uint8Array): string {
+  const dir = join(tempViewDir(), randomUUID())
+  mkdirSync(dir, { recursive: true })
+  const tempPath = join(dir, basename(originalPath))
+  writeFileSync(tempPath, bytes, { mode: 0o600 })
+  openedTempFiles.add(tempPath)
+  return tempPath
+}
+
+// Removes a stored document's local copy — used when an upload is abandoned (e.g. the
+// cash-flow statement review modal is cancelled) so it doesn't sit on disk forever
+// never referenced by anything. Local-only: there's no delete endpoint on the sync
+// backend (only upload/download — see backend/src/functions/), so a copy already
+// uploaded to the cloud before cancellation stays there; best-effort and silent on
+// any failure, since this is tidy-up, not a correctness requirement.
+export function deleteStoredDocument(storedPath: string): void {
+  try {
+    rmSync(resolveDocumentPath(storedPath), { force: true })
+  } catch {
+    // best-effort
+  }
 }
 
 export function cleanupTempViewFiles(): void {

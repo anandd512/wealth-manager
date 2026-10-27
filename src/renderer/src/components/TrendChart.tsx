@@ -1,5 +1,5 @@
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
-import { formatCurrency, formatDate } from '../lib/format'
+import { formatCurrency, formatDate, formatDateShort } from '../lib/format'
 
 interface Props {
   data: { date: string; value: number }[]
@@ -31,7 +31,7 @@ export default function TrendChart({ data, height = 220, label = 'Value' }: Prop
           domain={['dataMin', 'dataMax']}
           stroke="#93a0bd"
           fontSize={11}
-          tickFormatter={(d) => formatDate(new Date(d).toISOString())}
+          tickFormatter={(d) => formatDateShort(new Date(d).toISOString())}
         />
         <YAxis
           stroke="#93a0bd"

@@ -2,12 +2,13 @@ import { api } from '../lib/api'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend, AreaChart, Area, XAxis, YAxis } from 'recharts'
-import { Wallet, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Landmark, Check, X, ShieldCheck, CreditCard as CreditCardIcon, KeyRound, IdCard, Plus, AlertTriangle } from 'lucide-react'
-import type { NetWorthSnapshot, UpcomingItem, InsurancePolicy } from '../../../shared/types'
-import { formatCurrency, formatDate } from '../lib/format'
+import { Wallet, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Landmark, Check, X, ShieldCheck, CreditCard as CreditCardIcon, KeyRound, IdCard, Plus, AlertTriangle, Receipt } from 'lucide-react'
+import type { NetWorthSnapshot, UpcomingItem, InsurancePolicy, CashFlowMonthSummary, CashFlowTrackedAccount } from '../../../shared/types'
+import { formatCurrency, formatDate, todayLocalDateString } from '../lib/format'
 import { CATEGORY_LABELS } from '../lib/categories'
 import { getUpcomingTypeIcon } from '../lib/typeIcons'
 import TrendChart from '../components/TrendChart'
+import IncomeExpenseTrendChart from '../components/IncomeExpenseTrendChart'
 
 const PIE_COLORS = ['#5b8def', '#3ecf8e', '#e8b14f', '#ef5b5b', '#9d7bd8', '#4fd0e8']
 
@@ -52,22 +53,37 @@ export default function Dashboard(): JSX.Element {
   const [breakdown, setBreakdown] = useState<{ category: string; value: number }[]>([])
   const [upcoming, setUpcoming] = useState<UpcomingItem[]>([])
   const [insurancePolicies, setInsurancePolicies] = useState<InsurancePolicy[]>([])
+  const [cashFlowSummary, setCashFlowSummary] = useState<CashFlowMonthSummary[]>([])
+  const [cashFlowAccounts, setCashFlowAccounts] = useState<CashFlowTrackedAccount[]>([])
+  const [lastMonthCoverage, setLastMonthCoverage] = useState<{ account_sync_id: string }[]>([])
   const [chartRange, setChartRange] = useState<'1M' | '3M' | '6M' | '1Y' | 'All'>('All')
   const [scrolled, setScrolled] = useState(false)
 
+  const lastMonth = (() => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })()
+
   const load = async (): Promise<void> => {
-    const [t, h, b, u, ins] = await Promise.all([
+    const [t, h, b, u, ins, cf, cfAccounts, coverage] = await Promise.all([
       api().netWorth.summary(),
       api().netWorth.history(),
       api().netWorth.breakdown(),
       api().dashboard.upcoming(),
-      api().insurance.list()
+      api().insurance.list(),
+      api().cashFlow.summary(),
+      api().cashFlow.trackedAccounts(),
+      api().cashFlow.coverage(lastMonth)
     ])
     setTotals(t)
     setHistory(h)
     setBreakdown(b)
     setUpcoming(u)
     setInsurancePolicies(ins)
+    setCashFlowSummary(cf)
+    setCashFlowAccounts(cfAccounts)
+    setLastMonthCoverage(coverage)
   }
 
   useEffect(() => {
@@ -128,6 +144,14 @@ export default function Dashboard(): JSX.Element {
               <div>
                 <div style={{ fontWeight: 600 }}>Add accounts <span style={{ background: 'var(--accent)', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4, marginLeft: 6, fontWeight: 700 }}>Start here</span></div>
                 <div className="muted" style={{ fontSize: 12 }}>Bank, investments, real estate, loans</div>
+              </div>
+              <Plus size={16} style={{ marginLeft: 'auto', color: 'var(--text-faint)' }} />
+            </Link>
+            <Link to="/cashflow" className="setup-checklist-item">
+              <Receipt size={20} style={{ color: 'var(--green)' }} />
+              <div>
+                <div style={{ fontWeight: 600 }}>Track income & spending</div>
+                <div className="muted" style={{ fontSize: 12 }}>Upload a bank statement — AI reads every transaction</div>
               </div>
               <Plus size={16} style={{ marginLeft: 'auto', color: 'var(--text-faint)' }} />
             </Link>
@@ -221,6 +245,50 @@ export default function Dashboard(): JSX.Element {
               Updated {formatDate(lastUpdated)}
             </div>
           )}
+
+          {cashFlowSummary.length > 0 && (() => {
+            // Not just the summary array's last entry — that's the most recent
+            // month with ANY data, which is last month, not this one, until the
+            // user has logged something for the current month too.
+            const thisMonth = cashFlowSummary.find((m) => m.month === todayLocalDateString().slice(0, 7))
+            const missingCoverage = cashFlowAccounts.filter(
+              (a) => !lastMonthCoverage.some((c) => c.account_sync_id === a.sync_id)
+            )
+            return (
+              <div className="card section">
+                <div className="section-header">
+                  <h2>Income vs expense</h2>
+                  <Link to="/cashflow" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}>
+                    View cash flow →
+                  </Link>
+                </div>
+                {thisMonth && (
+                  <div style={{ display: 'flex', gap: 24, marginBottom: 14 }}>
+                    <div>
+                      <div className="muted" style={{ fontSize: 11, marginBottom: 2 }}>This month's income</div>
+                      <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--green)' }}>{formatCurrency(thisMonth.income_total)}</div>
+                    </div>
+                    <div>
+                      <div className="muted" style={{ fontSize: 11, marginBottom: 2 }}>This month's expense</div>
+                      <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--red)' }}>{formatCurrency(thisMonth.expense_total)}</div>
+                    </div>
+                    <div>
+                      <div className="muted" style={{ fontSize: 11, marginBottom: 2 }}>Saved so far</div>
+                      <div style={{ fontWeight: 600, fontSize: 15 }}>{formatCurrency(thisMonth.net)}</div>
+                    </div>
+                  </div>
+                )}
+                <IncomeExpenseTrendChart summary={cashFlowSummary} months={6} />
+                {missingCoverage.length > 0 && (
+                  <div style={{ marginTop: 10, padding: '7px 10px', background: 'var(--amber-soft)', borderRadius: 7, fontSize: 12, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <AlertTriangle size={13} />
+                    No statement imported last month for {missingCoverage.map((a) => a.name).join(', ')} —{' '}
+                    <Link to="/cashflow" style={{ color: 'var(--amber)', textDecoration: 'underline' }}>import it →</Link>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           <div
             style={{

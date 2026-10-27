@@ -19,6 +19,28 @@
   --red-soft: rgba(240, 97, 107, 0.12);
   --amber: #e8b14f;
   --amber-soft: rgba(232, 177, 79, 0.12);
+  /* Cash flow trend chart categorical series — dataviz-skill-validated (CVD/contrast,
+     scripts/validate_palette.js) against this app's dark surface. Expense gets the
+     cooler trio and income the warmer trio deliberately swapped from the palette's
+     own default grouping, so "discretionary expense" never lands on the same green
+     the rest of the app uses for income/positive. Light-mode values below are the
+     palette's own light-surface steps for the same slots, separately validated. */
+  --cf-expense-1: #3987e5;
+  --cf-expense-2: #d95926;
+  --cf-expense-3: #199e70;
+  --cf-income-1: #c98500;
+  --cf-income-2: #d55181;
+  --cf-income-3: #008300;
+  --cf-uncategorized: #5b6478;
+  /* Open-ended categorical use (e.g. the expense-breakdown-by-subcategory chart) —
+     the same validated 8-slot order's first 7 steps, default sequence. */
+  --cf-cat-1: #3987e5;
+  --cf-cat-2: #d95926;
+  --cf-cat-3: #199e70;
+  --cf-cat-4: #c98500;
+  --cf-cat-5: #d55181;
+  --cf-cat-6: #008300;
+  --cf-cat-7: #9085e9;
   --radius-sm: 7px;
   --radius: 10px;
   --radius-lg: 16px;
@@ -361,6 +383,8 @@ tr.row-due td:first-child {
   border-radius: var(--radius-sm);
   font-weight: 600;
   font-size: 13px;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: background var(--ease) 120ms, transform var(--ease) 120ms, box-shadow var(--ease) 120ms;
 }
 .btn:hover { background: var(--accent-hover); }
@@ -1461,6 +1485,20 @@ body.light-mode {
   --green-soft: rgba(62, 207, 142, 0.1);
   --red-soft: rgba(240, 97, 107, 0.1);
   --amber-soft: rgba(232, 177, 79, 0.12);
+  --cf-expense-1: #2a78d6;
+  --cf-expense-2: #eb6834;
+  --cf-expense-3: #1baf7a;
+  --cf-income-1: #eda100;
+  --cf-income-2: #e87ba4;
+  --cf-income-3: #008300;
+  --cf-uncategorized: #8b96ad;
+  --cf-cat-1: #2a78d6;
+  --cf-cat-2: #eb6834;
+  --cf-cat-3: #1baf7a;
+  --cf-cat-4: #eda100;
+  --cf-cat-5: #e87ba4;
+  --cf-cat-6: #008300;
+  --cf-cat-7: #6250d6;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.07);
   --shadow-md: 0 4px 16px -2px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.05);
   --shadow-lg: 0 12px 32px -6px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);

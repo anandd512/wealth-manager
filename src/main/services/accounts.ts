@@ -11,6 +11,14 @@ export function getAccount(id: number): Account | undefined {
   return getDb().prepare('SELECT * FROM accounts WHERE id = ?').get(id) as Account | undefined
 }
 
+// sync_id is deliberately absent from the public Account type (see sync.ts) — this
+// is the one place that needs it anyway, to hand off to cashFlow.ts's account-delete
+// orphan check (see Accounts.tsx).
+export function getAccountSyncId(id: number): string | null {
+  const row = getDb().prepare('SELECT sync_id FROM accounts WHERE id = ?').get(id) as { sync_id: string | null } | undefined
+  return row?.sync_id ?? null
+}
+
 export function createAccount(input: AccountInput): Account {
   const now = new Date().toISOString()
   const info = getDb()

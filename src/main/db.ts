@@ -157,6 +157,83 @@ CREATE TABLE IF NOT EXISTS upcoming_dismissals (
   created_at TEXT NOT NULL,
   UNIQUE(item_type, item_id, due_date)
 );
+
+-- One row per individual statement upload — lets a whole import be undone in one
+-- action, warns before re-reading an already-imported file (file_hash), and shows
+-- the statement's own opening/closing balance + excluded lines (transfers etc.) next
+-- to what was actually saved, so the user can tell the AI's read was complete.
+CREATE TABLE IF NOT EXISTS cash_flow_imports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_sync_id TEXT NOT NULL,
+  file_hash TEXT NOT NULL,
+  document_path TEXT,
+  document_original_name TEXT,
+  statement_period_start TEXT,
+  statement_period_end TEXT,
+  opening_balance REAL,
+  closing_balance REAL,
+  transaction_count INTEGER NOT NULL DEFAULT 0,
+  excluded_json TEXT,
+  sync_id TEXT,
+  updated_at TEXT NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cash_flow_imports_hash ON cash_flow_imports(file_hash);
+
+-- A real transaction ledger — one row per individual income/expense transaction
+-- (txn_date, description, amount), each independently classifiable via category
+-- (and a free-text subcategory, e.g. "Groceries"). sync_id is a plain random id
+-- generated at insert time (see accounts.ts's createAccount), not a computed natural
+-- key — individual transactions have no natural uniqueness constraint (two
+-- identical-amount purchases on the same day are both legitimate). import_id links
+-- back to the cash_flow_imports row that produced this transaction, if any (null for
+-- manual entries).
+CREATE TABLE IF NOT EXISTS cash_flow_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  txn_date TEXT NOT NULL,
+  direction TEXT NOT NULL,
+  description TEXT NOT NULL,
+  account_sync_id TEXT,
+  amount REAL NOT NULL,
+  currency TEXT,
+  amount_native REAL,
+  category TEXT,
+  subcategory TEXT,
+  import_id INTEGER,
+  entry_method TEXT NOT NULL DEFAULT 'manual',
+  is_sample INTEGER NOT NULL DEFAULT 0,
+  notes TEXT,
+  document_path TEXT,
+  document_original_name TEXT,
+  sync_id TEXT,
+  updated_at TEXT NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cash_flow_transactions_date ON cash_flow_transactions(txn_date);
+
+-- A recurring-transaction template (rent, SIP, salary) — never auto-creates a real
+-- transaction on its own (that would mean fabricating financial data the user hasn't
+-- actually confirmed happened yet). Instead, cashFlow.ts's dueRecurring() surfaces a
+-- nudge once per month per template ("3 recurring transactions due — add them?"),
+-- and last_created_month records which month the user last acted on, so the same
+-- template doesn't nag again after being handled (whether added or dismissed).
+CREATE TABLE IF NOT EXISTS cash_flow_recurring (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  direction TEXT NOT NULL,
+  description TEXT NOT NULL,
+  account_sync_id TEXT,
+  amount REAL NOT NULL,
+  category TEXT,
+  subcategory TEXT,
+  day_of_month INTEGER NOT NULL,
+  last_created_month TEXT,
+  sync_id TEXT,
+  updated_at TEXT NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
 `
 
 // Cloud-sync metadata (see src/main/sync.ts), appended to every synced table below.
@@ -334,7 +411,13 @@ const SYNCED_TABLES = [
   'identity_documents',
   'credit_cards',
   'value_history',
-  'credential_vault'
+  'credential_vault',
+  // cash_flow_transactions/cash_flow_imports always set sync_id at insert time
+  // (mirrors accounts.ts's createAccount) — included here only so they get the same
+  // unique sync_id index as every other synced table, same as accounts itself.
+  'cash_flow_transactions',
+  'cash_flow_imports',
+  'cash_flow_recurring'
 ]
 
 // [table, column to copy into updated_at when it's NULL] — see backfillUpdatedAt.

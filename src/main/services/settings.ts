@@ -1,6 +1,13 @@
 import { getDb } from '../db'
 import { getSecret, setSecret, hasSecret, clearSecret } from '../secrets'
-import type { AppSettings, CheckInScheduleSettings, ExtractionProvider, ReminderSettings } from '../../shared/types'
+import type {
+  AppSettings,
+  CashFlowBudget,
+  CashFlowSavingsGoal,
+  CheckInScheduleSettings,
+  ExtractionProvider,
+  ReminderSettings
+} from '../../shared/types'
 
 const DEFAULT_REMINDERS: ReminderSettings = {
   daysBefore: 30,
@@ -47,6 +54,39 @@ export function getCheckInScheduleSettings(): CheckInScheduleSettings {
 
 export function setCheckInScheduleSettings(settings: CheckInScheduleSettings): void {
   setKv('checkInSchedule', JSON.stringify(settings))
+}
+
+// Asked once, ever, before the very first statement upload — "this file is sent to
+// your AI provider to be read." Not asked again afterward, including after switching
+// providers (the fact that *some* provider reads the file is what's being consented
+// to, not which one).
+export function getCashFlowAiConsent(): boolean {
+  return getKv('cashFlowAiConsent') === '1'
+}
+
+export function setCashFlowAiConsent(): void {
+  setKv('cashFlowAiConsent', '1')
+}
+
+// Budgets/goal are a short, rarely-edited list a user manages by hand — a
+// kv_settings JSON blob, not a dedicated table (see shared/types.ts's CashFlowBudget
+// comment).
+export function getCashFlowBudgets(): CashFlowBudget[] {
+  const raw = getKv('cashFlowBudgets')
+  return raw ? JSON.parse(raw) : []
+}
+
+export function setCashFlowBudgets(budgets: CashFlowBudget[]): void {
+  setKv('cashFlowBudgets', JSON.stringify(budgets))
+}
+
+export function getCashFlowSavingsGoal(): CashFlowSavingsGoal {
+  const raw = getKv('cashFlowSavingsGoal')
+  return raw ? JSON.parse(raw) : { monthlyTarget: null }
+}
+
+export function setCashFlowSavingsGoal(goal: CashFlowSavingsGoal): void {
+  setKv('cashFlowSavingsGoal', JSON.stringify(goal))
 }
 
 // Tracks the due date of the last monthly check-in reminder that was shown as a desktop

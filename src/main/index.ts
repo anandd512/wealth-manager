@@ -3,7 +3,7 @@ import { join } from 'path'
 import { registerIpcHandlers } from './ipc'
 import { closeDatabase } from './db'
 import { stopScheduler } from './scheduler'
-import { cleanupTempViewFiles } from './fileStore'
+import { cleanupTempViewFiles, clearStaleTempFiles } from './fileStore'
 import { startAutoUpdates } from './updater'
 
 let mainWindow: BrowserWindow | null = null
@@ -77,6 +77,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  clearStaleTempFiles()
   registerIpcHandlers(() => mainWindow)
   createWindow()
   startAutoUpdates(() => mainWindow)

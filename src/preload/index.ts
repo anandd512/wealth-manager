@@ -12,7 +12,13 @@ import type {
   UpcomingItemType,
   UpcomingAction,
   UpdateCheckResult,
-  UpdateStatus
+  UpdateStatus,
+  CashFlowTransactionInput,
+  CashFlowApplyExtractionInput,
+  CashFlowCategory,
+  CashFlowRecurringInput,
+  CashFlowBudget,
+  CashFlowSavingsGoal
 } from '../shared/types'
 
 const api = {
@@ -84,9 +90,14 @@ const api = {
       ipcRenderer.invoke(CHANNELS.accountsExtractLoanSchedule, sourcePath),
     reExtractLoanSchedule: (id: number) =>
       ipcRenderer.invoke(CHANNELS.accountsReExtractLoanSchedule, id),
+    extractRsuStatement: (sourcePath: string) =>
+      ipcRenderer.invoke(CHANNELS.accountsExtractRsuStatement, sourcePath),
+    reExtractRsuStatement: (id: number) =>
+      ipcRenderer.invoke(CHANNELS.accountsReExtractRsuStatement, id),
     openDocument: (docPath: string) => ipcRenderer.invoke(CHANNELS.accountsOpenDocument, docPath),
     downloadDocument: (docPath: string, suggestedName: string | null) =>
-      ipcRenderer.invoke(CHANNELS.accountsDownloadDocument, docPath, suggestedName)
+      ipcRenderer.invoke(CHANNELS.accountsDownloadDocument, docPath, suggestedName),
+    syncId: (id: number): Promise<string | null> => ipcRenderer.invoke(CHANNELS.accountsSyncId, id)
   },
   netWorth: {
     summary: () => ipcRenderer.invoke(CHANNELS.netWorthSummary),
@@ -131,6 +142,55 @@ const api = {
       ipcRenderer.invoke(CHANNELS.creditCardsUpdate, id, input),
     remove: (id: number) => ipcRenderer.invoke(CHANNELS.creditCardsDelete, id),
     dueDates: () => ipcRenderer.invoke(CHANNELS.creditCardsDueDates)
+  },
+  cashFlow: {
+    list: (month?: string) => ipcRenderer.invoke(CHANNELS.cashFlowList, month),
+    listRange: (start: string, end: string) => ipcRenderer.invoke(CHANNELS.cashFlowListRange, start, end),
+    months: () => ipcRenderer.invoke(CHANNELS.cashFlowMonths),
+    summary: () => ipcRenderer.invoke(CHANNELS.cashFlowSummary),
+    trackedAccounts: () => ipcRenderer.invoke(CHANNELS.cashFlowTrackedAccounts),
+    coverage: (month: string) => ipcRenderer.invoke(CHANNELS.cashFlowCoverage, month),
+    create: (input: CashFlowTransactionInput) => ipcRenderer.invoke(CHANNELS.cashFlowCreate, input),
+    update: (id: number, input: CashFlowTransactionInput) => ipcRenderer.invoke(CHANNELS.cashFlowUpdate, id, input),
+    remove: (id: number) => ipcRenderer.invoke(CHANNELS.cashFlowDelete, id),
+    restore: (id: number) => ipcRenderer.invoke(CHANNELS.cashFlowRestore, id),
+    updateCategory: (id: number, category: CashFlowCategory | null, subcategory: string | null) =>
+      ipcRenderer.invoke(CHANNELS.cashFlowUpdateCategory, id, category, subcategory),
+    bulkUpdateCategory: (ids: number[], category: CashFlowCategory | null, subcategory: string | null) =>
+      ipcRenderer.invoke(CHANNELS.cashFlowBulkUpdateCategory, ids, category, subcategory),
+    bulkRemove: (ids: number[]) => ipcRenderer.invoke(CHANNELS.cashFlowBulkDelete, ids),
+    recentDescriptions: () => ipcRenderer.invoke(CHANNELS.cashFlowRecentDescriptions),
+    deleteImport: (importId: number) => ipcRenderer.invoke(CHANNELS.cashFlowDeleteImport, importId),
+    exportCsv: (month?: string) => ipcRenderer.invoke(CHANNELS.cashFlowExportCsv, month),
+    consentStatus: (): Promise<{ given: boolean }> => ipcRenderer.invoke(CHANNELS.cashFlowConsentStatus),
+    setConsent: () => ipcRenderer.invoke(CHANNELS.cashFlowSetConsent),
+    accountTransactionCount: (accountSyncId: string) =>
+      ipcRenderer.invoke(CHANNELS.cashFlowAccountTransactionCount, accountSyncId),
+    unlinkAccount: (accountSyncId: string) => ipcRenderer.invoke(CHANNELS.cashFlowUnlinkAccount, accountSyncId),
+    deleteForAccount: (accountSyncId: string) => ipcRenderer.invoke(CHANNELS.cashFlowDeleteForAccount, accountSyncId),
+    recurringList: () => ipcRenderer.invoke(CHANNELS.cashFlowRecurringList),
+    recurringCreate: (input: CashFlowRecurringInput) => ipcRenderer.invoke(CHANNELS.cashFlowRecurringCreate, input),
+    recurringDelete: (id: number) => ipcRenderer.invoke(CHANNELS.cashFlowRecurringDelete, id),
+    recurringDue: (month: string) => ipcRenderer.invoke(CHANNELS.cashFlowRecurringDue, month),
+    recurringMarkHandled: (id: number, month: string) =>
+      ipcRenderer.invoke(CHANNELS.cashFlowRecurringMarkHandled, id, month),
+    generateSampleData: (): Promise<{ count: number }> => ipcRenderer.invoke(CHANNELS.cashFlowGenerateSampleData),
+    removeSampleData: () => ipcRenderer.invoke(CHANNELS.cashFlowRemoveSampleData),
+    hasSampleData: (): Promise<{ hasSampleData: boolean }> => ipcRenderer.invoke(CHANNELS.cashFlowHasSampleData),
+    getBudgets: (): Promise<CashFlowBudget[]> => ipcRenderer.invoke(CHANNELS.cashFlowGetBudgets),
+    setBudgets: (budgets: CashFlowBudget[]) => ipcRenderer.invoke(CHANNELS.cashFlowSetBudgets, budgets),
+    getSavingsGoal: (): Promise<CashFlowSavingsGoal> => ipcRenderer.invoke(CHANNELS.cashFlowGetSavingsGoal),
+    setSavingsGoal: (goal: CashFlowSavingsGoal) => ipcRenderer.invoke(CHANNELS.cashFlowSetSavingsGoal, goal),
+    pickStatement: (): Promise<string[]> => ipcRenderer.invoke(CHANNELS.cashFlowPickStatement),
+    combineImages: (paths: string[]): Promise<string> => ipcRenderer.invoke(CHANNELS.cashFlowCombineImages, paths),
+    extractStatement: (sourcePath: string, force?: boolean) =>
+      ipcRenderer.invoke(CHANNELS.cashFlowExtractStatement, sourcePath, force),
+    applyExtraction: (input: CashFlowApplyExtractionInput) =>
+      ipcRenderer.invoke(CHANNELS.cashFlowApplyExtraction, input),
+    discardDocument: (docPath: string) => ipcRenderer.invoke(CHANNELS.cashFlowDiscardDocument, docPath),
+    openDocument: (docPath: string) => ipcRenderer.invoke(CHANNELS.cashFlowOpenDocument, docPath),
+    downloadDocument: (docPath: string, suggestedName: string | null) =>
+      ipcRenderer.invoke(CHANNELS.cashFlowDownloadDocument, docPath, suggestedName)
   },
   vault: {
     list: () => ipcRenderer.invoke(CHANNELS.vaultList),
@@ -179,6 +239,12 @@ const api = {
     setAutoCheck: (enabled: boolean): Promise<UpdateStatus> =>
       ipcRenderer.invoke(CHANNELS.updatesSetAutoCheck, enabled),
     checkNow: (): Promise<UpdateCheckResult> => ipcRenderer.invoke(CHANNELS.updatesCheckNow)
+  },
+  documents: {
+    checkEncrypted: (path: string): Promise<{ requiresPassword: boolean }> =>
+      ipcRenderer.invoke(CHANNELS.documentsCheckEncrypted, path),
+    decryptPdf: (path: string, password: string): Promise<{ decryptedPath: string }> =>
+      ipcRenderer.invoke(CHANNELS.documentsDecryptPdf, path, password)
   }
 }
 
