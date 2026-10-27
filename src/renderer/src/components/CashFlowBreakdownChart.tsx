@@ -1,6 +1,7 @@
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts'
 import type { CashFlowTransaction } from '../../../shared/types'
 import { formatCurrency } from '../lib/format'
+import { countsTowardPnl } from '../lib/cashFlowCategories'
 
 interface Props {
   transactions: CashFlowTransaction[]
@@ -23,7 +24,7 @@ const PALETTE = [
 const MAX_SLICES = 7
 
 export default function CashFlowBreakdownChart({ transactions }: Props): JSX.Element | null {
-  const expense = transactions.filter((t) => t.direction === 'expense')
+  const expense = transactions.filter((t) => t.direction === 'expense' && countsTowardPnl(t.category))
   if (expense.length === 0) return null
 
   const byLabel = new Map<string, number>()

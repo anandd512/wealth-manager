@@ -15,7 +15,7 @@ import type {
 } from '../../../shared/types'
 import { formatCurrency, formatDate, formatDateShort, formatMonthYear, todayLocalDateString } from '../lib/format'
 import { friendlyError } from '../lib/friendlyError'
-import { categoriesFor } from '../lib/cashFlowCategories'
+import { categoriesFor, countsTowardPnl } from '../lib/cashFlowCategories'
 import type { PeriodType } from '../lib/cashFlowPeriods'
 import { fyRangeFor, quarterRangeFor, ytdRangeFor, monthRangeFor } from '../lib/cashFlowPeriods'
 import CashFlowEntryModal from '../components/CashFlowEntryModal'
@@ -25,6 +25,7 @@ import CashFlowBreakdownChart from '../components/CashFlowBreakdownChart'
 import CashFlowInsights from '../components/CashFlowInsights'
 import CashFlowBudgetCard from '../components/CashFlowBudgetCard'
 import CashFlowRecurringNudge from '../components/CashFlowRecurringNudge'
+import CashFlowImportsModal from '../components/CashFlowImportsModal'
 import CashFlowFilterBar, { matchesFilters, DEFAULT_FILTERS, type CashFlowFilters } from '../components/CashFlowFilterBar'
 import ActionMenu from '../components/ActionMenu'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -91,9 +92,11 @@ export default function CashFlow(): JSX.Element {
   const [editingTxn, setEditingTxn] = useState<CashFlowTransaction | null>(null)
   const [pendingDelete, setPendingDelete] = useState<CashFlowTransaction | null>(null)
   const [pendingDeleteImport, setPendingDeleteImport] = useState<{ importId: number } | null>(null)
+  const [showImportsModal, setShowImportsModal] = useState(false)
   const [recentlyDeleted, setRecentlyDeleted] = useState<{ id: number; description: string } | null>(null)
 
   const [extracting, setExtracting] = useState(false)
+  const [extractProgress, setExtractProgress] = useState<{ completed: number; total: number } | null>(null)
   const extractCancelledRef = useRef(false)
   const [extractError, setExtractError] = useState<string | null>(null)
   const [reviewExtraction, setReviewExtraction] = useState<CashFlowStatementExtraction | null>(null)
@@ -224,8 +227,12 @@ export default function CashFlow(): JSX.Element {
   const incomeRows = sortRows(filtered.filter((t) => t.direction === 'income'))
   const expenseRows = sortRows(filtered.filter((t) => t.direction === 'expense'))
   const allRows = sortRows(filtered).slice(0, visibleCount)
-  const incomeTotal = transactions.filter((t) => t.direction === 'income').reduce((sum, t) => sum + t.amount, 0)
-  const expenseTotal = transactions.filter((t) => t.direction === 'expense').reduce((sum, t) => sum + t.amount, 0)
+  const incomeTotal = transactions
+    .filter((t) => t.direction === 'income' && countsTowardPnl(t.category))
+    .reduce((sum, t) => sum + t.amount, 0)
+  const expenseTotal = transactions
+    .filter((t) => t.direction === 'expense' && countsTowardPnl(t.category))
+    .reduce((sum, t) => sum + t.amount, 0)
   const netThisPeriod = incomeTotal - expenseTotal
   const savingsRate = incomeTotal > 0 ? (netThisPeriod / incomeTotal) * 100 : null
 
@@ -328,7 +335,13 @@ export default function CashFlow(): JSX.Element {
 
   const runExtraction = async (decryptedPath: string, force: boolean): Promise<void> => {
     setExtracting(true)
+    setExtractProgress(null)
     extractCancelledRef.current = false
+    // Real per-chunk progress (not a fabricated animation) — only multi-chunk
+    // statements report anything, since a single call has no meaningful midpoint.
+    const unsubscribe = api().cashFlow.onExtractionProgress(({ completed, total }) => {
+      if (!extractCancelledRef.current) setExtractProgress({ completed, total })
+    })
     try {
       const result = await api().cashFlow.extractStatement(decryptedPath, force)
       // "Cancel" during extraction (#64) can't abort the in-flight AI call itself —
@@ -347,7 +360,9 @@ export default function CashFlow(): JSX.Element {
     } catch (e) {
       if (!extractCancelledRef.current) setExtractError(friendlyError(e))
     } finally {
+      unsubscribe()
       setExtracting(false)
+      setExtractProgress(null)
       processNextInQueue()
     }
   }
@@ -617,6 +632,9 @@ export default function CashFlow(): JSX.Element {
               <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
             </>
           )}
+          <button className="btn secondary" onClick={() => setShowImportsModal(true)} title="See every statement you've uploaded">
+            <Receipt size={14} /> Uploaded statements
+          </button>
           <button className="btn secondary" onClick={exportCsv} title="Export as CSV">
             <Download size={14} /> Export CSV
           </button>
@@ -663,12 +681,29 @@ export default function CashFlow(): JSX.Element {
       )}
 
       {extracting && (
-        <div className="syncing-banner">
-          <RefreshCw size={15} className="spin" />
-          Your AI provider is reading the statement…
-          <button className="btn secondary small" style={{ marginLeft: 12 }} onClick={cancelExtraction}>
-            Cancel
-          </button>
+        <div className="syncing-banner" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <RefreshCw size={15} className="spin" />
+            {extractProgress && extractProgress.total > 1
+              ? `Reading statement… ${Math.round((extractProgress.completed / extractProgress.total) * 100)}% ` +
+                `(part ${extractProgress.completed} of ${extractProgress.total})`
+              : 'Your AI provider is reading the statement…'}
+            <button className="btn secondary small" style={{ marginLeft: 'auto' }} onClick={cancelExtraction}>
+              Cancel
+            </button>
+          </div>
+          {extractProgress && extractProgress.total > 1 && (
+            <div style={{ height: 4, background: 'var(--bg-inset)', borderRadius: 4, overflow: 'hidden' }}>
+              <div
+                style={{
+                  height: '100%',
+                  width: `${Math.round((extractProgress.completed / extractProgress.total) * 100)}%`,
+                  background: 'var(--accent)',
+                  transition: 'width 200ms ease'
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
       {uploadQueue.length > 0 && (
@@ -932,6 +967,14 @@ export default function CashFlow(): JSX.Element {
       />
 
       {passwordModal}
+
+      {showImportsModal && (
+        <CashFlowImportsModal
+          trackedAccounts={trackedAccounts}
+          onClose={() => setShowImportsModal(false)}
+          onChanged={reloadAll}
+        />
+      )}
     </div>
   )
 }

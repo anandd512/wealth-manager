@@ -1,5 +1,6 @@
 import type { CashFlowTransaction } from '../../../shared/types'
 import { formatCurrency, formatDate } from '../lib/format'
+import { countsTowardPnl } from '../lib/cashFlowCategories'
 
 interface Props {
   transactions: CashFlowTransaction[]
@@ -7,7 +8,7 @@ interface Props {
 }
 
 export default function CashFlowInsights({ transactions, previousMonthExpenseTotal }: Props): JSX.Element | null {
-  const expenses = transactions.filter((t) => t.direction === 'expense')
+  const expenses = transactions.filter((t) => t.direction === 'expense' && countsTowardPnl(t.category))
   if (expenses.length === 0) return null
 
   const topExpenses = [...expenses].sort((a, b) => b.amount - a.amount).slice(0, 5)

@@ -350,9 +350,13 @@ export type CashFlowEntryMethod = 'manual' | 'ai_extracted'
 // "uncategorized" (shown as its own neutral bucket rather than guessed at).
 // 'reimbursement' (income-only) is money coming back to the user (e.g. a roommate
 // repaying rent) — tracked but excluded from income_total/the colored chart, since
-// it isn't real income. See cashFlow.ts's getMonthlySummary.
-export type IncomeCategory = 'salary' | 'other_fixed' | 'discretionary' | 'reimbursement'
-export type ExpenseCategory = 'fixed_monthly' | 'other_fixed' | 'discretionary'
+// it isn't real income. 'transfer' (both directions) is money moving between the
+// user's own accounts (a same-account refund/reversal, or a confirmed cross-account
+// transfer) — same treatment: shown and fully editable in the ledger, excluded from
+// income_total/expense_total and the colored chart, since it's neither real income
+// nor real spending. See cashFlow.ts's getMonthlySummary and reconcileTransfers.
+export type IncomeCategory = 'salary' | 'other_fixed' | 'discretionary' | 'reimbursement' | 'transfer'
+export type ExpenseCategory = 'fixed_monthly' | 'other_fixed' | 'discretionary' | 'transfer'
 export type CashFlowCategory = IncomeCategory | ExpenseCategory
 
 // A curated, non-exhaustive list offered as a <datalist> alongside a free-text
@@ -480,10 +484,12 @@ export interface CashFlowMonthSummary {
   income_other_fixed: number
   income_discretionary: number
   income_reimbursement: number
+  income_transfer: number
   income_uncategorized: number
   expense_fixed_monthly: number
   expense_other_fixed: number
   expense_discretionary: number
+  expense_transfer: number
   expense_uncategorized: number
 }
 
@@ -505,11 +511,14 @@ export interface CashFlowExtractedTransaction {
   possibleCardBillDouble?: boolean
 }
 
-export interface CashFlowExcludedLine {
-  txn_date: string
-  description: string
-  amount: number
-  reason: string
+// Computed in code (never by the model) by summing every transaction against the
+// statement's own printed opening/closing balance. A non-zero gap is a concrete,
+// verifiable signal that something was missed, duplicated, or misread, rather than
+// just trusting the model's recall.
+export interface CashFlowBalanceCheck {
+  expectedClosing: number
+  gap: number // closing_balance - expectedClosing
+  reconciled: boolean // true when gap is within the small rounding tolerance
 }
 
 export interface CashFlowStatementExtraction {
@@ -520,8 +529,8 @@ export interface CashFlowStatementExtraction {
   opening_balance: number | null
   closing_balance: number | null
   transactions: CashFlowExtractedTransaction[]
-  excluded_transactions: CashFlowExcludedLine[]
   confidence_notes: string | null
+  balanceCheck: CashFlowBalanceCheck | null
 }
 
 // Either the file matches one already imported (returned instead of ever calling the
@@ -540,7 +549,6 @@ export interface CashFlowApplyExtractionInput {
   statementPeriodEnd: string | null
   openingBalance: number | null
   closingBalance: number | null
-  excludedTransactions: CashFlowExcludedLine[]
 }
 
 // A minimal projection of bank accounts for cash-flow use (picking which account an

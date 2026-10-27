@@ -24,8 +24,8 @@ import type {
 // independently classifiable. See the cash_flow_transactions/cash_flow_imports/
 // cash_flow_recurring table comments in db.ts and sync.ts's SYNCABLE_TABLES entries.
 
-const INCOME_CATEGORIES: IncomeCategory[] = ['salary', 'other_fixed', 'discretionary', 'reimbursement']
-const EXPENSE_CATEGORIES: CashFlowCategory[] = ['fixed_monthly', 'other_fixed', 'discretionary']
+const INCOME_CATEGORIES: IncomeCategory[] = ['salary', 'other_fixed', 'discretionary', 'reimbursement', 'transfer']
+const EXPENSE_CATEGORIES: CashFlowCategory[] = ['fixed_monthly', 'other_fixed', 'discretionary', 'transfer']
 
 // Clamps a category to one valid for its direction — defends against a model (or a
 // row edited mid-review after its direction was flipped) returning e.g. an expense
@@ -109,19 +109,25 @@ export function getMonthlySummary(): CashFlowMonthSummary[] {
   const rows = getDb()
     .prepare(
       `SELECT strftime('%Y-%m', txn_date) AS month,
-         -- income_total deliberately excludes 'reimbursement' (money coming back to
-         -- the user, not new income — see shared/types.ts's IncomeCategory comment).
-         SUM(CASE WHEN direction = 'income' AND (category IS NULL OR category != 'reimbursement')
+         -- income_total/expense_total deliberately exclude 'reimbursement' (money
+         -- coming back to the user, not new income) and 'transfer' (money moving
+         -- between the user's own accounts) — neither is real income or spending.
+         -- See shared/types.ts's IncomeCategory comment and cashFlow.ts's
+         -- reconcileTransfers.
+         SUM(CASE WHEN direction = 'income' AND (category IS NULL OR category NOT IN ('reimbursement', 'transfer'))
              THEN amount ELSE 0 END) AS income_total,
-         SUM(CASE WHEN direction = 'expense' THEN amount ELSE 0 END) AS expense_total,
+         SUM(CASE WHEN direction = 'expense' AND (category IS NULL OR category != 'transfer')
+             THEN amount ELSE 0 END) AS expense_total,
          ${categorySum('income', 'salary')} AS income_salary,
          ${categorySum('income', 'other_fixed')} AS income_other_fixed,
          ${categorySum('income', 'discretionary')} AS income_discretionary,
          ${categorySum('income', 'reimbursement')} AS income_reimbursement,
+         ${categorySum('income', 'transfer')} AS income_transfer,
          ${categorySumUncategorized('income')} AS income_uncategorized,
          ${categorySum('expense', 'fixed_monthly')} AS expense_fixed_monthly,
          ${categorySum('expense', 'other_fixed')} AS expense_other_fixed,
          ${categorySum('expense', 'discretionary')} AS expense_discretionary,
+         ${categorySum('expense', 'transfer')} AS expense_transfer,
          ${categorySumUncategorized('expense')} AS expense_uncategorized
        FROM cash_flow_transactions WHERE deleted = 0 GROUP BY month ORDER BY month`
     )
@@ -213,7 +219,9 @@ function insertTransactionRow(
 export async function createTransaction(input: CashFlowTransactionInput): Promise<CashFlowTransaction> {
   validateInput(input)
   const resolved = await resolveAmount(input.amount, input.currency)
-  return insertTransactionRow(input, resolved, new Date().toISOString())
+  const txn = insertTransactionRow(input, resolved, new Date().toISOString())
+  reconcileTransfers([txn.id])
+  return getTransaction(txn.id)! // re-read: reconcileTransfers may have just updated its own category
 }
 
 export async function updateTransaction(id: number, input: CashFlowTransactionInput): Promise<CashFlowTransaction> {
@@ -381,6 +389,15 @@ export function findImportByHash(fileHash: string): CashFlowImport | undefined {
     .get(fileHash) as CashFlowImport | undefined
 }
 
+// Every statement ever imported, newest first — backs the "Uploaded statements" list
+// so deleting one (and every transaction it added) doesn't require first finding one
+// of its transactions in the ledger.
+export function listImports(): CashFlowImport[] {
+  return getDb()
+    .prepare('SELECT * FROM cash_flow_imports WHERE deleted = 0 ORDER BY id DESC')
+    .all() as CashFlowImport[]
+}
+
 // This month's statement coverage per tracked account, from whichever import(s)
 // touched it — lets the user see at a glance whether a month is only partially
 // imported for a given account (e.g. a mid-month statement cut).
@@ -421,7 +438,7 @@ interface ApplyExtractionResult {
 // together with a new cash_flow_imports row that lets the whole batch be undone or
 // reconciled as a unit later.
 export async function applyCashFlowExtraction(input: CashFlowApplyExtractionInput): Promise<ApplyExtractionResult> {
-  const { accountSyncId, transactions, excludedTransactions } = input
+  const { accountSyncId, transactions } = input
   if (transactions.length === 0) throw new Error('Nothing to save — add at least one transaction or cancel.')
 
   const errors: string[] = []
@@ -436,10 +453,10 @@ export async function applyCashFlowExtraction(input: CashFlowApplyExtractionInpu
     .prepare(
       `INSERT INTO cash_flow_imports
         (account_sync_id, file_hash, document_path, document_original_name, statement_period_start,
-         statement_period_end, opening_balance, closing_balance, transaction_count, excluded_json,
+         statement_period_end, opening_balance, closing_balance, transaction_count,
          sync_id, updated_at, created_at)
        VALUES (@account_sync_id, @file_hash, @document_path, @document_original_name, @statement_period_start,
-         @statement_period_end, @opening_balance, @closing_balance, @transaction_count, @excluded_json,
+         @statement_period_end, @opening_balance, @closing_balance, @transaction_count,
          @sync_id, @updated_at, @created_at)`
     )
     .run({
@@ -452,7 +469,6 @@ export async function applyCashFlowExtraction(input: CashFlowApplyExtractionInpu
       opening_balance: input.openingBalance,
       closing_balance: input.closingBalance,
       transaction_count: transactions.length,
-      excluded_json: excludedTransactions.length > 0 ? JSON.stringify(excludedTransactions) : null,
       sync_id: randomUUID(),
       updated_at: now,
       created_at: now
@@ -482,7 +498,75 @@ export async function applyCashFlowExtraction(input: CashFlowApplyExtractionInpu
       )
     )
   }
+  // Every line was just included at face value (no more AI-guessed exclusion) — this
+  // is the deterministic check the extraction prompt itself now defers to: a confirmed
+  // same-account reversal or cross-account transfer only gets flagged once it actually
+  // matches another recorded transaction, never from a single statement's own guess.
+  reconcileTransfers(saved.map((t) => t.id))
   return { importId, transactions: saved }
+}
+
+// Matches against the REAL ledger, not a single statement's guess — the whole point of
+// moving exclusion out of extraction-time AI judgment (see cashFlowParser.ts's
+// buildInstructions). Two cases, both requiring an EXACT amount match and exactly one
+// candidate (an ambiguous multi-candidate amount is left alone rather than risking a
+// wrong link):
+//  - same-account reversal/refund: opposite direction, same account, within a day;
+//  - cross-account transfer: opposite direction, a DIFFERENT tracked account, within a
+//    few days (inter-bank transfers can take a day or two to post on both sides).
+// Called after new transactions land (a statement import or a manual entry) — never a
+// periodic sweep — so it never fights a category the user has since edited by hand.
+const TRANSFER_MATCH_TOLERANCE = 0.01 // rupees — effectively an exact-amount match
+const SAME_ACCOUNT_WINDOW_DAYS = 1
+const CROSS_ACCOUNT_WINDOW_DAYS = 3
+
+export function reconcileTransfers(transactionIds: number[]): void {
+  const db = getDb()
+  const findMatch = db.prepare(
+    `SELECT id FROM cash_flow_transactions
+     WHERE deleted = 0 AND id != @id AND direction = @oppositeDirection
+       AND ABS(amount - @amount) < @tolerance
+       AND ABS(julianday(txn_date) - julianday(@txnDate)) <= @windowDays
+       AND (
+         (@sameAccount = 1 AND account_sync_id = @accountSyncId) OR
+         (@sameAccount = 0 AND account_sync_id IS NOT NULL AND (@accountSyncId IS NULL OR account_sync_id != @accountSyncId))
+       )`
+  )
+  const markTransfer = db.prepare(
+    "UPDATE cash_flow_transactions SET category = 'transfer', updated_at = @now WHERE id IN (@a, @b)"
+  )
+
+  for (const id of transactionIds) {
+    const txn = getTransaction(id)
+    if (!txn) continue
+    const oppositeDirection: CashFlowDirection = txn.direction === 'income' ? 'expense' : 'income'
+    const baseParams = {
+      id,
+      oppositeDirection,
+      amount: txn.amount,
+      tolerance: TRANSFER_MATCH_TOLERANCE,
+      txnDate: txn.txn_date,
+      accountSyncId: txn.account_sync_id
+    }
+
+    const sameAccountMatches = txn.account_sync_id
+      ? (findMatch.all({ ...baseParams, sameAccount: 1, windowDays: SAME_ACCOUNT_WINDOW_DAYS }) as { id: number }[])
+      : []
+    const matches =
+      sameAccountMatches.length === 1
+        ? sameAccountMatches
+        : (() => {
+            const crossAccountMatches = findMatch.all({
+              ...baseParams,
+              sameAccount: 0,
+              windowDays: CROSS_ACCOUNT_WINDOW_DAYS
+            }) as { id: number }[]
+            return crossAccountMatches.length === 1 ? crossAccountMatches : []
+          })()
+
+    if (matches.length !== 1) continue
+    markTransfer.run({ a: id, b: matches[0].id, now: new Date().toISOString() })
+  }
 }
 
 // Deletes every transaction from one statement upload in one action, plus the import

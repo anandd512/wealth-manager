@@ -14,7 +14,10 @@ interface Props {
   onGoalChanged: (g: CashFlowSavingsGoal) => void
 }
 
-const EXPENSE_CATEGORIES = categoriesFor('expense', 'short')
+// 'transfer' is excluded here specifically — budgeting for money moving to your own
+// other accounts doesn't mean anything, even though it's a selectable category
+// elsewhere in the ledger.
+const EXPENSE_CATEGORIES = categoriesFor('expense', 'short').filter((c) => c.value !== 'transfer')
 
 function spentFor(key: string, transactions: CashFlowTransaction[]): number {
   return transactions

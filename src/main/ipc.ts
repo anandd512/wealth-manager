@@ -622,6 +622,10 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     cashFlow.deleteImport(importId)
     return { ok: true }
   })
+  ipcMain.handle(CHANNELS.cashFlowListImports, () => {
+    requireUnlocked()
+    return cashFlow.listImports()
+  })
   ipcMain.handle(CHANNELS.cashFlowExportCsv, async (_e, month?: string) => {
     requireUnlocked()
     const win = getWindow()
@@ -731,7 +735,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
   // the user gets a clear message before an AI call rather than a confusing failure
   // partway through (or, worse, a silently truncated read).
   const MAX_STATEMENT_BYTES = 15 * 1024 * 1024
-  ipcMain.handle(CHANNELS.cashFlowExtractStatement, async (_e, sourcePath: string, force?: boolean) => {
+  ipcMain.handle(CHANNELS.cashFlowExtractStatement, async (e, sourcePath: string, force?: boolean) => {
     requireUnlocked()
     const size = statSync(sourcePath).size
     if (size > MAX_STATEMENT_BYTES) {
@@ -750,7 +754,11 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
       }
     }
     const isCsv = extname(sourcePath).toLowerCase() === '.csv'
-    const extraction = isCsv ? parseCsvStatement(sourcePath) : await extractCashFlowStatement(sourcePath)
+    const extraction = isCsv
+      ? parseCsvStatement(sourcePath)
+      : await extractCashFlowStatement(sourcePath, (completed, total) => {
+          if (!e.sender.isDestroyed()) e.sender.send(CHANNELS.cashFlowExtractionProgress, { completed, total })
+        })
     const { storedPath, originalName } = await storeDocument(sourcePath)
     return { duplicate: false, extraction, storedPath, originalName, fileHash }
   })

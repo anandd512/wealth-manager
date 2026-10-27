@@ -161,6 +161,7 @@ const api = {
     bulkRemove: (ids: number[]) => ipcRenderer.invoke(CHANNELS.cashFlowBulkDelete, ids),
     recentDescriptions: () => ipcRenderer.invoke(CHANNELS.cashFlowRecentDescriptions),
     deleteImport: (importId: number) => ipcRenderer.invoke(CHANNELS.cashFlowDeleteImport, importId),
+    listImports: () => ipcRenderer.invoke(CHANNELS.cashFlowListImports),
     exportCsv: (month?: string) => ipcRenderer.invoke(CHANNELS.cashFlowExportCsv, month),
     consentStatus: (): Promise<{ given: boolean }> => ipcRenderer.invoke(CHANNELS.cashFlowConsentStatus),
     setConsent: () => ipcRenderer.invoke(CHANNELS.cashFlowSetConsent),
@@ -185,6 +186,13 @@ const api = {
     combineImages: (paths: string[]): Promise<string> => ipcRenderer.invoke(CHANNELS.cashFlowCombineImages, paths),
     extractStatement: (sourcePath: string, force?: boolean) =>
       ipcRenderer.invoke(CHANNELS.cashFlowExtractStatement, sourcePath, force),
+    // Returns an unsubscribe function — callers detach it once their own extraction
+    // call settles, rather than leaking a listener that'd fire for every later upload.
+    onExtractionProgress: (cb: (progress: { completed: number; total: number }) => void): (() => void) => {
+      const listener = (_e: unknown, progress: { completed: number; total: number }): void => cb(progress)
+      ipcRenderer.on(CHANNELS.cashFlowExtractionProgress, listener)
+      return () => ipcRenderer.removeListener(CHANNELS.cashFlowExtractionProgress, listener)
+    },
     applyExtraction: (input: CashFlowApplyExtractionInput) =>
       ipcRenderer.invoke(CHANNELS.cashFlowApplyExtraction, input),
     discardDocument: (docPath: string) => ipcRenderer.invoke(CHANNELS.cashFlowDiscardDocument, docPath),

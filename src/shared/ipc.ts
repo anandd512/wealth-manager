@@ -81,10 +81,14 @@ export const CHANNELS = {
   cashFlowBulkDelete: 'cashFlow:bulkDelete',
   cashFlowRecentDescriptions: 'cashFlow:recentDescriptions',
   cashFlowDeleteImport: 'cashFlow:deleteImport',
+  cashFlowListImports: 'cashFlow:listImports',
   cashFlowExportCsv: 'cashFlow:exportCsv',
   cashFlowPickStatement: 'cashFlow:pickStatement',
   cashFlowCombineImages: 'cashFlow:combineImages',
   cashFlowExtractStatement: 'cashFlow:extractStatement',
+  // Push-only (main -> renderer via webContents.send/ipcRenderer.on), never invoked —
+  // reports real per-chunk progress during a multi-chunk statement read.
+  cashFlowExtractionProgress: 'cashFlow:extractionProgress',
   cashFlowApplyExtraction: 'cashFlow:applyExtraction',
   cashFlowDiscardDocument: 'cashFlow:discardDocument',
   cashFlowConsentStatus: 'cashFlow:consentStatus',

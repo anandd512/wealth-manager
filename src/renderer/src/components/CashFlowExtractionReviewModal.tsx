@@ -12,7 +12,7 @@ import type {
 import { CASH_FLOW_SUBCATEGORIES } from '../../../shared/types'
 import { formatCurrency, formatDate, formatMonthYear, isValidIsoDate, parseIndianAmount } from '../lib/format'
 import { friendlyError } from '../lib/friendlyError'
-import { categoriesFor } from '../lib/cashFlowCategories'
+import { categoriesFor, countsTowardPnl } from '../lib/cashFlowCategories'
 import { useFocusTrap } from '../lib/useFocusTrap'
 
 interface Props {
@@ -41,7 +41,7 @@ interface EditableRow {
   possibleCardBillDouble: boolean
 }
 
-type FilterMode = 'all' | 'uncategorized' | 'low_confidence' | 'large_amount'
+type FilterMode = 'all' | 'uncategorized' | 'low_confidence' | 'large_amount' | 'transfer'
 
 interface RecentDescription {
   description: string
@@ -123,7 +123,6 @@ export default function CashFlowExtractionReviewModal({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [cardWarningAcknowledged, setCardWarningAcknowledged] = useState(false)
-  const [showExcluded, setShowExcluded] = useState(false)
   const [filter, setFilter] = useState<FilterMode>('all')
   const [trackedCardNames, setTrackedCardNames] = useState<string[]>([])
   const [recentDescriptions, setRecentDescriptions] = useState<RecentDescription[]>([])
@@ -259,7 +258,7 @@ export default function CashFlowExtractionReviewModal({
 
   const total = (direction: CashFlowDirection): number =>
     active
-      .filter((t) => t.direction === direction)
+      .filter((t) => t.direction === direction && countsTowardPnl(t.category))
       .reduce((sum, t) => sum + (parseIndianAmount(t.amountText) ?? 0), 0)
 
   const rowErrors = transactions.map(rowError)
@@ -278,17 +277,18 @@ export default function CashFlowExtractionReviewModal({
         if (filter === 'uncategorized') return !t.category
         if (filter === 'low_confidence') return t.confidence !== 'high'
         if (filter === 'large_amount') return t.isOutlier
+        if (filter === 'transfer') return t.category === 'transfer'
         return true
       })
   }, [transactions, filter])
 
   const needsCardWarning = extraction.statement_type !== 'bank' && !cardWarningAcknowledged
 
-  const netOfTransactions = total('income') - total('expense')
-  const hasBalances = extraction.opening_balance != null && extraction.closing_balance != null
-  const expectedNet = hasBalances ? extraction.closing_balance! - extraction.opening_balance! : null
-  const reconciliationDiff = hasBalances ? Math.round((netOfTransactions - expectedNet!) * 100) / 100 : null
-  const reconciles = reconciliationDiff !== null && Math.abs(reconciliationDiff) < 1
+  // extraction.balanceCheck (computed server-side in cashFlowParser.ts) nets EVERY
+  // line — kept and excluded — against the statement's own printed balance. A check
+  // against kept transactions alone would false-positive on every statement with a
+  // legitimate excluded transfer, since those move the real balance too.
+  const reconciles = extraction.balanceCheck?.reconciled ?? false
 
   const selectedAccount = trackedAccounts.find((a) => a.sync_id === accountSyncId)
   const destinationLabel = selectedAccount
@@ -333,8 +333,7 @@ export default function CashFlowExtractionReviewModal({
         statementPeriodStart: extraction.statement_period_start,
         statementPeriodEnd: extraction.statement_period_end,
         openingBalance: extraction.opening_balance,
-        closingBalance: extraction.closing_balance,
-        excludedTransactions: extraction.excluded_transactions
+        closingBalance: extraction.closing_balance
       })
       onSaved()
     } catch (e) {
@@ -426,58 +425,38 @@ export default function CashFlowExtractionReviewModal({
           )}
         </div>
 
-        {hasBalances && (
-          <div className="help-text" style={{ marginBottom: 12 }}>
-            Statement: opening {formatCurrency(extraction.opening_balance!)} → closing{' '}
-            {formatCurrency(extraction.closing_balance!)} (net {formatCurrency(expectedNet!)}). Your transactions net{' '}
-            {formatCurrency(netOfTransactions)}.{' '}
-            {reconciles ? (
-              <span style={{ color: 'var(--green)' }}>✓ Matches</span>
-            ) : (
-              <span style={{ color: 'var(--amber)' }}>⚠ {formatCurrency(Math.abs(reconciliationDiff!))} unaccounted for</span>
-            )}
+        {extraction.balanceCheck && !reconciles && (
+          <div className="error-text" style={{ marginBottom: 12, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div>
+              {formatCurrency(Math.abs(extraction.balanceCheck.gap))} doesn't reconcile against this statement's own balance —
+              opening {formatCurrency(extraction.opening_balance!)} plus every line below (kept and excluded) should
+              land on the statement's closing balance of {formatCurrency(extraction.closing_balance!)}, but comes to{' '}
+              {formatCurrency(extraction.balanceCheck.expectedClosing)} instead. Some transactions may be missing,
+              duplicated, or misread — check the original statement before saving.
+            </div>
+          </div>
+        )}
+        {extraction.balanceCheck && reconciles && (
+          <div className="help-text" style={{ marginBottom: 12, color: 'var(--green)' }}>
+            ✓ Every transaction below reconciles with the statement's own opening/closing balance.
           </div>
         )}
 
-        {extraction.excluded_transactions.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <button type="button" className="btn secondary small" onClick={() => setShowExcluded((v) => !v)}>
-              {showExcluded ? 'Hide' : 'Show'} {extraction.excluded_transactions.length} excluded line
-              {extraction.excluded_transactions.length === 1 ? '' : 's'} (transfers, not counted)
-            </button>
-            {showExcluded && (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ marginTop: 8 }}>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Description</th>
-                      <th>Amount</th>
-                      <th>Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {extraction.excluded_transactions.map((ex, i) => (
-                      <tr key={i}>
-                        <td className="muted">{formatDate(ex.txn_date)}</td>
-                        <td>{ex.description}</td>
-                        <td>{formatCurrency(ex.amount)}</td>
-                        <td className="muted">{ex.reason}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
+        <div className="help-text" style={{ marginBottom: 12 }}>
+          Every line on the statement is included below — nothing is excluded at this stage. A transfer to
+          another of your own accounts, or a refund/reversal, only gets tagged <strong>Transfer</strong> once it's
+          confirmed against a matching entry already in your ledger, so it stays visible but doesn't count as
+          income or spending. Recategorize any row yourself if that's wrong.
+        </div>
 
         <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
           {([
             ['all', 'All'],
             ['uncategorized', `Uncategorized (${uncategorizedCount})`],
             ['low_confidence', `Needs a look (${active.filter((t) => t.confidence !== 'high').length})`],
-            ['large_amount', `Unusually large (${outlierCount})`]
+            ['large_amount', `Unusually large (${outlierCount})`],
+            ['transfer', `Transfers (${active.filter((t) => t.category === 'transfer').length})`]
           ] as [FilterMode, string][]).map(([mode, label]) => (
             <button
               key={mode}

@@ -160,8 +160,8 @@ CREATE TABLE IF NOT EXISTS upcoming_dismissals (
 
 -- One row per individual statement upload — lets a whole import be undone in one
 -- action, warns before re-reading an already-imported file (file_hash), and shows
--- the statement's own opening/closing balance + excluded lines (transfers etc.) next
--- to what was actually saved, so the user can tell the AI's read was complete.
+-- the statement's own opening/closing balance next to what was actually saved, so the
+-- user can tell the AI's read was complete (see cashFlowParser.ts's balanceCheck).
 CREATE TABLE IF NOT EXISTS cash_flow_imports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   account_sync_id TEXT NOT NULL,
@@ -173,6 +173,10 @@ CREATE TABLE IF NOT EXISTS cash_flow_imports (
   opening_balance REAL,
   closing_balance REAL,
   transaction_count INTEGER NOT NULL DEFAULT 0,
+  -- Vestigial: every line is now always included (nothing is excluded at extraction
+  -- time — see cashFlowParser.ts), so this is no longer written for new imports. Left
+  -- in place rather than migrated away since some already-imported rows may still
+  -- have a value in it.
   excluded_json TEXT,
   sync_id TEXT,
   updated_at TEXT NOT NULL,

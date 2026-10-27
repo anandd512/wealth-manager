@@ -148,7 +148,10 @@ export function parseCsvStatement(filePath: string): CashFlowStatementExtraction
     opening_balance: null,
     closing_balance: null,
     transactions,
-    excluded_transactions: [],
-    confidence_notes: 'Imported from CSV — categories are a generic guess, not AI-read; review before saving.'
+    confidence_notes: 'Imported from CSV — categories are a generic guess, not AI-read; review before saving.',
+    // A CSV export almost never prints opening/closing balance columns, and this path
+    // reads every row mechanically rather than exercising any judgment that could skip
+    // one — there's nothing to reconcile against.
+    balanceCheck: null
   }
 }
