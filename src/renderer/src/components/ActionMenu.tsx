@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { MoreVertical } from 'lucide-react'
 
@@ -7,13 +7,21 @@ export interface ActionMenuItem {
   icon?: LucideIcon
   onClick: () => void
   danger?: boolean
+  // Optional second line under the label, for menus where the items need a word
+  // of explanation (e.g. what "Import bank statement" actually does).
+  hint?: string
 }
 
 interface Props {
   items: ActionMenuItem[]
+  // Replaces the default ⋮ icon trigger — e.g. a labelled primary button. Rendered
+  // inside the trigger <button>, which takes `triggerClassName` for its styling.
+  trigger?: ReactNode
+  triggerClassName?: string
+  ariaLabel?: string
 }
 
-export default function ActionMenu({ items }: Props): JSX.Element {
+export default function ActionMenu({ items, trigger, triggerClassName, ariaLabel = 'Actions' }: Props): JSX.Element {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -64,14 +72,14 @@ export default function ActionMenu({ items }: Props): JSX.Element {
     <div className="action-menu" ref={ref}>
       <button
         type="button"
-        className="action-menu-trigger"
+        className={triggerClassName ?? 'action-menu-trigger'}
         ref={triggerRef}
         onClick={() => setOpen((v) => !v)}
-        aria-label="Actions"
+        aria-label={trigger ? undefined : ariaLabel}
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <MoreVertical size={16} />
+        {trigger ?? <MoreVertical size={16} />}
       </button>
       {open && (
         <div className="action-menu-popover" role="menu">
@@ -93,7 +101,14 @@ export default function ActionMenu({ items }: Props): JSX.Element {
                 onKeyDown={(e) => onItemKeyDown(e, i)}
               >
                 {Icon && <Icon size={15} />}
-                {item.label}
+                {item.hint ? (
+                  <span className="action-menu-item-text">
+                    {item.label}
+                    <span className="action-menu-item-hint">{item.hint}</span>
+                  </span>
+                ) : (
+                  item.label
+                )}
               </button>
             )
           })}

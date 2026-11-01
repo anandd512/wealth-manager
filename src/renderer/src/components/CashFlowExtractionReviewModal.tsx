@@ -1,6 +1,6 @@
 import { api } from '../lib/api'
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, Trash2, AlertTriangle, RotateCcw } from 'lucide-react'
+import { Plus, Trash2, AlertTriangle, RotateCcw, Info, CreditCard, CheckCircle2, Copy } from 'lucide-react'
 import type {
   CashFlowCategory,
   CashFlowDirection,
@@ -372,15 +372,16 @@ export default function CashFlowExtractionReviewModal({
         </div>
 
         {extraction.confidence_notes && (
-          <div className="help-text" style={{ marginBottom: 12 }}>
-            AI flagged this: {extraction.confidence_notes}
+          <div className="notice info" style={{ marginBottom: 'var(--space-3)' }}>
+            <Info />
+            <div className="notice-body">AI flagged this: {extraction.confidence_notes}</div>
           </div>
         )}
 
         {extraction.statement_type !== 'bank' && (
-          <div className="error-text" style={{ marginBottom: 12, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-            <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} />
-            <div>
+          <div className="notice error" style={{ marginBottom: 'var(--space-3)' }}>
+            <AlertTriangle />
+            <div className="notice-body">
               {extraction.statement_type === 'credit_card'
                 ? "This looks like a credit card statement, not a bank account statement. Card statements aren't " +
                   "supported yet — importing it as-is would double-count spending already captured on your bank " +
@@ -398,9 +399,12 @@ export default function CashFlowExtractionReviewModal({
         )}
 
         {cardDoubleCount > 0 && (
-          <div className="help-text" style={{ marginBottom: 12, color: 'var(--amber)' }}>
-            ⚠ {cardDoubleCount} row{cardDoubleCount === 1 ? '' : 's'} look like credit card bill payments — if you
-            also import that card's own statement separately, its spending may get counted twice.
+          <div className="notice warn" style={{ marginBottom: 'var(--space-3)' }}>
+            <CreditCard />
+            <div className="notice-body">
+              {cardDoubleCount} row{cardDoubleCount === 1 ? '' : 's'} look like credit card bill payments — if you
+              also import that card's own statement separately, its spending may get counted twice.
+            </div>
           </div>
         )}
 
@@ -426,9 +430,9 @@ export default function CashFlowExtractionReviewModal({
         </div>
 
         {extraction.balanceCheck && !reconciles && (
-          <div className="error-text" style={{ marginBottom: 12, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-            <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} />
-            <div>
+          <div className="notice error" style={{ marginBottom: 'var(--space-3)' }}>
+            <AlertTriangle />
+            <div className="notice-body">
               {formatCurrency(Math.abs(extraction.balanceCheck.gap))} doesn't reconcile against this statement's own balance —
               opening {formatCurrency(extraction.opening_balance!)} plus every line below (kept and excluded) should
               land on the statement's closing balance of {formatCurrency(extraction.closing_balance!)}, but comes to{' '}
@@ -438,8 +442,9 @@ export default function CashFlowExtractionReviewModal({
           </div>
         )}
         {extraction.balanceCheck && reconciles && (
-          <div className="help-text" style={{ marginBottom: 12, color: 'var(--green)' }}>
-            ✓ Every transaction below reconciles with the statement's own opening/closing balance.
+          <div className="notice success" style={{ marginBottom: 'var(--space-3)' }}>
+            <CheckCircle2 />
+            <div className="notice-body">Every transaction below reconciles with the statement's own opening/closing balance.</div>
           </div>
         )}
 
@@ -450,21 +455,17 @@ export default function CashFlowExtractionReviewModal({
           income or spending. Recategorize any row yourself if that's wrong.
         </div>
 
-        <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+        <div className="segmented small" role="group" aria-label="Show rows" style={{ marginBottom: 'var(--space-2)', flexWrap: 'wrap' }}>
           {([
-            ['all', 'All'],
-            ['uncategorized', `Uncategorized (${uncategorizedCount})`],
-            ['low_confidence', `Needs a look (${active.filter((t) => t.confidence !== 'high').length})`],
-            ['large_amount', `Unusually large (${outlierCount})`],
-            ['transfer', `Transfers (${active.filter((t) => t.category === 'transfer').length})`]
-          ] as [FilterMode, string][]).map(([mode, label]) => (
-            <button
-              key={mode}
-              type="button"
-              className={`btn small ${filter === mode ? '' : 'secondary'}`}
-              onClick={() => setFilter(mode)}
-            >
+            ['all', 'All', null],
+            ['uncategorized', 'Uncategorized', uncategorizedCount],
+            ['low_confidence', 'Needs a look', active.filter((t) => t.confidence !== 'high').length],
+            ['large_amount', 'Unusually large', outlierCount],
+            ['transfer', 'Transfers', active.filter((t) => t.category === 'transfer').length]
+          ] as [FilterMode, string, number | null][]).map(([mode, label, count]) => (
+            <button key={mode} type="button" aria-pressed={filter === mode} onClick={() => setFilter(mode)}>
               {label}
+              {count !== null && <span className="segmented-count">{count}</span>}
             </button>
           ))}
         </div>
@@ -507,7 +508,12 @@ export default function CashFlowExtractionReviewModal({
           <Plus size={12} /> Add transaction
         </button>
 
-        {error && <div className="error-text" style={{ marginTop: 12 }}>{error}</div>}
+        {error && (
+          <div className="notice error" role="alert" style={{ marginTop: 'var(--space-3)' }}>
+            <AlertTriangle />
+            <div className="notice-body">{error}</div>
+          </div>
+        )}
 
         <div className="modal-actions">
           <button className="btn secondary" onClick={cancel} disabled={busy}>
@@ -565,7 +571,7 @@ const ReviewRow = memo(function ReviewRow({ index, row, error, onUpdate, onRemov
         row.possibleDuplicate
           ? { background: 'var(--amber-soft)' }
           : row.isOutlier || row.possibleCardBillDouble
-            ? { background: 'rgba(240, 97, 107, 0.06)' }
+            ? { background: 'var(--red-soft)' }
             : undefined
       }
     >
@@ -589,9 +595,25 @@ const ReviewRow = memo(function ReviewRow({ index, row, error, onUpdate, onRemov
           placeholder="Description"
           title={row.raw_text && row.raw_text !== row.description ? `Original: ${row.raw_text}` : undefined}
         />
-        {row.possibleDuplicate && <span title="Possible duplicate of an existing transaction"> ⚠</span>}
-        {row.isOutlier && <span title="Unusually large amount for this statement"> ⚠</span>}
-        {row.possibleCardBillDouble && <span title="Looks like a card bill payment — possible double count"> 💳</span>}
+        {(row.possibleDuplicate || row.isOutlier || row.possibleCardBillDouble) && (
+          <span style={{ display: 'inline-flex', gap: 'var(--space-1)', marginLeft: 'var(--space-1)', verticalAlign: 'middle' }}>
+            {row.possibleDuplicate && (
+              <span title="Possible duplicate of an existing transaction" style={{ color: 'var(--amber)' }}>
+                <Copy size={13} aria-label="Possible duplicate" />
+              </span>
+            )}
+            {row.isOutlier && (
+              <span title="Unusually large amount for this statement" style={{ color: 'var(--red)' }}>
+                <AlertTriangle size={13} aria-label="Unusually large" />
+              </span>
+            )}
+            {row.possibleCardBillDouble && (
+              <span title="Looks like a card bill payment — possible double count" style={{ color: 'var(--amber)' }}>
+                <CreditCard size={13} aria-label="Possible card bill" />
+              </span>
+            )}
+          </span>
+        )}
       </td>
       <td>
         <select

@@ -45,3 +45,61 @@ export function monthRangeFor(month: string): PeriodRange {
   const endDay = new Date(y, m, 0).getDate()
   return { start: `${month}-01`, end: `${month}-${pad(endDay)}`, label: month }
 }
+
+// Shifts a YYYY-MM month by `delta` months (negative goes back).
+export function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
+}
+
+// How far the ‹ › arrows move for each period type — null where stepping makes no
+// sense (YTD is always "this year so far"; a custom range has no natural step).
+export const PERIOD_STEP_MONTHS: Record<PeriodType, number | null> = {
+  month: 1,
+  quarter: 3,
+  fy: 12,
+  ytd: null,
+  custom: null
+}
+
+// The period immediately before the one on screen, so every "vs …" comparison is
+// like-for-like (a quarter against the previous quarter, never against one month).
+// YTD compares against the same dates last year. Custom ranges get no comparison.
+export function previousRangeFor(
+  type: PeriodType,
+  selectedMonth: string,
+  today: string
+): { range: PeriodRange; label: string } | null {
+  if (type === 'month') return { range: monthRangeFor(shiftMonth(selectedMonth, -1)), label: 'last month' }
+  if (type === 'quarter') return { range: quarterRangeFor(`${shiftMonth(selectedMonth, -3)}-01`), label: 'last quarter' }
+  if (type === 'fy') return { range: fyRangeFor(`${shiftMonth(selectedMonth, -12)}-01`), label: 'last FY' }
+  if (type === 'ytd') {
+    const lastYear = Number(today.slice(0, 4)) - 1
+    return {
+      range: { start: `${lastYear}-01-01`, end: `${lastYear}${today.slice(4)}`, label: `${lastYear} year to date` },
+      label: 'same period last year'
+    }
+  }
+  return null
+}
+
+// Number of months a period spans, for scaling monthly budgets and the monthly
+// savings goal to the period on screen. Partial periods (YTD, custom) are measured
+// in days so a 10-day range doesn't get a full month's budget.
+export function monthsInRange(type: PeriodType, range: PeriodRange): number {
+  if (type === 'month') return 1
+  if (type === 'quarter') return 3
+  if (type === 'fy') return 12
+  const days = (Date.parse(range.end) - Date.parse(range.start)) / 86400000 + 1
+  return Math.max(0, days) / (365.25 / 12)
+}
+
+// Short phrase for the period on screen, used in "₹X reached this month"-style copy.
+export function periodPhrase(type: PeriodType): string {
+  if (type === 'month') return 'this month'
+  if (type === 'quarter') return 'this quarter'
+  if (type === 'fy') return 'this FY'
+  if (type === 'ytd') return 'so far this year'
+  return 'in this range'
+}

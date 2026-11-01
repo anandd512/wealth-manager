@@ -1,5 +1,6 @@
 import { api } from '../lib/api'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import type {
   CashFlowCategory,
   CashFlowDirection,
@@ -84,10 +85,16 @@ export default function CashFlowEntryModal({
   }, [])
 
   const isDirty =
+    direction !== initialDirection ||
     description.trim() !== (entry?.description ?? '') ||
     amountText !== (entry ? String(entry.amount) : '') ||
     txnDate !== (entry?.txn_date ?? defaultDate) ||
-    notes.trim() !== (entry?.notes ?? '')
+    accountSyncId !== (entry?.account_sync_id ?? '') ||
+    currency !== (entry?.currency ?? 'INR') ||
+    category !== (entry?.category ?? '') ||
+    subcategory.trim() !== (entry?.subcategory ?? '') ||
+    notes.trim() !== (entry?.notes ?? '') ||
+    repeatsMonthly
 
   const requestClose = (): void => {
     if (isDirty) setPendingClose(true)
@@ -239,19 +246,11 @@ export default function CashFlowEntryModal({
           <h2>{entry ? 'Edit transaction' : 'Add transaction'}</h2>
 
           <div className="field">
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                type="button"
-                className={`btn small ${direction === 'income' ? '' : 'secondary'}`}
-                onClick={() => changeDirection('income')}
-              >
+            <div className="segmented" role="group" aria-label="Money in or out">
+              <button type="button" aria-pressed={direction === 'income'} onClick={() => changeDirection('income')}>
                 Income
               </button>
-              <button
-                type="button"
-                className={`btn small ${direction === 'expense' ? '' : 'secondary'}`}
-                onClick={() => changeDirection('expense')}
-              >
+              <button type="button" aria-pressed={direction === 'expense'} onClick={() => changeDirection('expense')}>
                 Expense
               </button>
             </div>
@@ -379,11 +378,19 @@ export default function CashFlowEntryModal({
           </div>
 
           {duplicateWarning && (
-            <div className="help-text" style={{ color: 'var(--amber)' }}>
-              This looks similar to an existing transaction (same date, amount, and description) — save anyway?
+            <div className="notice warn" style={{ marginBottom: 'var(--space-2)' }}>
+              <AlertTriangle />
+              <div className="notice-body">
+                This looks similar to an existing transaction (same date, amount, and description) — save anyway?
+              </div>
             </div>
           )}
-          {error && <div className="error-text">{error}</div>}
+          {error && (
+            <div className="notice error" role="alert">
+              <AlertTriangle />
+              <div className="notice-body">{error}</div>
+            </div>
+          )}
 
           <div className="modal-actions">
             <button className="btn secondary" onClick={requestClose} disabled={busy}>

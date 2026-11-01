@@ -576,6 +576,10 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     requireUnlocked()
     return cashFlow.getAccountCoverage(month)
   })
+  ipcMain.handle(CHANNELS.cashFlowMissingStatements, (_e, month: string) => {
+    requireUnlocked()
+    return cashFlow.getMissingStatementAccounts(month)
+  })
   ipcMain.handle(CHANNELS.cashFlowCreate, (_e, input: CashFlowTransactionInput) => {
     requireUnlocked()
     return cashFlow.createTransaction(input)
@@ -626,19 +630,24 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     requireUnlocked()
     return cashFlow.listImports()
   })
-  ipcMain.handle(CHANNELS.cashFlowExportCsv, async (_e, month?: string) => {
-    requireUnlocked()
-    const win = getWindow()
-    if (!win) return { ok: false }
-    const result = await dialog.showSaveDialog(win, {
-      title: 'Export cash flow CSV',
-      defaultPath: `cash-flow${month ? `-${month}` : ''}.csv`,
-      filters: [{ name: 'CSV', extensions: ['csv'] }]
-    })
-    if (result.canceled || !result.filePath) return { ok: false }
-    writeFileSync(result.filePath, cashFlow.buildCsv(month), 'utf-8')
-    return { ok: true, path: result.filePath }
-  })
+  ipcMain.handle(
+    CHANNELS.cashFlowExportCsv,
+    async (_e, opts?: { start: string; end: string; label: string; ids?: number[] }) => {
+      requireUnlocked()
+      const win = getWindow()
+      if (!win) return { ok: false }
+      const slug = opts?.label.replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-|-$/g, '')
+      const result = await dialog.showSaveDialog(win, {
+        title: 'Export cash flow CSV',
+        defaultPath: `cash-flow${slug ? `-${slug}` : ''}.csv`,
+        filters: [{ name: 'CSV', extensions: ['csv'] }]
+      })
+      if (result.canceled || !result.filePath) return { ok: false }
+      const range = opts ? { start: opts.start, end: opts.end } : undefined
+      writeFileSync(result.filePath, cashFlow.buildCsv(range, opts?.ids), 'utf-8')
+      return { ok: true, path: result.filePath }
+    }
+  )
   ipcMain.handle(CHANNELS.cashFlowConsentStatus, () => {
     return { given: settings.getCashFlowAiConsent() }
   })

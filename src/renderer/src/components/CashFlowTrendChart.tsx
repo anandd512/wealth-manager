@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts'
+import { ChartColumn, Table as TableIcon } from 'lucide-react'
 import type { CashFlowMonthSummary } from '../../../shared/types'
 import { formatCurrency, formatMonthYear } from '../lib/format'
 
@@ -8,11 +9,10 @@ interface Props {
   onMonthClick?: (month: string) => void
 }
 
-// Colors are CSS custom properties (styles.css's :root / body.light-mode), each a
-// dataviz-skill-validated categorical slot for its respective surface — resolved at
-// render time so the chart re-themes automatically with the rest of the app instead
-// of staying hardcoded dark. Each direction's three categories are an ordinal "how
-// essential" sequence (salary/fixed first, discretionary last) riding that order.
+// Colors are CSS custom properties (styles.css's :root / body.light-mode) resolved at
+// render time, so the chart re-themes with the rest of the app. Each direction gets
+// one validated ordinal ramp — green for income, red-orange for expense — stepping
+// from most essential (salary/fixed) to discretionary; see the --cf-* comment there.
 const SERIES: { key: keyof CashFlowMonthSummary; label: string; color: string }[] = [
   { key: 'income_salary', label: 'Salary', color: 'var(--cf-income-1)' },
   { key: 'income_other_fixed', label: 'Other fixed income', color: 'var(--cf-income-2)' },
@@ -55,31 +55,51 @@ export default function CashFlowTrendChart({ summary, onMonthClick }: Props): JS
   const lastIncomeIdx = activeSeries.map((s) => s.key.toString().startsWith('income_')).lastIndexOf(true)
   const lastExpenseIdx = activeSeries.map((s) => s.key.toString().startsWith('expense_')).lastIndexOf(true)
 
+  // Range and chart/table switches stay put in both views, so flipping to the table
+  // doesn't lose the range or move the controls under the cursor.
+  const controls = (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+      <div className="segmented small" role="group" aria-label="Time range">
+        {RANGES.map((r) => (
+          <button key={r.label} type="button" aria-pressed={range.label === r.label} onClick={() => setRange(r)}>
+            {r.label}
+          </button>
+        ))}
+      </div>
+      <div className="segmented small" role="group" aria-label="Display as">
+        <button type="button" aria-pressed={!asTable} onClick={() => setAsTable(false)}>
+          <ChartColumn /> Chart
+        </button>
+        <button type="button" aria-pressed={asTable} onClick={() => setAsTable(true)}>
+          <TableIcon /> Table
+        </button>
+      </div>
+    </div>
+  )
+
   if (asTable) {
     return (
       <div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-          <button type="button" className="btn secondary small" onClick={() => setAsTable(false)}>
-            View as chart
-          </button>
-        </div>
+        {controls}
         <div style={{ overflowX: 'auto' }}>
           <table>
             <thead>
               <tr>
                 <th>Month</th>
-                <th>Income</th>
-                <th>Expense</th>
-                <th>Net</th>
+                <th className="num">Income</th>
+                <th className="num">Expense</th>
+                <th className="num">Net</th>
               </tr>
             </thead>
             <tbody>
               {data.map((m) => (
                 <tr key={m.month}>
                   <td>{formatMonthYear(m.month)}</td>
-                  <td>{formatCurrency(m.income_total)}</td>
-                  <td>{formatCurrency(m.expense_total)}</td>
-                  <td>{formatCurrency(m.net)}</td>
+                  <td className="num">{formatCurrency(m.income_total)}</td>
+                  <td className="num">{formatCurrency(m.expense_total)}</td>
+                  <td className="num" style={m.net < 0 ? { color: 'var(--red)' } : undefined}>
+                    {formatCurrency(m.net)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -91,23 +111,7 @@ export default function CashFlowTrendChart({ summary, onMonthClick }: Props): JS
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ display: 'flex', gap: 4 }}>
-          {RANGES.map((r) => (
-            <button
-              key={r.label}
-              type="button"
-              className={`btn small ${range.label === r.label ? '' : 'secondary'}`}
-              onClick={() => setRange(r)}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
-        <button type="button" className="btn secondary small" onClick={() => setAsTable(true)}>
-          View as table
-        </button>
-      </div>
+      {controls}
       <ResponsiveContainer width="100%" height={260}>
         <ComposedChart data={data}>
           <XAxis dataKey="month" tick={{ fontSize: 11 }} tickFormatter={(m: string) => formatMonthYear(m, 'short')} />

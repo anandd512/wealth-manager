@@ -97,7 +97,7 @@ export default function CashFlowImportsModal({ trackedAccounts, onClose, onChang
                     <th>Statement</th>
                     <th>Account</th>
                     <th>Period</th>
-                    <th>Transactions</th>
+                    <th className="num">Transactions</th>
                     <th>Uploaded</th>
                     <th></th>
                   </tr>
@@ -112,7 +112,7 @@ export default function CashFlowImportsModal({ trackedAccounts, onClose, onChang
                           ? `${formatDateShort(imp.statement_period_start)} – ${formatDateShort(imp.statement_period_end)}`
                           : '—'}
                       </td>
-                      <td>{imp.transaction_count}</td>
+                      <td className="num">{imp.transaction_count}</td>
                       <td className="muted">{formatDateShort(imp.created_at)}</td>
                       <td style={{ textAlign: 'right' }}>
                         <ActionMenu

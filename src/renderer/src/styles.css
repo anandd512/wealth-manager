@@ -19,19 +19,21 @@
   --red-soft: rgba(240, 97, 107, 0.12);
   --amber: #e8b14f;
   --amber-soft: rgba(232, 177, 79, 0.12);
-  /* Cash flow trend chart categorical series — dataviz-skill-validated (CVD/contrast,
-     scripts/validate_palette.js) against this app's dark surface. Expense gets the
-     cooler trio and income the warmer trio deliberately swapped from the palette's
-     own default grouping, so "discretionary expense" never lands on the same green
-     the rest of the app uses for income/positive. Light-mode values below are the
-     palette's own light-surface steps for the same slots, separately validated. */
-  --cf-expense-1: #3987e5;
-  --cf-expense-2: #d95926;
-  --cf-expense-3: #199e70;
-  --cf-income-1: #c98500;
-  --cf-income-2: #d55181;
-  --cf-income-3: #008300;
-  --cf-uncategorized: #5b6478;
+  /* Cash flow trend chart series — one ordinal ramp per direction, so color says
+     "in" (green) or "out" (red-orange) the same way --green/--red do everywhere
+     else, and step strength says how essential (salary/fixed first, discretionary
+     last; strongest step = most essential). Validated with the dataviz skill's
+     validate_palette.js against --bg-card (#141a26 dark, #fff light): each ramp
+     passes --ordinal, every adjacent pair (incl. uncategorized on top of each
+     stack) clears CVD ΔE ≥ 8 and normal-vision ΔE ≥ 15. The darkest steps sit
+     under 3:1 contrast, so the chart keeps its legend and table view as relief. */
+  --cf-income-1: #a4ecc8;
+  --cf-income-2: #3fb67f;
+  --cf-income-3: #167048;
+  --cf-expense-1: #fcc0a6;
+  --cf-expense-2: #e8693f;
+  --cf-expense-3: #9c381f;
+  --cf-uncategorized: #7d879c;
   /* Open-ended categorical use (e.g. the expense-breakdown-by-subcategory chart) —
      the same validated 8-slot order's first 7 steps, default sequence. */
   --cf-cat-1: #3987e5;
@@ -44,6 +46,20 @@
   --radius-sm: 7px;
   --radius: 10px;
   --radius-lg: 16px;
+  /* Spacing scale (4px base) and type scale — use these instead of one-off pixel
+     values so gaps and text sizes stay consistent across a page. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
   --shadow-lg: 0 24px 48px -12px rgba(0, 0, 0, 0.55), 0 4px 16px rgba(0, 0, 0, 0.3);
@@ -489,6 +505,114 @@ label {
 .badge.danger { background: var(--red-soft); color: var(--red); }
 .badge.neutral { background: rgba(139, 150, 173, 0.12); color: var(--text-dim); }
 
+/* ── Chip ─────────────────────────────────────────────────────────────
+   A quiet, sentence-case label for a value (a category, an account, a filter).
+   Unlike .badge it isn't shouty/uppercase, so a column of them stays calm.
+   As a <button> it's clickable (opens a picker, removes a filter). */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: 2px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(139, 150, 173, 0.12);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chip svg { width: 12px; height: 12px; flex-shrink: 0; }
+button.chip { cursor: pointer; transition: background 120ms var(--ease), border-color 120ms var(--ease), color 120ms var(--ease); }
+button.chip:hover { border-color: var(--border); color: var(--text); }
+.chip.income { background: var(--green-soft); color: var(--green); }
+.chip.expense { background: var(--red-soft); color: var(--red); }
+.chip.accent { background: var(--accent-soft); color: var(--accent); }
+.chip.warn { background: var(--amber-soft); color: var(--amber); }
+/* An empty slot asking to be filled in, e.g. "+ Categorize". */
+.chip.empty { background: transparent; border: 1px dashed var(--border); color: var(--text-faint); }
+button.chip.empty:hover { border-color: var(--accent); color: var(--accent); }
+/* The dot carries series/category identity; the text stays in text ink. */
+.chip-dot { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; }
+
+/* ── Segmented control ────────────────────────────────────────────────
+   For choosing one of a few views or modes (not for actions — those are .btn).
+   Mark the selected option with aria-pressed="true". */
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-soft);
+}
+.segmented > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+.segmented > button:hover { color: var(--text); }
+.segmented > button[aria-pressed='true'] {
+  background: var(--bg-card);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+.segmented > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.segmented > button svg { width: 13px; height: 13px; }
+.segmented.small > button { padding: 3px 9px; font-size: var(--fs-xs); }
+.segmented-count { color: var(--text-faint); font-weight: 500; }
+
+/* ── Numbers ──────────────────────────────────────────────────────────
+   Any column of amounts: right-aligned, fixed-width digits so ₹ values line up. */
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.amount-in { color: var(--green); }
+.amount-out { color: var(--text); }
+.amount-muted { color: var(--text-faint); }
+
+/* ── Notice ───────────────────────────────────────────────────────────
+   Inline message in the page flow (an error, a warning, a hint), with an
+   optional trailing action. */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--bg-inset);
+  border: 1px solid var(--border-soft);
+  color: var(--text-dim);
+  font-size: var(--fs-base);
+}
+.notice > svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 2px; }
+.notice-body { flex: 1; min-width: 0; }
+.notice-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+.notice.info { background: var(--accent-soft); border-color: transparent; color: var(--text); }
+.notice.info > svg { color: var(--accent); }
+.notice.warn { background: var(--amber-soft); border-color: transparent; color: var(--text); }
+.notice.warn > svg { color: var(--amber); }
+.notice.error { background: var(--red-soft); border-color: transparent; color: var(--text); }
+.notice.error > svg { color: var(--red); }
+.notice.success { background: var(--green-soft); border-color: transparent; color: var(--text); }
+.notice.success > svg { color: var(--green); }
+
 .gate {
   height: 100vh;
   display: flex;
@@ -738,6 +862,27 @@ label {
   background: var(--bg-card-hover);
 }
 
+.action-menu-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.action-menu-item-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  white-space: normal;
+}
+.action-menu-popover:has(.action-menu-item-hint) {
+  min-width: 260px;
+}
+.action-menu-popover:has(.action-menu-item-hint) .action-menu-item {
+  align-items: flex-start;
+}
+.action-menu-popover:has(.action-menu-item-hint) .action-menu-item svg {
+  margin-top: 2px;
+}
+
 .action-menu-item.danger {
   color: var(--red);
 }
@@ -794,6 +939,13 @@ label {
   color: var(--accent);
   background: var(--accent-soft);
   border-color: transparent;
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--text-dim);
 }
 
 .celebration-toast {
@@ -1418,24 +1570,66 @@ label {
   margin-top: 0;
 }
 
-/* ── Undo-delete toast ───────────────────────────────────────────── */
-.undo-toast {
+/* ── Toasts ──────────────────────────────────────────────────────────
+   Transient feedback that floats over the page instead of pushing content
+   down (undo after delete, background progress). Stack them inside one
+   .toast-region so several can show at once. */
+.toast-region {
   position: fixed;
-  bottom: 28px;
+  bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  z-index: 600;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 300px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 12px 10px 16px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 10px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
   box-shadow: var(--shadow-md);
-  z-index: 600;
+  font-size: var(--fs-base);
   animation: modal-in 180ms var(--ease);
-  font-size: 13px;
-  white-space: nowrap;
+}
+.toast > svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent); }
+.toast-body { flex: 1; min-width: 0; }
+.toast-sub { color: var(--text-faint); font-size: var(--fs-xs); }
+/* Determinate progress along the toast's bottom edge. */
+.toast-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  transition: width 200ms var(--ease);
+}
+/* Countdown for an action that expires (e.g. Undo) — runs once over --toast-ms. */
+.toast-countdown {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--text-faint);
+  opacity: 0.5;
+  transform-origin: left;
+  animation: toast-countdown var(--toast-ms, 8000ms) linear forwards;
+}
+@keyframes toast-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
 
 /* ── Setup checklist (Dashboard empty state) ─────────────────────── */
@@ -1468,6 +1662,153 @@ label {
   background: var(--bg-card-hover);
   border-color: var(--border);
 }
+button.setup-checklist-item {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+}
+button.setup-checklist-item:disabled { opacity: 0.6; cursor: progress; }
+
+/* ── Loading placeholder ─────────────────────────────────────────── */
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--bg-inset) 25%, var(--bg-card-hover) 50%, var(--bg-inset) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* ── Cash Flow page ──────────────────────────────────────────────── */
+.cf-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
+.cf-header .page-title { margin: 0; }
+.cf-header-sub {
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+}
+.cf-header-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.cf-period-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.cf-period-label {
+  min-width: 96px;
+  text-align: center;
+  font-weight: 600;
+  font-size: var(--fs-base);
+}
+.cf-custom-range {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin: calc(-1 * var(--space-3)) 0 var(--space-5);
+}
+.cf-custom-range input { width: 150px; }
+
+/* Four summary cards that reflow to 2×2 and then a single column as the window narrows. */
+.cf-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+.cf-kpis .stat-card { gap: var(--space-2); }
+.cf-kpi-info { width: 12px !important; height: 12px !important; opacity: 0.6; cursor: help; }
+.cf-kpi-delta {
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+}
+.cf-kpi-delta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 600;
+}
+.cf-kpi-delta-good { color: var(--green); }
+.cf-kpi-delta-bad { color: var(--red); }
+.cf-kpi-note {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+.cf-kpi-goal { margin-top: var(--space-1); }
+.cf-kpi-goal-text {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  margin-bottom: var(--space-1);
+}
+.cf-meter {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  overflow: hidden;
+}
+.cf-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 300ms var(--ease);
+}
+
+/* Two-up rows (charts, insights/budgets) that stack on narrow windows. */
+.cf-two-up {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: 30px;
+}
+.cf-two-up > .card { margin-bottom: 0; min-width: 0; }
+
+.cf-attention { padding: 0; }
+.cf-attention-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+.cf-attention > * + * { border-top: 1px solid var(--border-soft); }
+.cf-attention-icon { width: 16px; height: 16px; color: var(--amber); flex-shrink: 0; }
+.cf-attention-text { flex: 1; min-width: 0; font-size: var(--fs-base); }
+.cf-attention-sub {
+  display: block;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+.cf-recurring-list { padding: 0 var(--space-4) var(--space-2) calc(var(--space-4) + 16px + var(--space-3)); }
+.cf-recurring-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  font-size: var(--fs-base);
+}
+
+.cf-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+.cf-section-head h2 { margin: 0; font-size: var(--fs-lg); font-weight: 700; }
 
 /* ─── Light mode ─────────────────────────────────────────────────────────── */
 body.light-mode {
@@ -1485,12 +1826,12 @@ body.light-mode {
   --green-soft: rgba(62, 207, 142, 0.1);
   --red-soft: rgba(240, 97, 107, 0.1);
   --amber-soft: rgba(232, 177, 79, 0.12);
-  --cf-expense-1: #2a78d6;
-  --cf-expense-2: #eb6834;
-  --cf-expense-3: #1baf7a;
-  --cf-income-1: #eda100;
-  --cf-income-2: #e87ba4;
-  --cf-income-3: #008300;
+  --cf-income-1: #0a5536;
+  --cf-income-2: #1f8f5c;
+  --cf-income-3: #58c896;
+  --cf-expense-1: #8f2e15;
+  --cf-expense-2: #d4532a;
+  --cf-expense-3: #f5a07c;
   --cf-uncategorized: #8b96ad;
   --cf-cat-1: #2a78d6;
   --cf-cat-2: #eb6834;

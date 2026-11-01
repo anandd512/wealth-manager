@@ -72,6 +72,7 @@ export const CHANNELS = {
   cashFlowSummary: 'cashFlow:summary',
   cashFlowTrackedAccounts: 'cashFlow:trackedAccounts',
   cashFlowCoverage: 'cashFlow:coverage',
+  cashFlowMissingStatements: 'cashFlow:missingStatements',
   cashFlowCreate: 'cashFlow:create',
   cashFlowUpdate: 'cashFlow:update',
   cashFlowDelete: 'cashFlow:delete',

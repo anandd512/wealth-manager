@@ -427,6 +427,24 @@ export function getAccountCoverage(month: string): CashFlowAccountCoverage[] {
     })
 }
 
+// Bank accounts the user normally imports statements for (at least one import ever)
+// that have none touching `month` — the "you may be missing a statement" nudge.
+// Accounts never imported for are left out, so a savings account the user doesn't
+// spend from never nags.
+export function getMissingStatementAccounts(month: string): string[] {
+  const covered = new Set(getAccountCoverage(month).map((c) => c.account_sync_id))
+  const everImported = new Set(
+    (
+      getDb().prepare('SELECT DISTINCT account_sync_id FROM cash_flow_imports WHERE deleted = 0').all() as {
+        account_sync_id: string
+      }[]
+    ).map((r) => r.account_sync_id)
+  )
+  return listTrackedBankAccounts()
+    .filter((a) => everImported.has(a.sync_id) && !covered.has(a.sync_id))
+    .map((a) => a.name)
+}
+
 interface ApplyExtractionResult {
   importId: number
   transactions: CashFlowTransaction[]
@@ -712,8 +730,12 @@ function csvCell(value: string | number | null): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-export function buildCsv(month?: string): string {
-  const rows = listTransactions(month)
+// `range` scopes to the period on screen; `ids` (when the ledger has filters
+// applied) narrows further to exactly the rows the user is looking at.
+export function buildCsv(range?: { start: string; end: string }, ids?: number[]): string {
+  const inRange = range ? listTransactionsInRange(range.start, range.end) : listTransactions()
+  const idSet = ids ? new Set(ids) : null
+  const rows = idSet ? inRange.filter((r) => idSet.has(r.id)) : inRange
   const accounts = new Map(listTrackedAccounts().map((a) => [a.sync_id, a.name]))
   const header = [
     'Date', 'Direction', 'Description', 'Amount', 'Currency', 'Native amount', 'Category', 'Subcategory',

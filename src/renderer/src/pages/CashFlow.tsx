@@ -1,6 +1,23 @@
 import { api } from '../lib/api'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Upload, RefreshCw, Receipt, Download, Trash2, ChevronLeft, ChevronRight, X, Sparkles, FileSpreadsheet } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import {
+  Plus,
+  Upload,
+  RefreshCw,
+  Receipt,
+  Download,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  ArrowDownLeft,
+  ArrowUpRight,
+  X,
+  Sparkles,
+  Info,
+  AlertTriangle
+} from 'lucide-react'
 import type {
   CashFlowTransaction,
   CashFlowDirection,
@@ -10,22 +27,33 @@ import type {
   CashFlowStatementExtraction,
   CashFlowBudget,
   CashFlowSavingsGoal,
-  CashFlowRecurringTemplate,
-  CashFlowAccountCoverage
+  CashFlowRecurringTemplate
 } from '../../../shared/types'
 import { formatCurrency, formatDate, formatDateShort, formatMonthYear, todayLocalDateString } from '../lib/format'
 import { friendlyError } from '../lib/friendlyError'
 import { categoriesFor, countsTowardPnl } from '../lib/cashFlowCategories'
 import type { PeriodType } from '../lib/cashFlowPeriods'
-import { fyRangeFor, quarterRangeFor, ytdRangeFor, monthRangeFor } from '../lib/cashFlowPeriods'
+import {
+  fyRangeFor,
+  quarterRangeFor,
+  ytdRangeFor,
+  monthRangeFor,
+  shiftMonth,
+  previousRangeFor,
+  monthsInRange,
+  periodPhrase,
+  PERIOD_STEP_MONTHS
+} from '../lib/cashFlowPeriods'
 import CashFlowEntryModal from '../components/CashFlowEntryModal'
 import CashFlowExtractionReviewModal from '../components/CashFlowExtractionReviewModal'
 import CashFlowTrendChart from '../components/CashFlowTrendChart'
 import CashFlowBreakdownChart from '../components/CashFlowBreakdownChart'
 import CashFlowInsights from '../components/CashFlowInsights'
 import CashFlowBudgetCard from '../components/CashFlowBudgetCard'
-import CashFlowRecurringNudge from '../components/CashFlowRecurringNudge'
 import CashFlowImportsModal from '../components/CashFlowImportsModal'
+import CashFlowSummary, { type PeriodTotals } from '../components/CashFlowSummary'
+import CashFlowAttention from '../components/CashFlowAttention'
+import CashFlowOnboarding from '../components/CashFlowOnboarding'
 import CashFlowFilterBar, { matchesFilters, DEFAULT_FILTERS, type CashFlowFilters } from '../components/CashFlowFilterBar'
 import ActionMenu from '../components/ActionMenu'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -48,6 +76,29 @@ const PAGE_SIZE = 100
 
 type SortKey = 'date' | 'amount' | 'description' | 'category'
 
+// The bulk-category picker starts on '' (nothing chosen, Apply disabled) so a stray
+// click can't wipe categories; clearing them is its own explicit option.
+const BULK_CLEAR = '__clear__'
+
+const PERIOD_TYPES: { value: PeriodType; label: string; title: string }[] = [
+  { value: 'month', label: 'Month', title: 'One calendar month' },
+  { value: 'quarter', label: 'Quarter', title: 'Calendar quarter (Jan–Mar, Apr–Jun, …)' },
+  { value: 'fy', label: 'FY', title: 'Financial year — April to March' },
+  { value: 'ytd', label: 'YTD', title: 'Year to date — 1 January to today' },
+  { value: 'custom', label: 'Custom', title: 'Pick your own start and end dates' }
+]
+type BulkCategoryChoice = CashFlowCategory | '' | typeof BULK_CLEAR
+
+function pnlTotals(rows: CashFlowTransaction[]): PeriodTotals {
+  const totals: PeriodTotals = { income: 0, expense: 0, excludedIn: 0, excludedOut: 0 }
+  for (const t of rows) {
+    const counted = countsTowardPnl(t.category)
+    if (t.direction === 'income') totals[counted ? 'income' : 'excludedIn'] += t.amount
+    else totals[counted ? 'expense' : 'excludedOut'] += t.amount
+  }
+  return totals
+}
+
 interface ReviewDocument {
   path: string
   originalName: string | null
@@ -62,6 +113,7 @@ interface PendingDuplicate {
 
 export default function CashFlow(): JSX.Element {
   const { ensureDecrypted, modal: passwordModal } = useDecryptedUpload()
+  const navigate = useNavigate()
   const [months, setMonths] = useState<string[]>([])
   const [selectedMonth, setSelectedMonth] = useState<string>(
     () => sessionStorage.getItem(SESSION_MONTH_KEY) || currentMonth()
@@ -70,10 +122,13 @@ export default function CashFlow(): JSX.Element {
   const [customStart, setCustomStart] = useState(defaultDateFor(currentMonth()))
   const [customEnd, setCustomEnd] = useState(todayLocalDateString())
   const [transactions, setTransactions] = useState<CashFlowTransaction[]>([])
+  // The period just before the one on screen (null for custom ranges) — every
+  // "vs …" figure compares against this, like-for-like.
+  const [prevTransactions, setPrevTransactions] = useState<CashFlowTransaction[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [summary, setSummary] = useState<CashFlowMonthSummary[]>([])
   const [trackedAccounts, setTrackedAccounts] = useState<CashFlowTrackedAccount[]>([])
-  const [coverage, setCoverage] = useState<CashFlowAccountCoverage[]>([])
+  const [missingStatements, setMissingStatements] = useState<string[]>([])
   const [budgets, setBudgets] = useState<CashFlowBudget[]>([])
   const [savingsGoal, setSavingsGoal] = useState<CashFlowSavingsGoal>({ monthlyTarget: null })
   const [recurringDue, setRecurringDue] = useState<CashFlowRecurringTemplate[]>([])
@@ -86,14 +141,20 @@ export default function CashFlow(): JSX.Element {
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
-  const [showUncategorizedOnly, setShowUncategorizedOnly] = useState(false)
+  // First-load flags: until both land, the page shows skeletons rather than ₹0
+  // cards and "no transactions" messages that are about to be wrong.
+  const [sharedLoaded, setSharedLoaded] = useState(false)
+  const [periodLoaded, setPeriodLoaded] = useState(false)
+  // Why "Import bank statement" can't proceed yet, with a link to fix it — shown
+  // instead of a disabled button whose only explanation is a hover tooltip.
+  const [setupIssue, setSetupIssue] = useState<'no_accounts' | 'no_ai' | null>(null)
 
   const [modalDirection, setModalDirection] = useState<CashFlowDirection | null>(null)
   const [editingTxn, setEditingTxn] = useState<CashFlowTransaction | null>(null)
   const [pendingDelete, setPendingDelete] = useState<CashFlowTransaction | null>(null)
-  const [pendingDeleteImport, setPendingDeleteImport] = useState<{ importId: number } | null>(null)
+  const [pendingBulkDelete, setPendingBulkDelete] = useState<{ rows: CashFlowTransaction[]; clear: () => void } | null>(null)
   const [showImportsModal, setShowImportsModal] = useState(false)
-  const [recentlyDeleted, setRecentlyDeleted] = useState<{ id: number; description: string } | null>(null)
+  const [recentlyDeleted, setRecentlyDeleted] = useState<{ ids: number[]; label: string } | null>(null)
 
   const [extracting, setExtracting] = useState(false)
   const [extractProgress, setExtractProgress] = useState<{ completed: number; total: number } | null>(null)
@@ -105,10 +166,15 @@ export default function CashFlow(): JSX.Element {
   const [pendingConsent, setPendingConsent] = useState(false)
   const [uploadQueue, setUploadQueue] = useState<string[]>([])
 
+  // One selection per table — the "All" view gets its own rather than borrowing the
+  // income set, which used to carry hidden expense ids into the split view's
+  // "Delete N" action.
   const [selectedIncome, setSelectedIncome] = useState<Set<number>>(new Set())
   const [selectedExpense, setSelectedExpense] = useState<Set<number>>(new Set())
-  const [incomeBulkCategory, setIncomeBulkCategory] = useState<CashFlowCategory | ''>('')
-  const [expenseBulkCategory, setExpenseBulkCategory] = useState<CashFlowCategory | ''>('')
+  const [selectedAll, setSelectedAll] = useState<Set<number>>(new Set())
+  const [incomeBulkCategory, setIncomeBulkCategory] = useState<BulkCategoryChoice>('')
+  const [expenseBulkCategory, setExpenseBulkCategory] = useState<BulkCategoryChoice>('')
+  const [allBulkCategory, setAllBulkCategory] = useState<BulkCategoryChoice>('')
 
   const loadShared = async (): Promise<void> => {
     const [m, s, accs, b, goal] = await Promise.all([
@@ -123,6 +189,7 @@ export default function CashFlow(): JSX.Element {
     setTrackedAccounts(accs)
     setBudgets(b)
     setSavingsGoal(goal)
+    setSharedLoaded(true)
   }
 
   const currentRange = useMemo(() => {
@@ -133,27 +200,40 @@ export default function CashFlow(): JSX.Element {
     return { start: customStart, end: customEnd, label: 'Custom range' }
   }, [periodType, selectedMonth, customStart, customEnd])
 
-  const loadPeriod = async (): Promise<void> => {
+  const previous = previousRangeFor(periodType, selectedMonth, todayLocalDateString())
+
+  const fetchPeriod = async (): Promise<{ rows: CashFlowTransaction[]; prevRows: CashFlowTransaction[] | null }> => {
+    const [rows, prevRows] = await Promise.all([
+      periodType === 'month'
+        ? api().cashFlow.list(selectedMonth)
+        : api().cashFlow.listRange(currentRange.start, currentRange.end),
+      previous ? api().cashFlow.listRange(previous.range.start, previous.range.end) : Promise.resolve(null)
+    ])
+    return { rows, prevRows }
+  }
+
+  const loadPeriod = async (isStale: () => boolean = () => false): Promise<void> => {
     setLoadError(null)
     try {
-      const rows =
-        periodType === 'month'
-          ? await api().cashFlow.list(selectedMonth)
-          : await api().cashFlow.listRange(currentRange.start, currentRange.end)
+      const { rows, prevRows } = await fetchPeriod()
+      if (isStale()) return
       setTransactions(rows)
+      setPrevTransactions(prevRows)
     } catch (e) {
-      setLoadError(friendlyError(e))
+      if (!isStale()) setLoadError(friendlyError(e))
+    } finally {
+      if (!isStale()) setPeriodLoaded(true)
     }
   }
 
   const loadExtras = async (): Promise<void> => {
     try {
-      const [cov, due, sample] = await Promise.all([
-        api().cashFlow.coverage(selectedMonth),
+      const [missing, due, sample] = await Promise.all([
+        api().cashFlow.missingStatements(selectedMonth),
         api().cashFlow.recurringDue(selectedMonth),
         api().cashFlow.hasSampleData()
       ])
-      setCoverage(cov)
+      setMissingStatements(missing)
       setRecurringDue(due)
       setHasSampleData(sample.hasSampleData)
     } catch {
@@ -179,17 +259,23 @@ export default function CashFlow(): JSX.Element {
 
   useEffect(() => {
     sessionStorage.setItem(SESSION_MONTH_KEY, selectedMonth)
+  }, [selectedMonth])
+
+  // Any change to what's on screen drops the selection, so a bulk action can never
+  // reach rows the user can no longer see.
+  useEffect(() => {
     setVisibleCount(PAGE_SIZE)
     setSelectedIncome(new Set())
     setSelectedExpense(new Set())
-  }, [selectedMonth])
+    setSelectedAll(new Set())
+  }, [selectedMonth, periodType, customStart, customEnd, viewMode])
 
   // Request-id guard (#16): if the user flips through months quickly, an older
   // in-flight response landing after a newer one would otherwise show stale data.
   useEffect(() => {
     let cancelled = false
     const run = async (): Promise<void> => {
-      await loadPeriod()
+      await loadPeriod(() => cancelled)
       if (cancelled) return
       await loadExtras()
     }
@@ -209,8 +295,16 @@ export default function CashFlow(): JSX.Element {
     return trackedAccounts.find((a) => a.sync_id === syncId)?.name ?? '(account closed)'
   }
 
-  const filtered = transactions.filter((t) => matchesFilters(t, filters) && (!showUncategorizedOnly || !t.category))
+  const filtered = transactions.filter((t) => matchesFilters(t, filters))
   const uncategorizedCount = transactions.filter((t) => !t.category).length
+  // "Review" in the attention strip drives the same filter as the filter bar's
+  // Uncategorized option, so the two can never disagree about what's shown.
+  const reviewingUncategorized = filters.category === 'uncategorized'
+  const transactionsRef = useRef<HTMLDivElement>(null)
+  const toggleUncategorizedReview = (): void => {
+    setFilters((f) => ({ ...f, category: f.category === 'uncategorized' ? '' : 'uncategorized' }))
+    if (!reviewingUncategorized) transactionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   const sortRows = (rows: CashFlowTransaction[]): CashFlowTransaction[] => {
     const sorted = [...rows].sort((a, b) => {
@@ -227,18 +321,13 @@ export default function CashFlow(): JSX.Element {
   const incomeRows = sortRows(filtered.filter((t) => t.direction === 'income'))
   const expenseRows = sortRows(filtered.filter((t) => t.direction === 'expense'))
   const allRows = sortRows(filtered).slice(0, visibleCount)
-  const incomeTotal = transactions
-    .filter((t) => t.direction === 'income' && countsTowardPnl(t.category))
-    .reduce((sum, t) => sum + t.amount, 0)
-  const expenseTotal = transactions
-    .filter((t) => t.direction === 'expense' && countsTowardPnl(t.category))
-    .reduce((sum, t) => sum + t.amount, 0)
-  const netThisPeriod = incomeTotal - expenseTotal
-  const savingsRate = incomeTotal > 0 ? (netThisPeriod / incomeTotal) * 100 : null
+  const totals = pnlTotals(transactions)
+  const netThisPeriod = totals.income - totals.expense
 
-  const thisMonthIdx = summary.findIndex((s) => s.month === selectedMonth)
-  const lastMonthSummary = thisMonthIdx > 0 ? summary[thisMonthIdx - 1] : null
-  const netDeltaVsLastMonth = lastMonthSummary ? netThisPeriod - lastMonthSummary.net : null
+  // Only compared when the previous period actually has data — "+₹72,000 vs last
+  // quarter" against an empty quarter is noise, not insight.
+  const prevTotals = prevTransactions && prevTransactions.length > 0 ? pnlTotals(prevTransactions) : null
+  const periodMonths = monthsInRange(periodType, currentRange)
 
   // Running balance only makes sense scoped to one account — shown in the unified
   // "All" view when a single account filter is active (#20).
@@ -256,28 +345,25 @@ export default function CashFlow(): JSX.Element {
 
   const remove = (t: CashFlowTransaction): void => setPendingDelete(t)
 
+  const offerUndo = (ids: number[], label: string): void => {
+    const entry = { ids, label }
+    setRecentlyDeleted(entry)
+    setTimeout(() => setRecentlyDeleted((cur) => (cur === entry ? null : cur)), 8000)
+  }
+
   const confirmRemove = async (): Promise<void> => {
     if (!pendingDelete) return
     const { id, description } = pendingDelete
     setPendingDelete(null)
     await api().cashFlow.remove(id)
-    setRecentlyDeleted({ id, description })
-    setTimeout(() => setRecentlyDeleted((cur) => (cur?.id === id ? null : cur)), 8000)
+    offerUndo([id], `"${description}"`)
     reloadAll()
   }
 
   const undoDelete = async (): Promise<void> => {
     if (!recentlyDeleted) return
-    await api().cashFlow.restore(recentlyDeleted.id)
+    await Promise.all(recentlyDeleted.ids.map((id) => api().cashFlow.restore(id)))
     setRecentlyDeleted(null)
-    reloadAll()
-  }
-
-  const confirmRemoveImport = async (): Promise<void> => {
-    if (!pendingDeleteImport) return
-    const { importId } = pendingDeleteImport
-    setPendingDeleteImport(null)
-    await api().cashFlow.deleteImport(importId)
     reloadAll()
   }
 
@@ -293,22 +379,40 @@ export default function CashFlow(): JSX.Element {
     setFn(next)
   }
 
-  const bulkCategorize = async (ids: Set<number>, category: CashFlowCategory | '', clear: () => void): Promise<void> => {
-    if (ids.size === 0) return
-    await api().cashFlow.bulkUpdateCategory(Array.from(ids), category || null, null)
+  const bulkCategorize = async (ids: number[], choice: BulkCategoryChoice, clear: () => void): Promise<void> => {
+    if (ids.length === 0 || choice === '') return
+    await api().cashFlow.bulkUpdateCategory(ids, choice === BULK_CLEAR ? null : choice, null)
     clear()
     reloadAll()
   }
 
-  const bulkDelete = async (ids: Set<number>, clear: () => void): Promise<void> => {
-    if (ids.size === 0) return
-    await api().cashFlow.bulkRemove(Array.from(ids))
+  const confirmBulkDelete = async (): Promise<void> => {
+    if (!pendingBulkDelete) return
+    const { rows, clear } = pendingBulkDelete
+    setPendingBulkDelete(null)
+    const ids = rows.map((r) => r.id)
+    await api().cashFlow.bulkRemove(ids)
     clear()
+    offerUndo(ids, `${ids.length} transaction${ids.length === 1 ? '' : 's'}`)
     reloadAll()
   }
 
+  const filtersActive =
+    filters.search !== '' ||
+    filters.category !== '' ||
+    filters.accountSyncId !== '' ||
+    filters.source !== 'all'
+
+  // Exports exactly what's on screen: the selected period, and only the filtered
+  // rows when a filter is active.
   const exportCsv = async (): Promise<void> => {
-    await api().cashFlow.exportCsv(periodType === 'month' ? selectedMonth : undefined)
+    const label = periodType === 'month' ? selectedMonth : `${currentRange.start}-to-${currentRange.end}`
+    await api().cashFlow.exportCsv({
+      start: currentRange.start,
+      end: currentRange.end,
+      label,
+      ids: filtersActive ? filtered.map((t) => t.id) : undefined
+    })
   }
 
   const generateSample = async (): Promise<void> => {
@@ -407,11 +511,16 @@ export default function CashFlow(): JSX.Element {
 
   const uploadStatement = async (): Promise<void> => {
     setExtractError(null)
+    setSetupIssue(null)
+    if (trackedAccounts.length === 0) {
+      setSetupIssue('no_accounts')
+      return
+    }
     const appSettings = await api().settings.get()
     const providerConfigured =
       appSettings.extractionProvider === 'anthropic' ? appSettings.hasAnthropicKey : appSettings.hasOpenAiKey
     if (!providerConfigured) {
-      setExtractError('Set up an AI provider in Settings before uploading a statement.')
+      setSetupIssue('no_ai')
       return
     }
     const consent = await api().cashFlow.consentStatus()
@@ -430,13 +539,47 @@ export default function CashFlow(): JSX.Element {
 
   // Months with data plus the current month, so there's always something sensible to
   // land on even before any transactions exist.
-  const monthOptions = Array.from(new Set([currentMonth(), ...months])).sort().reverse()
-  const noTrackedAccounts = trackedAccounts.length === 0
+  // selectedMonth is always included (the arrows can land on a month with no data),
+  // otherwise the <select> would show a different month than the one loaded.
+  const monthOptions = Array.from(new Set([currentMonth(), selectedMonth, ...months]))
+    .filter((m) => m <= currentMonth())
+    .sort()
+    .reverse()
 
-  const shiftMonth = (delta: number): void => {
-    const [y, m] = selectedMonth.split('-').map(Number)
-    const d = new Date(y, m - 1 + delta, 1)
-    setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  const openAdd = (direction: CashFlowDirection): void => {
+    setEditingTxn(null)
+    setModalDirection(direction)
+  }
+
+  // No data anywhere — the whole page becomes the onboarding panel.
+  const isEmpty = sharedLoaded && periodLoaded && months.length === 0 && transactions.length === 0
+  // The breakdown chart renders nothing without counted expenses, so its card
+  // shouldn't render either (it used to leave an empty titled card).
+  const hasCountedExpenses = transactions.some((t) => t.direction === 'expense' && countsTowardPnl(t.category))
+
+  const renderEmptyRows = (noun: string): JSX.Element => (
+    <div className="muted" style={{ padding: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+      {filtersActive ? (
+        <>
+          No {noun} match these filters.
+          <button className="btn secondary small" onClick={() => setFilters(DEFAULT_FILTERS)}>
+            Clear filters
+          </button>
+        </>
+      ) : (
+        <>No {noun} in this period.</>
+      )}
+    </div>
+  )
+
+  // Arrows step by the period's own length (a month, a quarter, a FY) and stop at
+  // the period containing today — there's nothing to see in the future.
+  const step = PERIOD_STEP_MONTHS[periodType]
+  const canStepForward = step !== null && currentRange.end < todayLocalDateString()
+  const stepPeriod = (direction: -1 | 1): void => {
+    if (step === null) return
+    if (direction === 1 && !canStepForward) return
+    setSelectedMonth(shiftMonth(selectedMonth, direction * step))
   }
 
   function renderTable(
@@ -444,14 +587,24 @@ export default function CashFlow(): JSX.Element {
     direction: CashFlowDirection | 'all',
     selected: Set<number>,
     setSelected: (s: Set<number>) => void,
-    bulkCategory: CashFlowCategory | '',
-    setBulkCategory: (c: CashFlowCategory | '') => void
+    bulkCategory: BulkCategoryChoice,
+    setBulkCategory: (c: BulkCategoryChoice) => void
   ): JSX.Element {
-    const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id))
-    // Net for the "all" view (income positive, expense negative); a plain sum for the split tables (#32).
-    const total = rows.reduce((sum, r) => sum + (direction === 'all' ? (r.direction === 'income' ? r.amount : -r.amount) : r.amount), 0)
-    const sortHeader = (key: SortKey, label: string): JSX.Element => (
+    // Bulk actions only ever touch rows that are actually on screen — a selection
+    // made before a filter changed can't reach rows the filter now hides.
+    const selectedRows = rows.filter((r) => selected.has(r.id))
+    const selectedIds = selectedRows.map((r) => r.id)
+    const clearSelection = (): void => setSelected(new Set())
+    const allSelected = rows.length > 0 && selectedRows.length === rows.length
+    // Footer totals use the same rule as the summary cards (transfers and
+    // reimbursements don't count), so the two never disagree. Net for the "all"
+    // view (income positive, expense negative); a plain sum for the split tables (#32).
+    const signed = (r: CashFlowTransaction): number => (direction === 'all' && r.direction === 'expense' ? -r.amount : r.amount)
+    const countedTotal = rows.filter((r) => countsTowardPnl(r.category)).reduce((sum, r) => sum + signed(r), 0)
+    const notCountedTotal = rows.filter((r) => !countsTowardPnl(r.category)).reduce((sum, r) => sum + r.amount, 0)
+    const sortHeader = (key: SortKey, label: string, className?: string): JSX.Element => (
       <th
+        className={className}
         style={{ cursor: 'pointer', userSelect: 'none' }}
         onClick={() => {
           if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -467,28 +620,48 @@ export default function CashFlow(): JSX.Element {
     )
     return (
       <>
-        {selected.size > 0 && (
+        {selectedRows.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: 'var(--accent-soft)', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>{selected.size} selected</span>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{selectedRows.length} selected</span>
             {direction !== 'all' && (
-              <select value={bulkCategory} onChange={(e) => setBulkCategory(e.target.value as CashFlowCategory | '')}>
-                <option value="">Uncategorized</option>
+              <select
+                value={bulkCategory}
+                onChange={(e) => setBulkCategory(e.target.value as BulkCategoryChoice)}
+                aria-label="Category for selected transactions"
+              >
+                <option value="" disabled>
+                  Choose category…
+                </option>
                 {categoriesFor(direction, 'short').map((c) => (
                   <option key={c.value} value={c.value}>
                     {c.label}
                   </option>
                 ))}
+                <option value={BULK_CLEAR}>Uncategorized (clear category)</option>
               </select>
             )}
             {direction !== 'all' && (
-              <button className="btn secondary small" onClick={() => bulkCategorize(selected, bulkCategory, () => setSelected(new Set()))}>
+              <button
+                className="btn secondary small"
+                disabled={bulkCategory === ''}
+                onClick={() =>
+                  bulkCategorize(selectedIds, bulkCategory, () => {
+                    clearSelection()
+                    setBulkCategory('')
+                  })
+                }
+              >
                 Apply category
               </button>
             )}
-            <button className="btn secondary small" style={{ color: 'var(--red)' }} onClick={() => bulkDelete(selected, () => setSelected(new Set()))}>
-              <Trash2 size={13} /> Delete {selected.size}
+            <button
+              className="btn secondary small"
+              style={{ color: 'var(--red)' }}
+              onClick={() => setPendingBulkDelete({ rows: selectedRows, clear: clearSelection })}
+            >
+              <Trash2 size={13} /> Delete {selectedRows.length}
             </button>
-            <button className="btn secondary small" onClick={() => setSelected(new Set())}>
+            <button className="btn secondary small" onClick={clearSelection}>
               Clear
             </button>
           </div>
@@ -498,13 +671,18 @@ export default function CashFlow(): JSX.Element {
             <thead>
               <tr>
                 <th style={{ width: 24 }}>
-                  <input type="checkbox" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} />
+                  <input
+                    type="checkbox"
+                    aria-label="Select all"
+                    checked={allSelected}
+                    onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())}
+                  />
                 </th>
                 {sortHeader('date', 'Date')}
                 {sortHeader('description', 'Description')}
                 {sortHeader('category', 'Category')}
-                {sortHeader('amount', 'Amount')}
-                {runningBalances && <th>Balance</th>}
+                {sortHeader('amount', 'Amount', 'num')}
+                {runningBalances && <th className="num">Balance</th>}
                 <th></th>
               </tr>
             </thead>
@@ -512,15 +690,15 @@ export default function CashFlow(): JSX.Element {
               {rows.map((t) => (
                 <tr key={t.id}>
                   <td>
-                    <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleSelected(selected, setSelected, t.id)} />
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${t.description}`}
+                      checked={selected.has(t.id)}
+                      onChange={() => toggleSelected(selected, setSelected, t.id)}
+                    />
                   </td>
                   <td className="muted">{formatDateShort(t.txn_date)}</td>
                   <td>
-                    {direction === 'all' && (
-                      <span style={{ color: t.direction === 'income' ? 'var(--green)' : 'var(--red)', marginRight: 4 }}>
-                        {t.direction === 'income' ? '+' : '−'}
-                      </span>
-                    )}
                     {t.description}
                     {accountName(t.account_sync_id) !== '—' && (
                       <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>
@@ -544,7 +722,11 @@ export default function CashFlow(): JSX.Element {
                     )}
                   </td>
                   <td>
-                    <select value={t.category ?? ''} onChange={(e) => setCategory(t.id, (e.target.value || null) as CashFlowCategory | null)}>
+                    <select
+                      value={t.category ?? ''}
+                      onChange={(e) => setCategory(t.id, (e.target.value || null) as CashFlowCategory | null)}
+                      aria-label={`Category for ${t.description}`}
+                    >
                       <option value="">Uncategorized</option>
                       {categoriesFor(t.direction, 'short').map((c) => (
                         <option key={c.value} value={c.value}>
@@ -553,8 +735,18 @@ export default function CashFlow(): JSX.Element {
                       ))}
                     </select>
                   </td>
-                  <td>{formatCurrency(t.amount)}</td>
-                  {runningBalances && <td className="muted">{formatCurrency(runningBalances.get(t.id) ?? 0)}</td>}
+                  {countsTowardPnl(t.category) ? (
+                    <td className={`num ${t.direction === 'income' ? 'amount-in' : 'amount-out'}`}>
+                      {t.direction === 'income' ? '+' : '−'}
+                      {formatCurrency(t.amount)}
+                    </td>
+                  ) : (
+                    <td className="num amount-muted" title="Not counted in income/expense totals (transfer or reimbursement)">
+                      {t.direction === 'income' ? '+' : '−'}
+                      {formatCurrency(t.amount)}
+                    </td>
+                  )}
+                  {runningBalances && <td className="num muted">{formatCurrency(runningBalances.get(t.id) ?? 0)}</td>}
                   <td style={{ textAlign: 'right' }}>
                     <ActionMenu
                       items={[
@@ -565,9 +757,8 @@ export default function CashFlow(): JSX.Element {
                               { icon: ICON_DOWNLOAD, label: 'Download statement', onClick: () => api().cashFlow.downloadDocument(t.document_path!, t.document_original_name) }
                             ]
                           : []),
-                        ...(t.import_id
-                          ? [{ icon: ICON_DELETE, label: 'Delete entire import…', danger: true, onClick: () => setPendingDeleteImport({ importId: t.import_id! }) }]
-                          : []),
+                        // Deleting a whole import lives only in "Uploaded statements" —
+                        // a many-row delete doesn't belong next to single-row Delete.
                         { icon: ICON_DELETE, label: 'Delete', danger: true, onClick: () => remove(t) }
                       ]}
                     />
@@ -581,8 +772,15 @@ export default function CashFlow(): JSX.Element {
                   <td></td>
                   <td colSpan={3}>
                     Total ({rows.length})
+                    {notCountedTotal > 0 && (
+                      <div className="muted" style={{ fontSize: 11, fontWeight: 400 }}>
+                        Excludes {formatCurrency(notCountedTotal)} in transfers/reimbursements
+                      </div>
+                    )}
                   </td>
-                  <td style={direction === 'all' ? { color: total >= 0 ? 'var(--green)' : 'var(--red)' } : undefined}>{formatCurrency(total)}</td>
+                  <td className="num" style={direction === 'all' ? { color: countedTotal >= 0 ? 'var(--green)' : 'var(--red)' } : undefined}>
+                    {formatCurrency(countedTotal)}
+                  </td>
                   {runningBalances && <td></td>}
                   <td></td>
                 </tr>
@@ -594,76 +792,146 @@ export default function CashFlow(): JSX.Element {
     )
   }
 
+  const stepNoun = periodType === 'fy' ? 'FY' : periodType
+
   return (
     <div>
-      <div className="toolbar">
-        <h1 className="page-title" style={{ marginBottom: 0 }}>
-          Cash Flow
-        </h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {periodType === 'month' && (
-            <>
-              <button className="icon-btn" onClick={() => shiftMonth(-1)} title="Previous month">
-                <ChevronLeft size={16} />
-              </button>
-              <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)}>
-                {monthOptions.map((m) => (
-                  <option key={m} value={m}>
-                    {formatMonthYear(m)}
-                  </option>
-                ))}
-              </select>
-              <button className="icon-btn" onClick={() => shiftMonth(1)} title="Next month">
-                <ChevronRight size={16} />
-              </button>
-            </>
+      <div className="cf-header">
+        <div>
+          <h1 className="page-title">Cash Flow</h1>
+          {!isEmpty && (
+            <div className="cf-header-sub">
+              {formatDate(currentRange.start)} – {formatDate(currentRange.end)}
+            </div>
           )}
-          <select value={periodType} onChange={(e) => setPeriodType(e.target.value as PeriodType)}>
-            <option value="month">Month</option>
-            <option value="quarter">Quarter</option>
-            <option value="fy">Financial year</option>
-            <option value="ytd">Year to date</option>
-            <option value="custom">Custom range</option>
-          </select>
-          {periodType === 'custom' && (
-            <>
-              <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
-              <span className="muted">to</span>
-              <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
-            </>
-          )}
-          <button className="btn secondary" onClick={() => setShowImportsModal(true)} title="See every statement you've uploaded">
-            <Receipt size={14} /> Uploaded statements
-          </button>
-          <button className="btn secondary" onClick={exportCsv} title="Export as CSV">
-            <Download size={14} /> Export CSV
-          </button>
-          <button
-            className="btn"
-            onClick={uploadStatement}
-            disabled={extracting || noTrackedAccounts}
-            title={
-              noTrackedAccounts
-                ? 'Add a bank account first (under Accounts) before uploading a statement'
-                : 'Upload a bank statement (PDF/CSV/photo) and AI reads every transaction line from it.'
-            }
-          >
-            <Upload size={14} /> {extracting ? 'Reading statement…' : 'Import bank statement'}
-          </button>
         </div>
+        {!isEmpty && (
+          <div className="cf-header-controls">
+            {step !== null && (
+              <div className="cf-period-nav">
+                <button className="icon-btn" onClick={() => stepPeriod(-1)} title={`Previous ${stepNoun}`} aria-label={`Previous ${stepNoun}`}>
+                  <ChevronLeft size={16} />
+                </button>
+                {periodType === 'month' ? (
+                  <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} aria-label="Month">
+                    {monthOptions.map((m) => (
+                      <option key={m} value={m}>
+                        {formatMonthYear(m)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="cf-period-label">{currentRange.label}</span>
+                )}
+                <button
+                  className="icon-btn"
+                  onClick={() => stepPeriod(1)}
+                  disabled={!canStepForward}
+                  title={`Next ${stepNoun}`}
+                  aria-label={`Next ${stepNoun}`}
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+            <div className="segmented" role="group" aria-label="Period">
+              {PERIOD_TYPES.map((p) => (
+                <button key={p.value} type="button" title={p.title} aria-pressed={periodType === p.value} onClick={() => setPeriodType(p.value)}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <ActionMenu
+              ariaLabel="More actions"
+              items={[
+                { icon: Receipt, label: 'Uploaded statements', onClick: () => setShowImportsModal(true) },
+                {
+                  icon: Download,
+                  label: filtersActive ? 'Export filtered rows (CSV)' : 'Export this period (CSV)',
+                  onClick: () => void exportCsv()
+                },
+                ...(hasSampleData
+                  ? [{ icon: Trash2, label: 'Remove sample data', danger: true, onClick: () => void removeSample() }]
+                  : [])
+              ]}
+            />
+            <ActionMenu
+              triggerClassName="btn"
+              trigger={
+                <>
+                  <Plus size={14} /> Add <ChevronDown size={13} />
+                </>
+              }
+              items={[
+                { icon: ArrowDownLeft, label: 'Add income', hint: 'Salary, interest, a refund…', onClick: () => openAdd('income') },
+                { icon: ArrowUpRight, label: 'Add expense', hint: 'A bill, groceries, a cash spend…', onClick: () => openAdd('expense') },
+                {
+                  icon: Upload,
+                  label: extracting ? 'Reading a statement…' : 'Import bank statement',
+                  hint: 'PDF, CSV or a photo — AI reads every transaction for you to review',
+                  onClick: () => {
+                    if (!extracting) void uploadStatement()
+                  }
+                }
+              ]}
+            />
+          </div>
+        )}
       </div>
 
-      {showIntro && (
-        <div className="help-text section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-          <span>
-            Cash Flow tracks money moving in and out — your salary and other <strong>income</strong>, day-to-day{' '}
-            <strong>expenses</strong>, and what you set aside as <strong>savings</strong> (income minus expenses).
-            Transfers between your own accounts aren&apos;t income or expense, so leave those uncategorized or skip
-            them. Upload a bank statement and AI will sort most of this out for you.
-          </span>
+      {periodType === 'custom' && !isEmpty && (
+        <div className="cf-custom-range">
+          <span className="muted">From</span>
+          <input type="date" value={customStart} max={customEnd} onChange={(e) => setCustomStart(e.target.value)} aria-label="Start date" />
+          <span className="muted">to</span>
+          <input type="date" value={customEnd} min={customStart} onChange={(e) => setCustomEnd(e.target.value)} aria-label="End date" />
+        </div>
+      )}
+
+      {setupIssue && (
+        <div className="notice warn section" role="alert">
+          <AlertTriangle />
+          <div className="notice-body">
+            {setupIssue === 'no_accounts'
+              ? 'Add your bank account first — each statement is filed under the account it belongs to.'
+              : 'Connect an AI provider to read statements — add an Anthropic or OpenAI key in Settings.'}
+          </div>
+          <div className="notice-actions">
+            <button className="btn small" onClick={() => navigate(setupIssue === 'no_accounts' ? '/accounts' : '/settings')}>
+              {setupIssue === 'no_accounts' ? 'Go to Accounts' : 'Open Settings'}
+            </button>
+            <button className="icon-btn" onClick={() => setSetupIssue(null)} title="Dismiss" aria-label="Dismiss">
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {hasSampleData && !isEmpty && (
+        <div className="notice info section">
+          <Sparkles />
+          <div className="notice-body">
+            You&apos;re looking at sample data. Remove it before adding your own so the two don&apos;t mix.
+          </div>
+          <div className="notice-actions">
+            <button className="btn secondary small" onClick={removeSample} disabled={sampleBusy}>
+              {sampleBusy ? 'Removing…' : 'Remove sample data'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showIntro && !isEmpty && !hasSampleData && (
+        <div className="notice info section">
+          <Info />
+          <div className="notice-body">
+            Transfers between your own accounts and reimbursements are tracked but don&apos;t count as money in or out —
+            so your totals reflect what you actually earned and spent.
+          </div>
           <button
             className="icon-btn"
             title="Dismiss"
+            aria-label="Dismiss"
             onClick={() => {
               setShowIntro(false)
               localStorage.setItem(INTRO_DISMISSED_KEY, '1')
@@ -674,227 +942,200 @@ export default function CashFlow(): JSX.Element {
         </div>
       )}
 
-      {periodType !== 'month' && (
-        <div className="help-text section" style={{ marginTop: -8 }}>
-          Showing {currentRange.label}: {formatDate(currentRange.start)} – {formatDate(currentRange.end)}
-        </div>
-      )}
-
-      {extracting && (
-        <div className="syncing-banner" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <RefreshCw size={15} className="spin" />
-            {extractProgress && extractProgress.total > 1
-              ? `Reading statement… ${Math.round((extractProgress.completed / extractProgress.total) * 100)}% ` +
-                `(part ${extractProgress.completed} of ${extractProgress.total})`
-              : 'Your AI provider is reading the statement…'}
-            <button className="btn secondary small" style={{ marginLeft: 'auto' }} onClick={cancelExtraction}>
-              Cancel
-            </button>
-          </div>
-          {extractProgress && extractProgress.total > 1 && (
-            <div style={{ height: 4, background: 'var(--bg-inset)', borderRadius: 4, overflow: 'hidden' }}>
-              <div
-                style={{
-                  height: '100%',
-                  width: `${Math.round((extractProgress.completed / extractProgress.total) * 100)}%`,
-                  background: 'var(--accent)',
-                  transition: 'width 200ms ease'
-                }}
-              />
-            </div>
-          )}
-        </div>
-      )}
-      {uploadQueue.length > 0 && (
-        <div className="help-text section">{uploadQueue.length} more statement{uploadQueue.length === 1 ? '' : 's'} queued</div>
-      )}
       {extractError && (
-        <div className="error-text section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          {extractError}
+        <div className="notice error section" role="alert">
+          <AlertTriangle />
+          <div className="notice-body">{extractError}</div>
           <button className="icon-btn" onClick={() => setExtractError(null)} title="Dismiss">
             <X size={14} />
           </button>
         </div>
       )}
       {loadError && (
-        <div className="error-text section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          {loadError}
-          <button className="btn secondary small" onClick={loadPeriod}>Retry</button>
-        </div>
-      )}
-
-      {recentlyDeleted && (
-        <div className="syncing-banner" style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span>Deleted "{recentlyDeleted.description}"</span>
-          <button className="btn secondary small" onClick={undoDelete}>Undo</button>
-        </div>
-      )}
-
-      <CashFlowRecurringNudge due={recurringDue} month={selectedMonth} onHandled={loadExtras} />
-
-      {trackedAccounts.length > 0 && periodType === 'month' && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-          {trackedAccounts.map((a) => {
-            const covered = coverage.some((c) => c.account_sync_id === a.sync_id)
-            return (
-              <span key={a.sync_id} className={`badge ${covered ? 'ok' : 'warn'}`} title={covered ? `Statement imported for ${a.name}` : `No statement imported for ${a.name} this month`}>
-                {a.name}: {covered ? 'imported' : 'no statement'}
-              </span>
-            )
-          })}
-        </div>
-      )}
-
-      <div className="grid cols-3 section">
-        <div className="card stat-card">
-          <div className="label">Income</div>
-          <div className="value positive">{formatCurrency(incomeTotal)}</div>
-        </div>
-        <div className="card stat-card">
-          <div className="label">Expense</div>
-          <div className="value negative">{formatCurrency(expenseTotal)}</div>
-        </div>
-        <div className="card stat-card">
-          <div className="label">{netThisPeriod >= 0 ? 'Saved' : 'Overspent'}</div>
-          <div className={`value ${netThisPeriod >= 0 ? 'positive' : 'negative'}`}>
-            {formatCurrency(Math.abs(netThisPeriod))}
+        <div className="notice error section" role="alert">
+          <AlertTriangle />
+          <div className="notice-body">{loadError}</div>
+          <div className="notice-actions">
+            <button className="btn secondary small" onClick={() => loadPeriod()}>Retry</button>
           </div>
-          {savingsRate !== null && (
-            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-              {savingsRate.toFixed(0)}% savings rate
-              {netDeltaVsLastMonth !== null && (
-                <> · {netDeltaVsLastMonth >= 0 ? '+' : ''}{formatCurrency(netDeltaVsLastMonth)} vs last month</>
+        </div>
+      )}
+
+      {/* Background progress and undo float over the page rather than pushing it down. */}
+      <div className="toast-region" aria-live="polite">
+        {extracting && (
+          <div className="toast">
+            <RefreshCw className="spin" />
+            <div className="toast-body">
+              {extractProgress && extractProgress.total > 1
+                ? `Reading statement… ${Math.round((extractProgress.completed / extractProgress.total) * 100)}%`
+                : 'Your AI provider is reading the statement…'}
+              {(uploadQueue.length > 0 || (extractProgress && extractProgress.total > 1)) && (
+                <div className="toast-sub">
+                  {extractProgress && extractProgress.total > 1 && `Part ${extractProgress.completed} of ${extractProgress.total}`}
+                  {extractProgress && extractProgress.total > 1 && uploadQueue.length > 0 && ' · '}
+                  {uploadQueue.length > 0 && `${uploadQueue.length} more statement${uploadQueue.length === 1 ? '' : 's'} queued`}
+                </div>
               )}
             </div>
-          )}
-        </div>
-      </div>
-
-      {uncategorizedCount > 0 && (
-        <div className="card section" style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span>
-            {uncategorizedCount} transaction{uncategorizedCount === 1 ? '' : 's'} need{uncategorizedCount === 1 ? 's' : ''} a category.
-          </span>
-          <button className="btn secondary small" onClick={() => setShowUncategorizedOnly((v) => !v)}>
-            {showUncategorizedOnly ? 'Show all' : 'Review'}
-          </button>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button className={`btn small ${viewMode === 'split' ? '' : 'secondary'}`} onClick={() => setViewMode('split')}>
-            Income / Expense
-          </button>
-          <button className={`btn small ${viewMode === 'all' ? '' : 'secondary'}`} onClick={() => setViewMode('all')}>
-            All transactions
-          </button>
-        </div>
-        {!hasSampleData ? (
-          <button className="btn secondary small" onClick={generateSample} disabled={sampleBusy}>
-            <Sparkles size={12} /> Try with sample data
-          </button>
-        ) : (
-          <button className="btn secondary small" onClick={removeSample} disabled={sampleBusy}>
-            <FileSpreadsheet size={12} /> Remove sample data
-          </button>
+            <button className="btn secondary small" onClick={cancelExtraction}>
+              Cancel
+            </button>
+            {extractProgress && extractProgress.total > 1 && (
+              <div
+                className="toast-progress"
+                style={{ width: `${Math.round((extractProgress.completed / extractProgress.total) * 100)}%` }}
+              />
+            )}
+          </div>
+        )}
+        {recentlyDeleted && (
+          // keyed so the countdown restarts when a second delete replaces the first
+          <div className="toast" key={recentlyDeleted.ids.join(',')}>
+            <Trash2 />
+            <div className="toast-body">Deleted {recentlyDeleted.label}</div>
+            <button className="btn secondary small" onClick={undoDelete}>
+              Undo
+            </button>
+            <div className="toast-countdown" />
+          </div>
         )}
       </div>
 
-      <CashFlowFilterBar filters={filters} onChange={setFilters} trackedAccounts={trackedAccounts} />
-
-      {viewMode === 'all' ? (
-        <div className="card section" style={{ padding: 0 }}>
-          <div className="section-header" style={{ padding: '16px 16px 0' }}>
-            <h2>All transactions</h2>
-          </div>
-          {allRows.length === 0 ? (
-            <div className="muted" style={{ padding: 16 }}>No transactions match.</div>
-          ) : (
-            <>
-              {renderTable(allRows, 'all', selectedIncome, setSelectedIncome, incomeBulkCategory, setIncomeBulkCategory)}
-              {filtered.length > visibleCount && (
-                <div style={{ textAlign: 'center', padding: 12 }}>
-                  <button className="btn secondary small" onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}>
-                    Load more ({filtered.length - visibleCount} remaining)
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+      {isEmpty ? (
+        <CashFlowOnboarding
+          onImport={() => void uploadStatement()}
+          onAddManually={() => openAdd('expense')}
+          onTrySample={() => void generateSample()}
+          sampleBusy={sampleBusy}
+        />
       ) : (
         <>
-          <div className="card section" style={{ padding: 0 }}>
-            <div className="section-header" style={{ padding: '16px 16px 0' }}>
-              <h2>Income</h2>
-              <button className="btn secondary" onClick={() => { setModalDirection('income'); setEditingTxn(null) }}>
-                <Plus size={14} /> Add income
-              </button>
+          <CashFlowAttention
+            uncategorizedCount={uncategorizedCount}
+            reviewingUncategorized={reviewingUncategorized}
+            onToggleUncategorized={toggleUncategorizedReview}
+            recurringDue={recurringDue}
+            month={selectedMonth}
+            onRecurringHandled={() => void reloadAll()}
+            missingStatements={periodType === 'month' ? missingStatements : []}
+            onImport={() => void uploadStatement()}
+          />
+
+          <CashFlowSummary
+            current={periodLoaded ? totals : null}
+            previous={prevTotals}
+            comparisonLabel={previous?.label ?? null}
+            periodGoal={savingsGoal.monthlyTarget ? savingsGoal.monthlyTarget * periodMonths : null}
+          />
+
+          {(summary.length > 0 || hasCountedExpenses) && (
+            <div className="cf-two-up">
+              {summary.length > 0 && (
+                <div className="card">
+                  <div className="section-header">
+                    <h2>Monthly trend</h2>
+                  </div>
+                  <CashFlowTrendChart
+                    summary={summary}
+                    onMonthClick={(m) => {
+                      setPeriodType('month')
+                      setSelectedMonth(m)
+                    }}
+                  />
+                </div>
+              )}
+              {hasCountedExpenses && (
+                <div className="card">
+                  <div className="section-header">
+                    <h2>Where the money went</h2>
+                  </div>
+                  <CashFlowBreakdownChart transactions={transactions} />
+                </div>
+              )}
             </div>
-            {incomeRows.length === 0 ? (
-              <div className="muted" style={{ padding: 16 }}>No income transactions match.</div>
-            ) : (
-              renderTable(incomeRows, 'income', selectedIncome, setSelectedIncome, incomeBulkCategory, setIncomeBulkCategory)
-            )}
+          )}
+
+          <div className="cf-two-up">
+            <CashFlowInsights
+              transactions={transactions}
+              previousExpenseTotal={prevTotals?.expense ?? null}
+              comparisonLabel={previous?.label ?? null}
+            />
+            <CashFlowBudgetCard
+              budgets={budgets}
+              savingsGoal={savingsGoal}
+              transactions={transactions}
+              netThisPeriod={netThisPeriod}
+              periodMonths={periodMonths}
+              periodPhrase={periodPhrase(periodType)}
+              onBudgetsChanged={setBudgets}
+              onGoalChanged={setSavingsGoal}
+            />
           </div>
 
-          <div className="card section" style={{ padding: 0 }}>
-            <div className="section-header" style={{ padding: '16px 16px 0' }}>
-              <h2>Expense</h2>
-              <button className="btn secondary" onClick={() => { setModalDirection('expense'); setEditingTxn(null) }}>
-                <Plus size={14} /> Add expense
-              </button>
+          <div className="section" ref={transactionsRef} style={{ scrollMarginTop: 'var(--space-4)' }}>
+            <div className="cf-section-head">
+              <h2>Transactions</h2>
+              <div className="segmented small" role="group" aria-label="Transaction view">
+                <button type="button" aria-pressed={viewMode === 'split'} onClick={() => setViewMode('split')}>
+                  Money in / out
+                </button>
+                <button type="button" aria-pressed={viewMode === 'all'} onClick={() => setViewMode('all')}>
+                  All in one list
+                </button>
+              </div>
             </div>
-            {expenseRows.length === 0 ? (
-              <div className="muted" style={{ padding: 16 }}>No expense transactions match.</div>
+
+            <CashFlowFilterBar filters={filters} onChange={setFilters} trackedAccounts={trackedAccounts} />
+
+            {!periodLoaded ? (
+              <div className="card" aria-busy="true">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <div key={i} className="skeleton" style={{ height: 14, margin: '10px 0', width: `${90 - i * 8}%` }} />
+                ))}
+              </div>
+            ) : viewMode === 'all' ? (
+              <div className="card" style={{ padding: 0 }}>
+                {allRows.length === 0 ? (
+                  renderEmptyRows('transactions')
+                ) : (
+                  <>
+                    {renderTable(allRows, 'all', selectedAll, setSelectedAll, allBulkCategory, setAllBulkCategory)}
+                    {filtered.length > visibleCount && (
+                      <div style={{ textAlign: 'center', padding: 'var(--space-3)' }}>
+                        <button className="btn secondary small" onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}>
+                          Load more ({filtered.length - visibleCount} remaining)
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             ) : (
-              renderTable(expenseRows, 'expense', selectedExpense, setSelectedExpense, expenseBulkCategory, setExpenseBulkCategory)
+              <>
+                <div className="card section" style={{ padding: 0 }}>
+                  <div className="section-header" style={{ padding: 'var(--space-4) var(--space-4) 0' }}>
+                    <h2>Money in</h2>
+                  </div>
+                  {incomeRows.length === 0
+                    ? renderEmptyRows('income')
+                    : renderTable(incomeRows, 'income', selectedIncome, setSelectedIncome, incomeBulkCategory, setIncomeBulkCategory)}
+                </div>
+
+                <div className="card" style={{ padding: 0 }}>
+                  <div className="section-header" style={{ padding: 'var(--space-4) var(--space-4) 0' }}>
+                    <h2>Money out</h2>
+                  </div>
+                  {expenseRows.length === 0
+                    ? renderEmptyRows('expenses')
+                    : renderTable(expenseRows, 'expense', selectedExpense, setSelectedExpense, expenseBulkCategory, setExpenseBulkCategory)}
+                </div>
+              </>
             )}
           </div>
         </>
       )}
-
-      {transactions.length === 0 && months.length === 0 && (
-        <div className="card empty-state">
-          <Receipt size={30} />
-          <div>
-            No cash flow data yet. Add income/expense transactions manually, import a bank statement (PDF, CSV, or a
-            photo) and let AI read every transaction line from it, or try sample data above to see how it looks.
-          </div>
-        </div>
-      )}
-
-      <div className="grid cols-2 section">
-        {summary.length >= 1 && (
-          <div className="card">
-            <div className="section-header">
-              <h2>Trend</h2>
-            </div>
-            <CashFlowTrendChart summary={summary} onMonthClick={(m) => { setPeriodType('month'); setSelectedMonth(m) }} />
-          </div>
-        )}
-        {transactions.some((t) => t.direction === 'expense') && (
-          <div className="card">
-            <div className="section-header">
-              <h2>Where it went</h2>
-            </div>
-            <CashFlowBreakdownChart transactions={transactions} />
-          </div>
-        )}
-      </div>
-
-      <CashFlowInsights transactions={transactions} previousMonthExpenseTotal={lastMonthSummary?.expense_total ?? null} />
-
-      <CashFlowBudgetCard
-        budgets={budgets}
-        savingsGoal={savingsGoal}
-        transactions={transactions}
-        netThisMonth={netThisPeriod}
-        onBudgetsChanged={setBudgets}
-        onGoalChanged={setSavingsGoal}
-      />
 
       {modalDirection && (
         <CashFlowEntryModal
@@ -932,12 +1173,18 @@ export default function CashFlow(): JSX.Element {
       />
 
       <ConfirmDialog
-        open={pendingDeleteImport !== null}
-        title="Delete entire import"
-        message="Delete every transaction from this statement upload? This can't be undone."
-        confirmLabel="Delete all"
-        onConfirm={() => void confirmRemoveImport()}
-        onCancel={() => setPendingDeleteImport(null)}
+        open={pendingBulkDelete !== null}
+        title={`Delete ${pendingBulkDelete?.rows.length ?? 0} transaction${pendingBulkDelete?.rows.length === 1 ? '' : 's'}`}
+        message={
+          pendingBulkDelete
+            ? `Delete ${pendingBulkDelete.rows.length} selected transaction${pendingBulkDelete.rows.length === 1 ? '' : 's'} ` +
+              `totalling ${formatCurrency(pendingBulkDelete.rows.reduce((sum, r) => sum + r.amount, 0))}? ` +
+              'You can undo this for a few seconds after.'
+            : ''
+        }
+        confirmLabel="Delete"
+        onConfirm={() => void confirmBulkDelete()}
+        onCancel={() => setPendingBulkDelete(null)}
       />
 
       <ConfirmDialog

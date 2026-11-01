@@ -150,6 +150,7 @@ const api = {
     summary: () => ipcRenderer.invoke(CHANNELS.cashFlowSummary),
     trackedAccounts: () => ipcRenderer.invoke(CHANNELS.cashFlowTrackedAccounts),
     coverage: (month: string) => ipcRenderer.invoke(CHANNELS.cashFlowCoverage, month),
+    missingStatements: (month: string): Promise<string[]> => ipcRenderer.invoke(CHANNELS.cashFlowMissingStatements, month),
     create: (input: CashFlowTransactionInput) => ipcRenderer.invoke(CHANNELS.cashFlowCreate, input),
     update: (id: number, input: CashFlowTransactionInput) => ipcRenderer.invoke(CHANNELS.cashFlowUpdate, id, input),
     remove: (id: number) => ipcRenderer.invoke(CHANNELS.cashFlowDelete, id),
@@ -162,7 +163,8 @@ const api = {
     recentDescriptions: () => ipcRenderer.invoke(CHANNELS.cashFlowRecentDescriptions),
     deleteImport: (importId: number) => ipcRenderer.invoke(CHANNELS.cashFlowDeleteImport, importId),
     listImports: () => ipcRenderer.invoke(CHANNELS.cashFlowListImports),
-    exportCsv: (month?: string) => ipcRenderer.invoke(CHANNELS.cashFlowExportCsv, month),
+    exportCsv: (opts?: { start: string; end: string; label: string; ids?: number[] }) =>
+      ipcRenderer.invoke(CHANNELS.cashFlowExportCsv, opts),
     consentStatus: (): Promise<{ given: boolean }> => ipcRenderer.invoke(CHANNELS.cashFlowConsentStatus),
     setConsent: () => ipcRenderer.invoke(CHANNELS.cashFlowSetConsent),
     accountTransactionCount: (accountSyncId: string) =>

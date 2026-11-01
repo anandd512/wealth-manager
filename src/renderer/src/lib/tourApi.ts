@@ -381,6 +381,7 @@ export function createTourApi(): typeof window.api {
       summary:               async () => [],
       trackedAccounts:       async () => [],
       coverage:              async () => [],
+      missingStatements:     async () => [],
       create:                async () => { throw new Error('Not available in tour') },
       update:                async () => { throw new Error('Not available in tour') },
       remove:                async () => {},

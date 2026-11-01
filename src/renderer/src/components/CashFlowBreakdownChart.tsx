@@ -1,7 +1,7 @@
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts'
 import type { CashFlowTransaction } from '../../../shared/types'
 import { formatCurrency } from '../lib/format'
-import { countsTowardPnl } from '../lib/cashFlowCategories'
+import { categoryLabel, countsTowardPnl } from '../lib/cashFlowCategories'
 
 interface Props {
   transactions: CashFlowTransaction[]
@@ -29,7 +29,7 @@ export default function CashFlowBreakdownChart({ transactions }: Props): JSX.Ele
 
   const byLabel = new Map<string, number>()
   for (const t of expense) {
-    const label = t.subcategory?.trim() || t.category || 'Uncategorized'
+    const label = t.subcategory?.trim() || categoryLabel(t.category, 'expense') || 'Uncategorized'
     byLabel.set(label, (byLabel.get(label) ?? 0) + t.amount)
   }
   const sorted = [...byLabel.entries()].sort((a, b) => b[1] - a[1])

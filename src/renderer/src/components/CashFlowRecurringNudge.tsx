@@ -46,20 +46,21 @@ export default function CashFlowRecurringNudge({ due, month, onHandled }: Props)
     onHandled()
   }
 
+  // Just the list — the "Needs attention" strip (CashFlowAttention) supplies the
+  // heading and the surrounding card.
   return (
-    <div className="card section" style={{ padding: '10px 16px' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-        {due.length} recurring transaction{due.length === 1 ? '' : 's'} due this month
-      </div>
+    <div className="cf-recurring-list">
       {due.map((t) => (
-        <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', fontSize: 13 }}>
-          <span style={{ flex: 1 }}>
-            {t.description} — {formatCurrency(t.amount)}
+        <div key={t.id} className="cf-recurring-item">
+          <span className={`chip ${t.direction === 'income' ? 'income' : 'expense'}`}>
+            {t.direction === 'income' ? 'In' : 'Out'}
           </span>
+          <span style={{ flex: 1, minWidth: 0 }}>{t.description}</span>
+          <span className="num">{formatCurrency(t.amount)}</span>
           <button type="button" className="btn secondary small" onClick={() => addOne(t)} disabled={busyId === t.id}>
-            Add
+            {busyId === t.id ? 'Adding…' : 'Add'}
           </button>
-          <button type="button" className="icon-btn" onClick={() => dismiss(t)} title="Not this month">
+          <button type="button" className="icon-btn" onClick={() => dismiss(t)} title="Skip this month">
             <X size={14} />
           </button>
         </div>
