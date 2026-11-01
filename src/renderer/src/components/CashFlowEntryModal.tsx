@@ -8,12 +8,12 @@ import type {
   CashFlowTransactionInput,
   CashFlowTrackedAccount
 } from '../../../shared/types'
-import { CASH_FLOW_SUBCATEGORIES } from '../../../shared/types'
 import { formatCurrencyPrecise, parseIndianAmount, todayLocalDateString } from '../lib/format'
 import { friendlyError } from '../lib/friendlyError'
-import { categoriesFor } from '../lib/cashFlowCategories'
+import { EVERYDAY_CATEGORIES, categoriesFor, categoryLabel, countsTowardPnl } from '../lib/cashFlowCategories'
 import { useFocusTrap } from '../lib/useFocusTrap'
 import ConfirmDialog from './ConfirmDialog'
+import CashFlowCategoryPicker from './CashFlowCategoryPicker'
 
 interface Props {
   direction: CashFlowDirection
@@ -31,7 +31,6 @@ interface RecentDescription {
   account_sync_id: string | null
 }
 
-const CASH_OPTION = '__cash__'
 const COMMON_CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD']
 
 function existingPossibleDuplicate(
@@ -125,10 +124,21 @@ export default function CashFlowEntryModal({
     }
   }
 
+  // Keeps the category only where it still makes sense on the other side:
+  // "Transfers" exists both ways, "Groceries" doesn't exist as income.
   const changeDirection = (d: CashFlowDirection): void => {
     setDirection(d)
-    const valid = categoriesFor(d, 'long').some((c) => c.value === category)
-    if (!valid) setCategory('')
+    const name = subcategory.trim().toLowerCase()
+    const inNew = EVERYDAY_CATEGORIES[d].find((e) => e.name.toLowerCase() === name)
+    const inOld = EVERYDAY_CATEGORIES[direction].some((e) => e.name.toLowerCase() === name)
+    if (inNew) {
+      setCategory(inNew.category)
+    } else if (inOld) {
+      setCategory('')
+      setSubcategory('')
+    } else if (!categoriesFor(d, 'long').some((c) => c.value === category)) {
+      setCategory('')
+    }
   }
 
   useEffect(() => {
@@ -146,8 +156,6 @@ export default function CashFlowEntryModal({
     }
   }, [txnDate])
 
-  const categoryOptions = categoriesFor(direction, 'long')
-
   const validateAndMaybeWarn = (): string | null => {
     if (!txnDate) return 'Pick a date.'
     if (!description.trim()) return 'Enter a description.'
@@ -160,7 +168,7 @@ export default function CashFlowEntryModal({
     txn_date: txnDate,
     direction,
     description: description.trim(),
-    account_sync_id: accountSyncId && accountSyncId !== CASH_OPTION ? accountSyncId : null,
+    account_sync_id: accountSyncId || null,
     amount: parsedAmount!,
     currency: currency !== 'INR' ? currency : null,
     entry_method: 'manual',
@@ -316,50 +324,42 @@ export default function CashFlowEntryModal({
             </datalist>
           </div>
 
-          <div className="field">
-            <label>Paid via (optional)</label>
-            <select value={accountSyncId} onChange={(e) => setAccountSyncId(e.target.value)} aria-label="Paid via">
-              <option value="">No account</option>
-              <option value={CASH_OPTION}>Cash</option>
-              {trackedAccounts.map((a) => (
-                <option key={a.sync_id} value={a.sync_id}>
-                  {a.name}
-                  {a.institution ? ` (${a.institution})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
           <div className="form-row">
             <div className="field">
-              <label>Category (optional)</label>
+              <label>Category</label>
+              <CashFlowCategoryPicker
+                variant="field"
+                direction={direction}
+                value={{ category: category || null, subcategory: subcategory || null }}
+                onChange={(next) => {
+                  setCategory(next.category ?? '')
+                  setSubcategory(next.subcategory ?? '')
+                }}
+              />
+              {category && (
+                <div className="help-text">
+                  {countsTowardPnl(category)
+                    ? `Counts as ${categoryLabel(category, direction, 'short')?.toLowerCase()} ${direction === 'income' ? 'income' : 'spending'}`
+                    : 'Tracked, but not counted as money in or out'}
+                </div>
+              )}
+            </div>
+            <div className="field">
+              {/* "Paid via" read wrong for income; "No account" vs "Cash" was a distinction without a difference. */}
+              <label>{direction === 'income' ? 'Received in' : 'Paid from'}</label>
               <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value as CashFlowCategory | '')}
-                aria-label="Category"
+                value={accountSyncId}
+                onChange={(e) => setAccountSyncId(e.target.value)}
+                aria-label={direction === 'income' ? 'Received in' : 'Paid from'}
               >
-                <option value="">Uncategorized</option>
-                {categoryOptions.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
+                <option value="">Cash / other</option>
+                {trackedAccounts.map((a) => (
+                  <option key={a.sync_id} value={a.sync_id}>
+                    {a.name}
+                    {a.institution ? ` (${a.institution})` : ''}
                   </option>
                 ))}
               </select>
-            </div>
-            <div className="field">
-              <label>Subcategory (optional)</label>
-              <input
-                value={subcategory}
-                onChange={(e) => setSubcategory(e.target.value)}
-                placeholder="e.g. Groceries"
-                list="cashflow-subcategories"
-                aria-label="Subcategory"
-              />
-              <datalist id="cashflow-subcategories">
-                {CASH_FLOW_SUBCATEGORIES.map((s) => (
-                  <option key={s} value={s} />
-                ))}
-              </datalist>
             </div>
           </div>
 

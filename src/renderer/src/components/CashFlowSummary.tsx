@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, Info } from 'lucide-react'
-import { formatCurrency } from '../lib/format'
+import { formatCurrency, parseIndianAmount } from '../lib/format'
+import Popover from './Popover'
 
 export interface PeriodTotals {
   income: number
@@ -13,8 +15,47 @@ interface Props {
   current: PeriodTotals | null // null while the first load is in flight
   previous: PeriodTotals | null // null when there's nothing like-for-like to compare to
   comparisonLabel: string | null
-  // Savings goal already scaled to the period on screen (monthly target × months).
-  periodGoal: number | null
+  // The goal is stored per month and scaled by the months the period spans.
+  monthlyGoal: number | null
+  periodMonths: number
+  onGoalChange: (monthlyTarget: number | null) => Promise<void>
+}
+
+function GoalEditor({ current, onSave }: { current: number | null; onSave: (v: number | null) => Promise<void> }): JSX.Element {
+  const [text, setText] = useState(current != null ? String(current) : '')
+  const parsed = parseIndianAmount(text)
+  const valid = parsed !== null && parsed > 0
+  return (
+    <Popover triggerClassName="cf-link-btn" trigger={current != null ? 'Edit goal' : 'Set a savings goal'} ariaLabel="Monthly savings goal">
+      {(close) => (
+        <form
+          className="cf-popover-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (valid) void onSave(parsed).then(close)
+          }}
+        >
+          <div className="cf-popover-title">How much do you want to keep each month?</div>
+          <div className="cf-amount-field">
+            <span aria-hidden>₹</span>
+            <input value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. 20,000" aria-label="Monthly savings goal" />
+            <span className="muted">/month</span>
+          </div>
+          {text && !valid && <div className="help-text" style={{ color: 'var(--red)' }}>Enter an amount above zero.</div>}
+          <div className="cf-popover-actions">
+            {current != null && (
+              <button type="button" className="btn secondary small cf-danger" onClick={() => void onSave(null).then(close)}>
+                Remove
+              </button>
+            )}
+            <button type="submit" className="btn small" disabled={!valid}>
+              Save
+            </button>
+          </div>
+        </form>
+      )}
+    </Popover>
+  )
 }
 
 function savingsRate(t: PeriodTotals): number | null {
@@ -65,7 +106,15 @@ function Label({ text, hint }: { text: string; hint: string }): JSX.Element {
   )
 }
 
-export default function CashFlowSummary({ current, previous, comparisonLabel, periodGoal }: Props): JSX.Element {
+export default function CashFlowSummary({
+  current,
+  previous,
+  comparisonLabel,
+  monthlyGoal,
+  periodMonths,
+  onGoalChange
+}: Props): JSX.Element {
+  const periodGoal = monthlyGoal != null ? monthlyGoal * periodMonths : null
   if (!current) {
     return (
       <div className="cf-kpis section" aria-busy="true">
@@ -126,10 +175,13 @@ export default function CashFlowSummary({ current, previous, comparisonLabel, pe
             comparisonLabel={comparisonLabel}
           />
         )}
+        {goalPct === null && <GoalEditor current={null} onSave={onGoalChange} />}
         {goalPct !== null && periodGoal !== null && (
           <div className="cf-kpi-goal">
             <div className="cf-kpi-goal-text">
-              <span>Goal {formatCurrency(periodGoal)}</span>
+              <span title={periodMonths !== 1 ? `${formatCurrency(monthlyGoal ?? 0)}/month × ${periodMonths.toFixed(1)} months` : undefined}>
+                Goal {formatCurrency(periodGoal)} · <GoalEditor current={monthlyGoal} onSave={onGoalChange} />
+              </span>
               <span>{Math.round(goalPct)}%</span>
             </div>
             <div className="cf-meter" role="meter" aria-valuenow={Math.round(goalPct)} aria-valuemin={0} aria-valuemax={100} aria-label="Savings goal progress">

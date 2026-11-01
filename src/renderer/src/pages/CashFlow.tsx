@@ -21,7 +21,6 @@ import {
 import type {
   CashFlowTransaction,
   CashFlowDirection,
-  CashFlowCategory,
   CashFlowMonthSummary,
   CashFlowTrackedAccount,
   CashFlowStatementExtraction,
@@ -29,9 +28,9 @@ import type {
   CashFlowSavingsGoal,
   CashFlowRecurringTemplate
 } from '../../../shared/types'
-import { formatCurrency, formatDate, formatDateShort, formatMonthYear, todayLocalDateString } from '../lib/format'
+import { formatCurrency, formatDate, formatMonthYear, todayLocalDateString } from '../lib/format'
 import { friendlyError } from '../lib/friendlyError'
-import { categoriesFor, countsTowardPnl } from '../lib/cashFlowCategories'
+import { countsTowardPnl } from '../lib/cashFlowCategories'
 import type { PeriodType } from '../lib/cashFlowPeriods'
 import {
   fyRangeFor,
@@ -47,17 +46,22 @@ import {
 import CashFlowEntryModal from '../components/CashFlowEntryModal'
 import CashFlowExtractionReviewModal from '../components/CashFlowExtractionReviewModal'
 import CashFlowTrendChart from '../components/CashFlowTrendChart'
-import CashFlowBreakdownChart from '../components/CashFlowBreakdownChart'
 import CashFlowInsights from '../components/CashFlowInsights'
-import CashFlowBudgetCard from '../components/CashFlowBudgetCard'
+import CashFlowSpending from '../components/CashFlowSpending'
 import CashFlowImportsModal from '../components/CashFlowImportsModal'
 import CashFlowSummary, { type PeriodTotals } from '../components/CashFlowSummary'
 import CashFlowAttention from '../components/CashFlowAttention'
 import CashFlowOnboarding from '../components/CashFlowOnboarding'
-import CashFlowFilterBar, { matchesFilters, DEFAULT_FILTERS, type CashFlowFilters } from '../components/CashFlowFilterBar'
+import CashFlowFilterBar, {
+  matchesFilters,
+  hasActiveFilters,
+  DEFAULT_FILTERS,
+  type CashFlowFilters
+} from '../components/CashFlowFilterBar'
+import CashFlowTransactionList from '../components/CashFlowTransactionList'
+import type { CategoryValue } from '../components/CashFlowCategoryPicker'
 import ActionMenu from '../components/ActionMenu'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { ICON_EDIT, ICON_DELETE, ICON_VIEW, ICON_DOWNLOAD } from '../lib/actionIcons'
 import { useDecryptedUpload, isPasswordCancelled } from '../lib/useDecryptedUpload'
 
 function currentMonth(): string {
@@ -72,13 +76,6 @@ function defaultDateFor(month: string): string {
 
 const SESSION_MONTH_KEY = 'cashflow.selectedMonth'
 const INTRO_DISMISSED_KEY = 'artha_cashflow_intro_dismissed'
-const PAGE_SIZE = 100
-
-type SortKey = 'date' | 'amount' | 'description' | 'category'
-
-// The bulk-category picker starts on '' (nothing chosen, Apply disabled) so a stray
-// click can't wipe categories; clearing them is its own explicit option.
-const BULK_CLEAR = '__clear__'
 
 const PERIOD_TYPES: { value: PeriodType; label: string; title: string }[] = [
   { value: 'month', label: 'Month', title: 'One calendar month' },
@@ -87,7 +84,6 @@ const PERIOD_TYPES: { value: PeriodType; label: string; title: string }[] = [
   { value: 'ytd', label: 'YTD', title: 'Year to date — 1 January to today' },
   { value: 'custom', label: 'Custom', title: 'Pick your own start and end dates' }
 ]
-type BulkCategoryChoice = CashFlowCategory | '' | typeof BULK_CLEAR
 
 function pnlTotals(rows: CashFlowTransaction[]): PeriodTotals {
   const totals: PeriodTotals = { income: 0, expense: 0, excludedIn: 0, excludedOut: 0 }
@@ -136,11 +132,7 @@ export default function CashFlow(): JSX.Element {
   const [sampleBusy, setSampleBusy] = useState(false)
   const [showIntro, setShowIntro] = useState(() => localStorage.getItem(INTRO_DISMISSED_KEY) !== '1')
 
-  const [viewMode, setViewMode] = useState<'split' | 'all'>('split')
   const [filters, setFilters] = useState<CashFlowFilters>(DEFAULT_FILTERS)
-  const [sortKey, setSortKey] = useState<SortKey>('date')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   // First-load flags: until both land, the page shows skeletons rather than ₹0
   // cards and "no transactions" messages that are about to be wrong.
   const [sharedLoaded, setSharedLoaded] = useState(false)
@@ -165,16 +157,6 @@ export default function CashFlow(): JSX.Element {
   const [pendingDuplicate, setPendingDuplicate] = useState<PendingDuplicate | null>(null)
   const [pendingConsent, setPendingConsent] = useState(false)
   const [uploadQueue, setUploadQueue] = useState<string[]>([])
-
-  // One selection per table — the "All" view gets its own rather than borrowing the
-  // income set, which used to carry hidden expense ids into the split view's
-  // "Delete N" action.
-  const [selectedIncome, setSelectedIncome] = useState<Set<number>>(new Set())
-  const [selectedExpense, setSelectedExpense] = useState<Set<number>>(new Set())
-  const [selectedAll, setSelectedAll] = useState<Set<number>>(new Set())
-  const [incomeBulkCategory, setIncomeBulkCategory] = useState<BulkCategoryChoice>('')
-  const [expenseBulkCategory, setExpenseBulkCategory] = useState<BulkCategoryChoice>('')
-  const [allBulkCategory, setAllBulkCategory] = useState<BulkCategoryChoice>('')
 
   const loadShared = async (): Promise<void> => {
     const [m, s, accs, b, goal] = await Promise.all([
@@ -261,15 +243,6 @@ export default function CashFlow(): JSX.Element {
     sessionStorage.setItem(SESSION_MONTH_KEY, selectedMonth)
   }, [selectedMonth])
 
-  // Any change to what's on screen drops the selection, so a bulk action can never
-  // reach rows the user can no longer see.
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE)
-    setSelectedIncome(new Set())
-    setSelectedExpense(new Set())
-    setSelectedAll(new Set())
-  }, [selectedMonth, periodType, customStart, customEnd, viewMode])
-
   // Request-id guard (#16): if the user flips through months quickly, an older
   // in-flight response landing after a newer one would otherwise show stale data.
   useEffect(() => {
@@ -295,6 +268,9 @@ export default function CashFlow(): JSX.Element {
     return trackedAccounts.find((a) => a.sync_id === syncId)?.name ?? '(account closed)'
   }
 
+  // The transaction list's selection and paging reset whenever this changes.
+  const listKey = `${currentRange.start}:${currentRange.end}`
+
   const filtered = transactions.filter((t) => matchesFilters(t, filters))
   const uncategorizedCount = transactions.filter((t) => !t.category).length
   // "Review" in the attention strip drives the same filter as the filter bar's
@@ -306,42 +282,15 @@ export default function CashFlow(): JSX.Element {
     if (!reviewingUncategorized) transactionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  const sortRows = (rows: CashFlowTransaction[]): CashFlowTransaction[] => {
-    const sorted = [...rows].sort((a, b) => {
-      let cmp = 0
-      if (sortKey === 'date') cmp = a.txn_date.localeCompare(b.txn_date)
-      else if (sortKey === 'amount') cmp = a.amount - b.amount
-      else if (sortKey === 'description') cmp = a.description.localeCompare(b.description)
-      else cmp = (a.category ?? '').localeCompare(b.category ?? '')
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-    return sorted
-  }
-
-  const incomeRows = sortRows(filtered.filter((t) => t.direction === 'income'))
-  const expenseRows = sortRows(filtered.filter((t) => t.direction === 'expense'))
-  const allRows = sortRows(filtered).slice(0, visibleCount)
   const totals = pnlTotals(transactions)
-  const netThisPeriod = totals.income - totals.expense
 
   // Only compared when the previous period actually has data — "+₹72,000 vs last
   // quarter" against an empty quarter is noise, not insight.
   const prevTotals = prevTransactions && prevTransactions.length > 0 ? pnlTotals(prevTransactions) : null
   const periodMonths = monthsInRange(periodType, currentRange)
 
-  // Running balance only makes sense scoped to one account — shown in the unified
-  // "All" view when a single account filter is active (#20).
-  const runningBalances = useMemo(() => {
-    if (viewMode !== 'all' || !filters.accountSyncId) return null
-    const chronological = [...filtered].sort((a, b) => a.txn_date.localeCompare(b.txn_date) || a.id - b.id)
-    const balances = new Map<number, number>()
-    let running = 0
-    for (const t of chronological) {
-      running += t.direction === 'income' ? t.amount : -t.amount
-      balances.set(t.id, running)
-    }
-    return balances
-  }, [viewMode, filters.accountSyncId, filtered])
+  // A running total only makes sense for one account with both directions shown (#20).
+  const showRunningTotal = filters.accountSyncId !== '' && filters.direction === 'all'
 
   const remove = (t: CashFlowTransaction): void => setPendingDelete(t)
 
@@ -367,22 +316,22 @@ export default function CashFlow(): JSX.Element {
     reloadAll()
   }
 
-  const setCategory = async (id: number, category: CashFlowCategory | null): Promise<void> => {
-    await api().cashFlow.updateCategory(id, category, null)
+  // Always sends the subcategory along — passing null here used to wipe a
+  // transaction's subcategory whenever only its category was changed.
+  const setCategory = async (id: number, next: CategoryValue): Promise<void> => {
+    await api().cashFlow.updateCategory(id, next.category, next.subcategory)
     reloadAll()
   }
 
-  const toggleSelected = (set: Set<number>, setFn: (s: Set<number>) => void, id: number): void => {
-    const next = new Set(set)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    setFn(next)
+  const saveGoal = async (monthlyTarget: number | null): Promise<void> => {
+    const goal = { monthlyTarget }
+    await api().cashFlow.setSavingsGoal(goal)
+    setSavingsGoal(goal)
   }
 
-  const bulkCategorize = async (ids: number[], choice: BulkCategoryChoice, clear: () => void): Promise<void> => {
-    if (ids.length === 0 || choice === '') return
-    await api().cashFlow.bulkUpdateCategory(ids, choice === BULK_CLEAR ? null : choice, null)
-    clear()
+  const bulkCategorize = async (ids: number[], next: CategoryValue): Promise<void> => {
+    if (ids.length === 0) return
+    await api().cashFlow.bulkUpdateCategory(ids, next.category, next.subcategory)
     reloadAll()
   }
 
@@ -397,11 +346,7 @@ export default function CashFlow(): JSX.Element {
     reloadAll()
   }
 
-  const filtersActive =
-    filters.search !== '' ||
-    filters.category !== '' ||
-    filters.accountSyncId !== '' ||
-    filters.source !== 'all'
+  const filtersActive = hasActiveFilters(filters)
 
   // Exports exactly what's on screen: the selected period, and only the filtered
   // rows when a filter is active.
@@ -557,21 +502,6 @@ export default function CashFlow(): JSX.Element {
   // shouldn't render either (it used to leave an empty titled card).
   const hasCountedExpenses = transactions.some((t) => t.direction === 'expense' && countsTowardPnl(t.category))
 
-  const renderEmptyRows = (noun: string): JSX.Element => (
-    <div className="muted" style={{ padding: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-      {filtersActive ? (
-        <>
-          No {noun} match these filters.
-          <button className="btn secondary small" onClick={() => setFilters(DEFAULT_FILTERS)}>
-            Clear filters
-          </button>
-        </>
-      ) : (
-        <>No {noun} in this period.</>
-      )}
-    </div>
-  )
-
   // Arrows step by the period's own length (a month, a quarter, a FY) and stop at
   // the period containing today — there's nothing to see in the future.
   const step = PERIOD_STEP_MONTHS[periodType]
@@ -580,216 +510,6 @@ export default function CashFlow(): JSX.Element {
     if (step === null) return
     if (direction === 1 && !canStepForward) return
     setSelectedMonth(shiftMonth(selectedMonth, direction * step))
-  }
-
-  function renderTable(
-    rows: CashFlowTransaction[],
-    direction: CashFlowDirection | 'all',
-    selected: Set<number>,
-    setSelected: (s: Set<number>) => void,
-    bulkCategory: BulkCategoryChoice,
-    setBulkCategory: (c: BulkCategoryChoice) => void
-  ): JSX.Element {
-    // Bulk actions only ever touch rows that are actually on screen — a selection
-    // made before a filter changed can't reach rows the filter now hides.
-    const selectedRows = rows.filter((r) => selected.has(r.id))
-    const selectedIds = selectedRows.map((r) => r.id)
-    const clearSelection = (): void => setSelected(new Set())
-    const allSelected = rows.length > 0 && selectedRows.length === rows.length
-    // Footer totals use the same rule as the summary cards (transfers and
-    // reimbursements don't count), so the two never disagree. Net for the "all"
-    // view (income positive, expense negative); a plain sum for the split tables (#32).
-    const signed = (r: CashFlowTransaction): number => (direction === 'all' && r.direction === 'expense' ? -r.amount : r.amount)
-    const countedTotal = rows.filter((r) => countsTowardPnl(r.category)).reduce((sum, r) => sum + signed(r), 0)
-    const notCountedTotal = rows.filter((r) => !countsTowardPnl(r.category)).reduce((sum, r) => sum + r.amount, 0)
-    const sortHeader = (key: SortKey, label: string, className?: string): JSX.Element => (
-      <th
-        className={className}
-        style={{ cursor: 'pointer', userSelect: 'none' }}
-        onClick={() => {
-          if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-          else {
-            setSortKey(key)
-            setSortDir('desc')
-          }
-        }}
-      >
-        {label}
-        {sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
-      </th>
-    )
-    return (
-      <>
-        {selectedRows.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: 'var(--accent-soft)', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>{selectedRows.length} selected</span>
-            {direction !== 'all' && (
-              <select
-                value={bulkCategory}
-                onChange={(e) => setBulkCategory(e.target.value as BulkCategoryChoice)}
-                aria-label="Category for selected transactions"
-              >
-                <option value="" disabled>
-                  Choose category…
-                </option>
-                {categoriesFor(direction, 'short').map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-                <option value={BULK_CLEAR}>Uncategorized (clear category)</option>
-              </select>
-            )}
-            {direction !== 'all' && (
-              <button
-                className="btn secondary small"
-                disabled={bulkCategory === ''}
-                onClick={() =>
-                  bulkCategorize(selectedIds, bulkCategory, () => {
-                    clearSelection()
-                    setBulkCategory('')
-                  })
-                }
-              >
-                Apply category
-              </button>
-            )}
-            <button
-              className="btn secondary small"
-              style={{ color: 'var(--red)' }}
-              onClick={() => setPendingBulkDelete({ rows: selectedRows, clear: clearSelection })}
-            >
-              <Trash2 size={13} /> Delete {selectedRows.length}
-            </button>
-            <button className="btn secondary small" onClick={clearSelection}>
-              Clear
-            </button>
-          </div>
-        )}
-        <div style={{ overflowX: 'auto' }}>
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: 24 }}>
-                  <input
-                    type="checkbox"
-                    aria-label="Select all"
-                    checked={allSelected}
-                    onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())}
-                  />
-                </th>
-                {sortHeader('date', 'Date')}
-                {sortHeader('description', 'Description')}
-                {sortHeader('category', 'Category')}
-                {sortHeader('amount', 'Amount', 'num')}
-                {runningBalances && <th className="num">Balance</th>}
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((t) => (
-                <tr key={t.id}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${t.description}`}
-                      checked={selected.has(t.id)}
-                      onChange={() => toggleSelected(selected, setSelected, t.id)}
-                    />
-                  </td>
-                  <td className="muted">{formatDateShort(t.txn_date)}</td>
-                  <td>
-                    {t.description}
-                    {accountName(t.account_sync_id) !== '—' && (
-                      <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>
-                        ({accountName(t.account_sync_id)})
-                      </span>
-                    )}
-                    {t.subcategory && (
-                      <span className="badge neutral" style={{ marginLeft: 6 }}>
-                        {t.subcategory}
-                      </span>
-                    )}
-                    {t.entry_method === 'ai_extracted' && (
-                      <span className="badge neutral" style={{ marginLeft: 6 }} title={t.document_original_name ? `From ${t.document_original_name}` : 'Read by AI from an uploaded statement'}>
-                        AI
-                      </span>
-                    )}
-                    {t.currency && (
-                      <span className="badge neutral" style={{ marginLeft: 6 }} title={`Converted from ${t.amount_native} ${t.currency}`}>
-                        {t.currency}
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <select
-                      value={t.category ?? ''}
-                      onChange={(e) => setCategory(t.id, (e.target.value || null) as CashFlowCategory | null)}
-                      aria-label={`Category for ${t.description}`}
-                    >
-                      <option value="">Uncategorized</option>
-                      {categoriesFor(t.direction, 'short').map((c) => (
-                        <option key={c.value} value={c.value}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  {countsTowardPnl(t.category) ? (
-                    <td className={`num ${t.direction === 'income' ? 'amount-in' : 'amount-out'}`}>
-                      {t.direction === 'income' ? '+' : '−'}
-                      {formatCurrency(t.amount)}
-                    </td>
-                  ) : (
-                    <td className="num amount-muted" title="Not counted in income/expense totals (transfer or reimbursement)">
-                      {t.direction === 'income' ? '+' : '−'}
-                      {formatCurrency(t.amount)}
-                    </td>
-                  )}
-                  {runningBalances && <td className="num muted">{formatCurrency(runningBalances.get(t.id) ?? 0)}</td>}
-                  <td style={{ textAlign: 'right' }}>
-                    <ActionMenu
-                      items={[
-                        { icon: ICON_EDIT, label: 'Edit', onClick: () => { setEditingTxn(t); setModalDirection(t.direction) } },
-                        ...(t.document_path
-                          ? [
-                              { icon: ICON_VIEW, label: 'View statement', onClick: () => api().cashFlow.openDocument(t.document_path!) },
-                              { icon: ICON_DOWNLOAD, label: 'Download statement', onClick: () => api().cashFlow.downloadDocument(t.document_path!, t.document_original_name) }
-                            ]
-                          : []),
-                        // Deleting a whole import lives only in "Uploaded statements" —
-                        // a many-row delete doesn't belong next to single-row Delete.
-                        { icon: ICON_DELETE, label: 'Delete', danger: true, onClick: () => remove(t) }
-                      ]}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            {rows.length > 0 && (
-              <tfoot>
-                <tr style={{ fontWeight: 600, borderTop: '2px solid var(--border)' }}>
-                  <td></td>
-                  <td colSpan={3}>
-                    Total ({rows.length})
-                    {notCountedTotal > 0 && (
-                      <div className="muted" style={{ fontSize: 11, fontWeight: 400 }}>
-                        Excludes {formatCurrency(notCountedTotal)} in transfers/reimbursements
-                      </div>
-                    )}
-                  </td>
-                  <td className="num" style={direction === 'all' ? { color: countedTotal >= 0 ? 'var(--green)' : 'var(--red)' } : undefined}>
-                    {formatCurrency(countedTotal)}
-                  </td>
-                  {runningBalances && <td></td>}
-                  <td></td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-      </>
-    )
   }
 
   const stepNoun = periodType === 'fy' ? 'FY' : periodType
@@ -1026,18 +746,30 @@ export default function CashFlow(): JSX.Element {
             current={periodLoaded ? totals : null}
             previous={prevTotals}
             comparisonLabel={previous?.label ?? null}
-            periodGoal={savingsGoal.monthlyTarget ? savingsGoal.monthlyTarget * periodMonths : null}
+            monthlyGoal={savingsGoal.monthlyTarget}
+            periodMonths={periodMonths}
+            onGoalChange={saveGoal}
           />
 
-          {(summary.length > 0 || hasCountedExpenses) && (
+          {periodLoaded && (
+            <CashFlowInsights
+              transactions={transactions}
+              prevTransactions={prevTransactions}
+              comparisonLabel={previous?.label ?? null}
+              periodPhrase={periodPhrase(periodType)}
+            />
+          )}
+
+          {(summary.length > 0 || hasCountedExpenses || budgets.length > 0) && (
             <div className="cf-two-up">
               {summary.length > 0 && (
                 <div className="card">
                   <div className="section-header">
-                    <h2>Monthly trend</h2>
+                    <h2>Month by month</h2>
                   </div>
                   <CashFlowTrendChart
                     summary={summary}
+                    highlight={currentRange}
                     onMonthClick={(m) => {
                       setPeriodType('month')
                       setSelectedMonth(m)
@@ -1045,46 +777,25 @@ export default function CashFlow(): JSX.Element {
                   />
                 </div>
               )}
-              {hasCountedExpenses && (
+              {(hasCountedExpenses || budgets.length > 0) && (
                 <div className="card">
                   <div className="section-header">
                     <h2>Where the money went</h2>
                   </div>
-                  <CashFlowBreakdownChart transactions={transactions} />
+                  <CashFlowSpending
+                    transactions={transactions}
+                    budgets={budgets}
+                    periodMonths={periodMonths}
+                    onBudgetsChanged={setBudgets}
+                  />
                 </div>
               )}
             </div>
           )}
 
-          <div className="cf-two-up">
-            <CashFlowInsights
-              transactions={transactions}
-              previousExpenseTotal={prevTotals?.expense ?? null}
-              comparisonLabel={previous?.label ?? null}
-            />
-            <CashFlowBudgetCard
-              budgets={budgets}
-              savingsGoal={savingsGoal}
-              transactions={transactions}
-              netThisPeriod={netThisPeriod}
-              periodMonths={periodMonths}
-              periodPhrase={periodPhrase(periodType)}
-              onBudgetsChanged={setBudgets}
-              onGoalChanged={setSavingsGoal}
-            />
-          </div>
-
           <div className="section" ref={transactionsRef} style={{ scrollMarginTop: 'var(--space-4)' }}>
             <div className="cf-section-head">
               <h2>Transactions</h2>
-              <div className="segmented small" role="group" aria-label="Transaction view">
-                <button type="button" aria-pressed={viewMode === 'split'} onClick={() => setViewMode('split')}>
-                  Money in / out
-                </button>
-                <button type="button" aria-pressed={viewMode === 'all'} onClick={() => setViewMode('all')}>
-                  All in one list
-                </button>
-              </div>
             </div>
 
             <CashFlowFilterBar filters={filters} onChange={setFilters} trackedAccounts={trackedAccounts} />
@@ -1095,43 +806,23 @@ export default function CashFlow(): JSX.Element {
                   <div key={i} className="skeleton" style={{ height: 14, margin: '10px 0', width: `${90 - i * 8}%` }} />
                 ))}
               </div>
-            ) : viewMode === 'all' ? (
-              <div className="card" style={{ padding: 0 }}>
-                {allRows.length === 0 ? (
-                  renderEmptyRows('transactions')
-                ) : (
-                  <>
-                    {renderTable(allRows, 'all', selectedAll, setSelectedAll, allBulkCategory, setAllBulkCategory)}
-                    {filtered.length > visibleCount && (
-                      <div style={{ textAlign: 'center', padding: 'var(--space-3)' }}>
-                        <button className="btn secondary small" onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}>
-                          Load more ({filtered.length - visibleCount} remaining)
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
             ) : (
-              <>
-                <div className="card section" style={{ padding: 0 }}>
-                  <div className="section-header" style={{ padding: 'var(--space-4) var(--space-4) 0' }}>
-                    <h2>Money in</h2>
-                  </div>
-                  {incomeRows.length === 0
-                    ? renderEmptyRows('income')
-                    : renderTable(incomeRows, 'income', selectedIncome, setSelectedIncome, incomeBulkCategory, setIncomeBulkCategory)}
-                </div>
-
-                <div className="card" style={{ padding: 0 }}>
-                  <div className="section-header" style={{ padding: 'var(--space-4) var(--space-4) 0' }}>
-                    <h2>Money out</h2>
-                  </div>
-                  {expenseRows.length === 0
-                    ? renderEmptyRows('expenses')
-                    : renderTable(expenseRows, 'expense', selectedExpense, setSelectedExpense, expenseBulkCategory, setExpenseBulkCategory)}
-                </div>
-              </>
+              <CashFlowTransactionList
+                key={listKey}
+                rows={filtered}
+                trackedAccounts={trackedAccounts}
+                filtersActive={filtersActive}
+                showRunningTotal={showRunningTotal}
+                onClearFilters={() => setFilters(DEFAULT_FILTERS)}
+                onEdit={(t) => {
+                  setEditingTxn(t)
+                  setModalDirection(t.direction)
+                }}
+                onDelete={remove}
+                onSetCategory={(id, next) => void setCategory(id, next)}
+                onBulkCategorize={bulkCategorize}
+                onBulkDelete={(rows, clear) => setPendingBulkDelete({ rows, clear })}
+              />
             )}
           </div>
         </>

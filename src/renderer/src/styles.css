@@ -19,14 +19,14 @@
   --red-soft: rgba(240, 97, 107, 0.12);
   --amber: #e8b14f;
   --amber-soft: rgba(232, 177, 79, 0.12);
-  /* Cash flow trend chart series — one ordinal ramp per direction, so color says
-     "in" (green) or "out" (red-orange) the same way --green/--red do everywhere
-     else, and step strength says how essential (salary/fixed first, discretionary
-     last; strongest step = most essential). Validated with the dataviz skill's
-     validate_palette.js against --bg-card (#141a26 dark, #fff light): each ramp
-     passes --ordinal, every adjacent pair (incl. uncategorized on top of each
-     stack) clears CVD ΔE ≥ 8 and normal-vision ΔE ≥ 15. The darkest steps sit
-     under 3:1 contrast, so the chart keeps its legend and table view as relief. */
+  /* Cash flow category colors (the dot on each category chip — see
+     cashFlowCategories.ts's categoryColor) — one ordinal ramp per direction, so
+     color says "in" (green) or "out" (red-orange) the same way --green/--red do
+     everywhere else, and step strength says how essential (salary/fixed first,
+     discretionary last). Validated with the dataviz skill's validate_palette.js
+     against --bg-card (#141a26 dark, #fff light): each ramp passes --ordinal and
+     every adjacent pair (incl. uncategorized) clears CVD ΔE ≥ 8 and normal-vision
+     ΔE ≥ 15. Chips always carry a text label, so color is never the only cue. */
   --cf-income-1: #a4ecc8;
   --cf-income-2: #3fb67f;
   --cf-income-3: #167048;
@@ -34,18 +34,14 @@
   --cf-expense-2: #e8693f;
   --cf-expense-3: #9c381f;
   --cf-uncategorized: #7d879c;
-  /* Open-ended categorical use (e.g. the expense-breakdown-by-subcategory chart) —
-     the same validated 8-slot order's first 7 steps, default sequence. */
-  --cf-cat-1: #3987e5;
-  --cf-cat-2: #d95926;
-  --cf-cat-3: #199e70;
-  --cf-cat-4: #c98500;
-  --cf-cat-5: #d55181;
-  --cf-cat-6: #008300;
-  --cf-cat-7: #9085e9;
+  /* Two-series in/out pair (simple trend bars, spending bar list) — validated as a
+     categorical pair: inside the dark band, CVD ΔE 9.8, normal-vision ΔE 26.5. */
+  --cf-in: #2fa470;
+  --cf-out: #bf4a22;
   --radius-sm: 7px;
   --radius: 10px;
   --radius-lg: 16px;
+  --table-head-bg: #0f141f;
   /* Spacing scale (4px base) and type scale — use these instead of one-off pixel
      values so gaps and text sizes stay consistent across a page. */
   --space-1: 4px;
@@ -352,16 +348,28 @@ table {
   border-collapse: collapse;
 }
 
+/* Header row reads as a distinct band, not another data row: its own surface,
+   brighter label ink, and a full-strength rule underneath. It sticks to the top of
+   whatever scrolls it (the page, or a modal's scroll box) so columns stay labelled
+   down a long list. */
 th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   text-align: left;
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-faint);
-  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  font-weight: 700;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--border-soft);
+  background: var(--table-head-bg);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
+/* A table flush with the top of a card follows the card's rounded corners. */
+.card > table:first-child thead tr:first-child th:first-child { border-top-left-radius: var(--radius-lg); }
+.card > table:first-child thead tr:first-child th:last-child { border-top-right-radius: var(--radius-lg); }
 
 td {
   padding: 12px 14px;
@@ -1810,8 +1818,523 @@ button.setup-checklist-item:disabled { opacity: 0.6; cursor: progress; }
 }
 .cf-section-head h2 { margin: 0; font-size: var(--fs-lg); font-weight: 700; }
 
+/* ── Popover (generic anchored panel) ─────────────────────────────── */
+.popover-anchor { position: relative; display: inline-block; vertical-align: middle; }
+.popover-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 220px;
+  padding: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  animation: menu-in 120ms var(--ease);
+  cursor: default;
+}
+.popover-panel.left { left: 0; }
+.popover-panel.right { right: 0; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Category picker ─────────────────────────────────────────────── */
+.cf-category-menu { min-width: 260px; }
+.cf-category-menu .action-menu-item { align-items: flex-start; }
+.cf-category-menu .chip-dot { margin-top: 6px; }
+.cf-category-check { margin-left: auto; color: var(--accent) !important; }
+.cf-category-sep { height: 1px; background: var(--border-soft); margin: 4px 6px; }
+.cf-chip-note { color: var(--text-faint); font-weight: 400; }
+td .chip { max-width: 220px; }
+
+/* ── Filter bar ──────────────────────────────────────────────────── */
+.cf-filterbar { margin-bottom: var(--space-3); }
+.cf-filterbar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.cf-search {
+  position: relative;
+  flex: 1 1 260px;
+  max-width: 420px;
+  display: flex;
+  align-items: center;
+}
+.cf-search > svg {
+  position: absolute;
+  left: 10px;
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.cf-search input { width: 100%; padding-left: 32px; padding-right: 34px; }
+.cf-search .icon-btn { position: absolute; right: 2px; width: 28px; height: 28px; }
+.cf-filter-active { border-color: var(--accent) !important; color: var(--accent) !important; }
+.cf-filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  min-width: 260px;
+}
+.cf-filter-panel label { margin: 0; }
+.cf-filter-panel select { width: 100%; margin-top: var(--space-1); }
+.cf-filter-chips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+.cf-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+}
+.cf-link-btn:hover { text-decoration: underline; }
+
+/* ── Transaction list ────────────────────────────────────────────── */
+.cf-list { padding: 0; position: relative; }
+.cf-list table { width: 100%; }
+.cf-list th { padding-top: 12px; padding-bottom: 10px; }
+.cf-list td { padding-top: 10px; padding-bottom: 10px; vertical-align: middle; }
+.cf-list-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  color: var(--text-dim);
+}
+.cf-sort-group { display: inline-flex; gap: var(--space-3); }
+.cf-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+.cf-sort svg { width: 12px; height: 12px; opacity: 0.4; }
+.cf-sort:hover { color: var(--text); }
+.cf-sort.active { color: var(--text); }
+.cf-sort.active svg { opacity: 1; color: var(--accent); }
+.num .cf-sort { flex-direction: row-reverse; }
+
+.cf-row { cursor: pointer; transition: background 100ms var(--ease); }
+.cf-row:hover { background: var(--bg-card-hover); }
+.cf-row.selected { background: var(--accent-soft); }
+/* width:100% + max-width:0 lets the text column take the slack and truncate
+   instead of forcing a horizontal scrollbar. */
+.cf-row-main { width: 100%; max-width: 0; }
+.cf-row-title,
+.cf-row-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cf-row-title { font-weight: 500; }
+.cf-row-meta { font-size: var(--fs-xs); color: var(--text-faint); margin-top: 1px; }
+
+.cf-day-row td {
+  padding: 14px 14px 6px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-dim);
+  background: transparent;
+}
+.cf-day-net { float: right; color: var(--text-faint); font-weight: 500; }
+
+.cf-list-more { text-align: center; padding: var(--space-3); border-top: 1px solid var(--border-soft); }
+.cf-list-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) 14px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-sm);
+}
+.cf-list-footer .num { display: inline-flex; gap: var(--space-4); }
+
+/* Floating action bar for a selection — sticks to the bottom of the viewport
+   while the list scrolls, instead of pushing the table down. */
+.cf-bulkbar {
+  position: sticky;
+  bottom: var(--space-4);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: calc(100% - 2 * var(--space-4));
+  margin: 0 auto var(--space-4);
+  padding: 8px 8px 8px 16px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-lg);
+  font-size: var(--fs-base);
+  animation: modal-in 150ms var(--ease);
+}
+.cf-bulkbar-count { font-weight: 600; }
+
+/* ── Charts: shared chrome ───────────────────────────────────────── */
+.cf-chart-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+/* Legend text stays in text ink; the dot carries identity. */
+.cf-legend {
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+.cf-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.cf-chart-hint { margin-top: var(--space-1); font-size: var(--fs-xs); color: var(--text-faint); text-align: right; }
+.cf-tooltip {
+  min-width: 180px;
+  padding: 10px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  font-size: var(--fs-sm);
+}
+.cf-tooltip-title { color: var(--text-faint); margin-bottom: 6px; font-weight: 600; }
+.cf-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+  color: var(--text-dim);
+}
+.cf-tooltip-row .num { margin-left: auto; color: var(--text); font-weight: 600; }
+.cf-tooltip-total { margin-top: 4px; padding-top: 5px; border-top: 1px solid var(--border-soft); color: var(--text); }
+
+/* ── Where the money went (bar list) ─────────────────────────────── */
+.cf-spend-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.cf-spend-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--fs-base);
+  margin-bottom: 5px;
+}
+.cf-spend-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-spend-head .num { font-weight: 600; }
+.cf-spend-pct {
+  display: inline-block;
+  min-width: 38px;
+  margin-left: var(--space-2);
+  color: var(--text-faint);
+  font-weight: 400;
+}
+.cf-spend-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+}
+.cf-spend-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--cf-out);
+  transition: width 300ms var(--ease);
+}
+.cf-spend-fill.near { background: var(--amber); }
+.cf-spend-fill.over { background: var(--red); }
+/* Budget marker: a short upright tick across the track. */
+.cf-spend-marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text);
+  box-shadow: 0 0 0 1.5px var(--bg-card);
+}
+.cf-spend-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 18px;
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+.cf-spend-sub .popover-anchor { margin-left: auto; }
+.cf-spend-over { display: inline-flex; align-items: center; gap: 4px; color: var(--red); font-weight: 600; }
+.cf-spend-near { color: var(--amber); }
+/* "Set budget" only shows on hover/focus so ten rows don't each shout a link. */
+.cf-spend-edit { opacity: 0; transition: opacity 120ms var(--ease); }
+.cf-spend-row:hover .cf-spend-edit,
+.cf-spend-edit:focus-visible,
+.cf-spend-edit[aria-expanded='true'] { opacity: 1; }
+.cf-spend-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+}
+.cf-spend-empty p { margin: 0 0 var(--space-3); }
+.cf-link-btn { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ── Category picker (everyday names grouped by what they count as) ── */
+.cf-picker { width: 280px; }
+.cf-picker-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 4px 4px 6px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.cf-picker-search svg {
+  position: absolute;
+  left: 14px;
+  width: 13px;
+  height: 13px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.cf-picker-search input { width: 100%; padding-left: 30px; }
+.cf-picker-list { max-height: 320px; overflow-y: auto; padding: 2px 0; }
+.cf-picker-group {
+  padding: 8px 10px 3px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-faint);
+}
+.cf-picker-list .action-menu-item { padding: 6px 10px; }
+.cf-picker-counts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 8px 10px 6px;
+  border-top: 1px solid var(--border-soft);
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.cf-picker-counts select { flex: 1; min-width: 0; padding: 4px 8px; font-size: var(--fs-sm); }
+.cf-picker-name { overflow: hidden; text-overflow: ellipsis; }
+/* The "field" variant looks like the other inputs in a form. */
+.cf-picker-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 9px 11px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+.cf-picker-field:hover { border-color: var(--text-faint); }
+.cf-picker-field:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cf-picker-caret { width: 14px; height: 14px; margin-left: auto; color: var(--text-faint); flex-shrink: 0; }
+.field .popover-anchor { display: block; }
+body.light-mode .cf-picker-field { background: #fff; }
+
+/* ── Side sheet (long, focused tasks like reviewing a statement) ─── */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.45);
+  animation: fade-in 150ms var(--ease);
+}
+.sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(980px, calc(100vw - 48px));
+  height: 100%;
+  background: var(--bg-elev);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  animation: sheet-in 200ms var(--ease);
+}
+@keyframes sheet-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.sheet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6) var(--space-4);
+  border-bottom: 1px solid var(--border-soft);
+}
+.sheet-header h2 { margin: 0; font-size: 18px; }
+.sheet-body { flex: 1; overflow-y: auto; padding: var(--space-5) var(--space-6); }
+.sheet-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-elev);
+}
+body.light-mode .sheet,
+body.light-mode .sheet-footer { background: #fff; }
+
+/* ── Statement review ────────────────────────────────────────────── */
+.cf-review-file { margin-top: 2px; font-size: var(--fs-sm); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-review-top { display: flex; gap: var(--space-4); align-items: flex-start; flex-wrap: wrap; margin-bottom: var(--space-4); }
+.cf-needs-value { border-color: var(--amber) !important; box-shadow: 0 0 0 3px var(--amber-soft); }
+.cf-reconcile {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+.cf-reconcile strong { color: var(--text); font-size: var(--fs-base); }
+.cf-reconcile svg { margin-top: 2px; flex-shrink: 0; }
+.cf-reconcile.ok { background: var(--green-soft); }
+.cf-reconcile.ok svg { color: var(--green); }
+.cf-reconcile.bad { background: var(--red-soft); }
+.cf-reconcile.bad svg { color: var(--red); }
+.cf-review-stats {
+  display: flex;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+  font-size: var(--fs-base);
+  color: var(--text-dim);
+}
+.cf-review-stats strong { color: var(--text); }
+.cf-review-stats .amount-in strong { color: var(--green); }
+.cf-checks {
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+.cf-checks-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  text-align: left;
+}
+.cf-checks-icon { color: var(--amber); }
+.cf-checks-icon.ok { color: var(--green); }
+.cf-checks-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 8px; }
+.cf-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+.cf-check > svg { margin-top: 2px; flex-shrink: 0; }
+.cf-check-body { flex: 1; }
+.cf-check.error { background: var(--red-soft); color: var(--text); }
+.cf-check.error > svg { color: var(--red); }
+.cf-check.warn { background: var(--amber-soft); color: var(--text); }
+.cf-check.warn > svg { color: var(--amber); }
+.cf-check.info > svg { color: var(--accent); }
+.cf-review-list { padding: 0; margin-top: var(--space-3); }
+.cf-review-list td { padding-top: 9px; padding-bottom: 9px; vertical-align: middle; }
+.cf-review-flagged { background: var(--amber-soft); }
+.cf-review-error { box-shadow: inset 3px 0 0 var(--red); }
+.cf-review-removed td { opacity: 0.5; }
+.cf-review-removed .cf-row-title { text-decoration: line-through; }
+.cf-review-editor td { background: var(--bg-inset); padding-top: 4px; padding-bottom: 12px; }
+.cf-review-fields {
+  display: grid;
+  grid-template-columns: 150px minmax(180px, 1fr) 130px 120px;
+  gap: var(--space-3);
+}
+.cf-review-fields label { margin: 0; font-size: var(--fs-xs); }
+.cf-review-fields input,
+.cf-review-fields select { width: 100%; margin-top: 4px; }
+.cf-invalid { border-color: var(--red) !important; }
+.cf-review-row-error { margin-top: var(--space-2); font-size: var(--fs-xs); color: var(--red); }
+.cf-conf-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; }
+.cf-flag { display: inline-flex; vertical-align: middle; margin-left: 6px; }
+.cf-flag.warn { color: var(--amber); }
+.cf-flag.bad { color: var(--red); }
+.cf-sheet-error { display: flex; align-items: center; gap: var(--space-2); color: var(--red); font-size: var(--fs-sm); }
+
+/* ── Small forms inside popovers ─────────────────────────────────── */
+.cf-popover-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  min-width: 260px;
+}
+.cf-popover-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.cf-popover-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-1); }
+.cf-amount-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-dim);
+}
+.cf-amount-field input { flex: 1; min-width: 0; }
+
+/* ── Insights (plain-language sentences) ─────────────────────────── */
+.cf-insights { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) var(--space-5); }
+.cf-insight { display: flex; align-items: flex-start; gap: var(--space-3); font-size: var(--fs-md); color: var(--text-dim); }
+.cf-insight strong { color: var(--text); }
+.cf-insight-icon { width: 16px; height: 16px; flex-shrink: 0; margin-top: 3px; color: var(--text-faint); }
+.cf-insight-icon.good { color: var(--green); }
+.cf-insight-icon.bad { color: var(--red); }
+.cf-danger { color: var(--red) !important; }
+.cf-danger:hover { background: var(--red-soft) !important; border-color: var(--red) !important; }
+
 /* ─── Light mode ─────────────────────────────────────────────────────────── */
 body.light-mode {
+  --table-head-bg: #f3f5fb;
   --bg: #f3f5fb;
   --bg-elev: #ffffff;
   --bg-card: #ffffff;
@@ -1833,13 +2356,8 @@ body.light-mode {
   --cf-expense-2: #d4532a;
   --cf-expense-3: #f5a07c;
   --cf-uncategorized: #8b96ad;
-  --cf-cat-1: #2a78d6;
-  --cf-cat-2: #eb6834;
-  --cf-cat-3: #1baf7a;
-  --cf-cat-4: #eda100;
-  --cf-cat-5: #e87ba4;
-  --cf-cat-6: #008300;
-  --cf-cat-7: #6250d6;
+  --cf-in: #1f8f5c;
+  --cf-out: #d4532a;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.07);
   --shadow-md: 0 4px 16px -2px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.05);
   --shadow-lg: 0 12px 32px -6px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);

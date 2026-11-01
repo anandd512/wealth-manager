@@ -1,6 +1,19 @@
 import { api } from '../lib/api'
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { Plus, Trash2, AlertTriangle, RotateCcw, Info, CreditCard, CheckCircle2, Copy } from 'lucide-react'
+import {
+  Plus,
+  Trash2,
+  AlertTriangle,
+  RotateCcw,
+  Info,
+  CreditCard,
+  CheckCircle2,
+  Copy,
+  X,
+  ChevronDown,
+  ChevronRight,
+  Pencil
+} from 'lucide-react'
 import type {
   CashFlowCategory,
   CashFlowDirection,
@@ -9,11 +22,11 @@ import type {
   CashFlowTrackedAccount,
   CashFlowTransaction
 } from '../../../shared/types'
-import { CASH_FLOW_SUBCATEGORIES } from '../../../shared/types'
-import { formatCurrency, formatDate, formatMonthYear, isValidIsoDate, parseIndianAmount } from '../lib/format'
+import { formatCurrency, formatDate, formatDateShort, formatMonthYear, isValidIsoDate, parseIndianAmount } from '../lib/format'
 import { friendlyError } from '../lib/friendlyError'
-import { categoriesFor, countsTowardPnl } from '../lib/cashFlowCategories'
+import { categoriesFor, countsTowardPnl, defaultCategoryFor } from '../lib/cashFlowCategories'
 import { useFocusTrap } from '../lib/useFocusTrap'
+import CashFlowCategoryPicker from './CashFlowCategoryPicker'
 
 interface Props {
   extraction: CashFlowStatementExtraction
@@ -33,7 +46,9 @@ interface EditableRow {
   amountText: string
   currency: string
   confidence: 'high' | 'medium' | 'low'
-  category: CashFlowCategory
+  // null = Uncategorized; the backend's normalizeCategory accepts that, even
+  // though the model itself always proposes one.
+  category: CashFlowCategory | null
   subcategory: string
   removed: boolean
   possibleDuplicate: boolean
@@ -41,7 +56,7 @@ interface EditableRow {
   possibleCardBillDouble: boolean
 }
 
-type FilterMode = 'all' | 'uncategorized' | 'low_confidence' | 'large_amount' | 'transfer'
+type FilterMode = 'all' | 'uncategorized' | 'low_confidence' | 'flagged' | 'transfer'
 
 interface RecentDescription {
   description: string
@@ -103,8 +118,22 @@ function rowError(row: EditableRow): string | null {
   return null
 }
 
+const isFlagged = (t: EditableRow): boolean => t.possibleDuplicate || t.isOutlier || t.possibleCardBillDouble
+
 const CARD_KEYWORDS = ['credit card', 'card payment', 'cc payment', 'visa', 'mastercard', 'rupay', 'amex']
 
+interface Check {
+  key: string
+  tone: 'error' | 'warn' | 'info'
+  icon: typeof Info
+  body: JSX.Element
+  action?: JSX.Element
+}
+
+// A full-height side sheet rather than a centered modal: a statement can be 100+
+// rows, and the old layout spent its first screen on stacked warnings before the
+// required account picker. Now: account + reconciliation up top, warnings folded
+// into one "things to check" list, and rows that read as a list until clicked.
 export default function CashFlowExtractionReviewModal({
   extraction,
   trackedAccounts,
@@ -233,6 +262,7 @@ export default function CashFlowExtractionReviewModal({
   }, [])
 
   const addTxn = (): void => {
+    setFilter('all')
     setTransactions((prev) => [
       ...prev,
       {
@@ -262,11 +292,14 @@ export default function CashFlowExtractionReviewModal({
       .reduce((sum, t) => sum + (parseIndianAmount(t.amountText) ?? 0), 0)
 
   const rowErrors = transactions.map(rowError)
-  const hasRowErrors = rowErrors.some((e) => e !== null)
+  const errorCount = rowErrors.filter((e) => e !== null).length
   const duplicateCount = active.filter((t) => t.possibleDuplicate).length
   const outlierCount = active.filter((t) => t.isOutlier).length
   const cardDoubleCount = active.filter((t) => t.possibleCardBillDouble).length
+  const flaggedCount = active.filter(isFlagged).length
   const uncategorizedCount = active.filter((t) => !t.category).length
+  const lowConfidenceCount = active.filter((t) => t.confidence !== 'high').length
+  const transferCount = active.filter((t) => t.category === 'transfer').length
 
   const visibleIndices = useMemo(() => {
     return transactions
@@ -276,7 +309,7 @@ export default function CashFlowExtractionReviewModal({
         if (t.removed) return filter === 'all' // removed rows only show in "all" (struck through)
         if (filter === 'uncategorized') return !t.category
         if (filter === 'low_confidence') return t.confidence !== 'high'
-        if (filter === 'large_amount') return t.isOutlier
+        if (filter === 'flagged') return isFlagged(t)
         if (filter === 'transfer') return t.category === 'transfer'
         return true
       })
@@ -297,19 +330,127 @@ export default function CashFlowExtractionReviewModal({
       }`
     : `${active.length} transaction${active.length === 1 ? '' : 's'}`
 
+  // Everything worth a second look, as one list. Blocking items come first.
+  const checks: Check[] = []
+  if (extraction.statement_type !== 'bank') {
+    checks.push({
+      key: 'type',
+      tone: 'error',
+      icon: AlertTriangle,
+      body: (
+        <>
+          {extraction.statement_type === 'credit_card'
+            ? "This looks like a credit card statement. Card statements aren't supported yet — importing it would " +
+              'double-count spending already on your bank statement when you pay the card bill.'
+            : "AI couldn't tell whether this is a bank or credit card statement — double-check before saving."}
+        </>
+      ),
+      action: !cardWarningAcknowledged ? (
+        <button type="button" className="btn secondary small" onClick={() => setCardWarningAcknowledged(true)}>
+          Continue anyway
+        </button>
+      ) : undefined
+    })
+  }
+  if (extraction.balanceCheck && !reconciles) {
+    checks.push({
+      key: 'balance',
+      tone: 'error',
+      icon: AlertTriangle,
+      body: (
+        <>
+          Opening {formatCurrency(extraction.opening_balance!)} plus every line below should land on the statement&apos;s closing
+          balance of {formatCurrency(extraction.closing_balance!)}, but comes to {formatCurrency(extraction.balanceCheck.expectedClosing)}.
+          Some lines may be missing, duplicated or misread — check against the original.
+        </>
+      )
+    })
+  }
+  if (duplicateCount > 0) {
+    checks.push({
+      key: 'dup',
+      tone: 'warn',
+      icon: Copy,
+      body: (
+        <>
+          {duplicateCount} row{duplicateCount === 1 ? ' looks' : 's look'} like {duplicateCount === 1 ? 'a transaction' : 'transactions'} already
+          in this account.
+        </>
+      ),
+      action: (
+        <button type="button" className="cf-link-btn" onClick={() => setFilter('flagged')}>
+          Show
+        </button>
+      )
+    })
+  }
+  if (cardDoubleCount > 0) {
+    checks.push({
+      key: 'card',
+      tone: 'warn',
+      icon: CreditCard,
+      body: (
+        <>
+          {cardDoubleCount} row{cardDoubleCount === 1 ? ' looks' : 's look'} like a credit card bill payment — if you also import that
+          card&apos;s statement, its spending may be counted twice.
+        </>
+      ),
+      action: (
+        <button type="button" className="cf-link-btn" onClick={() => setFilter('flagged')}>
+          Show
+        </button>
+      )
+    })
+  }
+  if (outlierCount > 0) {
+    checks.push({
+      key: 'outlier',
+      tone: 'warn',
+      icon: AlertTriangle,
+      body: (
+        <>
+          {outlierCount} unusually large amount{outlierCount === 1 ? '' : 's'} compared with the rest of this statement.
+        </>
+      ),
+      action: (
+        <button type="button" className="cf-link-btn" onClick={() => setFilter('flagged')}>
+          Show
+        </button>
+      )
+    })
+  }
+  if (extraction.confidence_notes) {
+    checks.push({ key: 'notes', tone: 'info', icon: Info, body: <>AI noted: {extraction.confidence_notes}</> })
+  }
+  checks.push({
+    key: 'transfers',
+    tone: 'info',
+    icon: Info,
+    body: (
+      <>
+        A transfer to one of your own accounts or a refund is tagged <strong>Transfer</strong> only once it matches an entry already
+        in your ledger, so it stays visible but isn&apos;t counted as money in or out.
+      </>
+    )
+  })
+  const attentionCount = checks.filter((c) => c.tone !== 'info').length
+  // Open by default when something needs a decision; otherwise folded away.
+  const [checksOpen, setChecksOpen] = useState(() => extraction.statement_type !== 'bank' || Boolean(extraction.balanceCheck && !reconciles))
+
   const submit = async (): Promise<void> => {
     setError(null)
     const account = trackedAccounts.find((a) => a.sync_id === accountSyncId)
     if (!account) {
-      setError('Select which tracked account this statement belongs to.')
+      setError('Choose which of your accounts this statement belongs to (at the top).')
       return
     }
     if (active.length === 0) {
       setError('Nothing to save — add at least one transaction or cancel.')
       return
     }
-    if (hasRowErrors) {
-      setError('Fix the highlighted rows before saving.')
+    if (errorCount > 0) {
+      setFilter('all') // the broken rows might be hidden by the current filter
+      setError(`Fix the ${errorCount} highlighted row${errorCount === 1 ? '' : 's'} before saving.`)
       return
     }
     setBusy(true)
@@ -324,7 +465,8 @@ export default function CashFlowExtractionReviewModal({
           amount: parseIndianAmount(t.amountText)!,
           currency: t.currency,
           confidence: t.confidence,
-          category: t.category,
+          // Uncategorized is stored as null (see EditableRow.category).
+          category: t.category as CashFlowCategory,
           subcategory: t.subcategory.trim() || null
         })),
         fileHash,
@@ -348,181 +490,189 @@ export default function CashFlowExtractionReviewModal({
     onClose()
   }
 
+  const period =
+    extraction.statement_period_start && extraction.statement_period_end
+      ? `${formatDateShort(extraction.statement_period_start)} – ${formatDateShort(extraction.statement_period_end)}`
+      : null
+
   return (
-    // No backdrop-dismiss here on purpose — this review can represent several
-    // minutes of AI extraction + manual corrections; an accidental outside click
-    // must not be able to throw all of that away. Cancel and Esc still work.
-    <div className="modal-backdrop">
-      <div className="modal" ref={containerRef} style={{ maxWidth: 900 }} onClick={(e) => e.stopPropagation()}>
-        <h2>Review statement</h2>
-        <div className="help-text" style={{ marginBottom: 8 }}>
-          AI read this as "{extraction.account_label ?? 'an unlabeled account'}" — match it to one of your tracked
-          accounts, review each transaction below, then save.
-        </div>
-
-        {/* Compact summary strip (#94) instead of a long sentence */}
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12, fontSize: 12 }}>
-          <span><strong>{active.length}</strong> transactions</span>
-          <span style={{ color: 'var(--green)' }}><strong>{formatCurrency(total('income'))}</strong> income</span>
-          <span style={{ color: 'var(--red)' }}><strong>{formatCurrency(total('expense'))}</strong> expense</span>
-          {uncategorizedCount > 0 && <span style={{ color: 'var(--amber)' }}>{uncategorizedCount} uncategorized</span>}
-          {duplicateCount > 0 && <span style={{ color: 'var(--amber)' }}>{duplicateCount} possible duplicates</span>}
-          {outlierCount > 0 && <span style={{ color: 'var(--amber)' }}>{outlierCount} unusually large</span>}
-          {removedCount > 0 && <span className="muted">{removedCount} removed</span>}
-        </div>
-
-        {extraction.confidence_notes && (
-          <div className="notice info" style={{ marginBottom: 'var(--space-3)' }}>
-            <Info />
-            <div className="notice-body">AI flagged this: {extraction.confidence_notes}</div>
+    // No backdrop-dismiss on purpose — this review can represent several minutes of
+    // AI extraction + manual corrections; an accidental outside click must not be
+    // able to throw all of that away. Cancel still works.
+    <div className="sheet-backdrop">
+      <div className="sheet" ref={containerRef} role="dialog" aria-modal="true" aria-labelledby="cf-review-title">
+        <header className="sheet-header">
+          <div style={{ minWidth: 0 }}>
+            <h2 id="cf-review-title">Review statement</h2>
+            <div className="cf-review-file">
+              {[documentOriginalName, period].filter(Boolean).join(' · ') || 'Uploaded statement'}
+            </div>
           </div>
-        )}
+          <button type="button" className="icon-btn" onClick={cancel} title="Cancel import" aria-label="Cancel import">
+            <X size={16} />
+          </button>
+        </header>
 
-        {extraction.statement_type !== 'bank' && (
-          <div className="notice error" style={{ marginBottom: 'var(--space-3)' }}>
-            <AlertTriangle />
-            <div className="notice-body">
-              {extraction.statement_type === 'credit_card'
-                ? "This looks like a credit card statement, not a bank account statement. Card statements aren't " +
-                  "supported yet — importing it as-is would double-count spending already captured on your bank " +
-                  'statement when you pay the card bill.'
-                : "AI couldn't tell whether this is a bank or credit card statement — double-check before saving."}
-              {!cardWarningAcknowledged && (
-                <div style={{ marginTop: 6 }}>
-                  <button type="button" className="btn secondary small" onClick={() => setCardWarningAcknowledged(true)}>
-                    Continue anyway
-                  </button>
+        <div className="sheet-body">
+          <div className="cf-review-top">
+            <div className="field" style={{ margin: 0, flex: '1 1 260px' }}>
+              <label htmlFor="cf-review-account">Which account is this?</label>
+              <select
+                id="cf-review-account"
+                value={accountSyncId}
+                onChange={(e) => setAccountSyncId(e.target.value)}
+                className={!accountSyncId ? 'cf-needs-value' : undefined}
+              >
+                <option value="" disabled>
+                  Choose an account…
+                </option>
+                {trackedAccounts.map((a) => (
+                  <option key={a.sync_id} value={a.sync_id}>
+                    {a.name}
+                    {a.institution ? ` (${a.institution})` : ''}
+                    {a.account_number ? ` •••• ${a.account_number.slice(-4)}` : ''}
+                  </option>
+                ))}
+              </select>
+              <div className="help-text">
+                {trackedAccounts.length === 0
+                  ? 'No bank accounts yet — add one under Accounts, then upload again.'
+                  : `The statement calls it “${extraction.account_label ?? 'unlabelled'}”.`}
+              </div>
+            </div>
+            {extraction.balanceCheck && (
+              <div className={`cf-reconcile ${reconciles ? 'ok' : 'bad'}`}>
+                {reconciles ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                <div>
+                  <strong>{reconciles ? 'Balances match' : `${formatCurrency(Math.abs(extraction.balanceCheck.gap))} doesn't add up`}</strong>
+                  <div>{reconciles ? 'Every line adds up to the closing balance' : 'against the statement’s closing balance'}</div>
                 </div>
+              </div>
+            )}
+          </div>
+
+          <div className="cf-review-stats">
+            <span>
+              <strong>{active.length}</strong> transactions
+            </span>
+            <span className="amount-in">
+              In <strong>{formatCurrency(total('income'))}</strong>
+            </span>
+            <span>
+              Out <strong>{formatCurrency(total('expense'))}</strong>
+            </span>
+            {removedCount > 0 && <span className="muted">{removedCount} removed</span>}
+          </div>
+
+          <div className={`cf-checks ${checksOpen ? 'open' : ''}`}>
+            <button type="button" className="cf-checks-toggle" onClick={() => setChecksOpen((v) => !v)} aria-expanded={checksOpen}>
+              {checksOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              {attentionCount > 0 ? (
+                <>
+                  <AlertTriangle size={14} className="cf-checks-icon" />
+                  {attentionCount} thing{attentionCount === 1 ? '' : 's'} to check
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={14} className="cf-checks-icon ok" />
+                  Nothing unusual found
+                </>
               )}
-            </div>
-          </div>
-        )}
-
-        {cardDoubleCount > 0 && (
-          <div className="notice warn" style={{ marginBottom: 'var(--space-3)' }}>
-            <CreditCard />
-            <div className="notice-body">
-              {cardDoubleCount} row{cardDoubleCount === 1 ? '' : 's'} look like credit card bill payments — if you
-              also import that card's own statement separately, its spending may get counted twice.
-            </div>
-          </div>
-        )}
-
-        <div className="field">
-          <label>Bank account</label>
-          <select value={accountSyncId} onChange={(e) => setAccountSyncId(e.target.value)}>
-            <option value="" disabled>
-              {trackedAccounts.length > 1 ? 'Multiple accounts matched — select one…' : 'Select an account…'}
-            </option>
-            {trackedAccounts.map((a) => (
-              <option key={a.sync_id} value={a.sync_id}>
-                {a.name}
-                {a.institution ? ` (${a.institution})` : ''}
-                {a.account_number ? ` •••• ${a.account_number.slice(-4)}` : ''}
-              </option>
-            ))}
-          </select>
-          {trackedAccounts.length === 0 && (
-            <div className="help-text" style={{ color: 'var(--red)' }}>
-              No bank accounts yet — add one under Accounts, then come back to this upload.
-            </div>
-          )}
-        </div>
-
-        {extraction.balanceCheck && !reconciles && (
-          <div className="notice error" style={{ marginBottom: 'var(--space-3)' }}>
-            <AlertTriangle />
-            <div className="notice-body">
-              {formatCurrency(Math.abs(extraction.balanceCheck.gap))} doesn't reconcile against this statement's own balance —
-              opening {formatCurrency(extraction.opening_balance!)} plus every line below (kept and excluded) should
-              land on the statement's closing balance of {formatCurrency(extraction.closing_balance!)}, but comes to{' '}
-              {formatCurrency(extraction.balanceCheck.expectedClosing)} instead. Some transactions may be missing,
-              duplicated, or misread — check the original statement before saving.
-            </div>
-          </div>
-        )}
-        {extraction.balanceCheck && reconciles && (
-          <div className="notice success" style={{ marginBottom: 'var(--space-3)' }}>
-            <CheckCircle2 />
-            <div className="notice-body">Every transaction below reconciles with the statement's own opening/closing balance.</div>
-          </div>
-        )}
-
-        <div className="help-text" style={{ marginBottom: 12 }}>
-          Every line on the statement is included below — nothing is excluded at this stage. A transfer to
-          another of your own accounts, or a refund/reversal, only gets tagged <strong>Transfer</strong> once it's
-          confirmed against a matching entry already in your ledger, so it stays visible but doesn't count as
-          income or spending. Recategorize any row yourself if that's wrong.
-        </div>
-
-        <div className="segmented small" role="group" aria-label="Show rows" style={{ marginBottom: 'var(--space-2)', flexWrap: 'wrap' }}>
-          {([
-            ['all', 'All', null],
-            ['uncategorized', 'Uncategorized', uncategorizedCount],
-            ['low_confidence', 'Needs a look', active.filter((t) => t.confidence !== 'high').length],
-            ['large_amount', 'Unusually large', outlierCount],
-            ['transfer', 'Transfers', active.filter((t) => t.category === 'transfer').length]
-          ] as [FilterMode, string, number | null][]).map(([mode, label, count]) => (
-            <button key={mode} type="button" aria-pressed={filter === mode} onClick={() => setFilter(mode)}>
-              {label}
-              {count !== null && <span className="segmented-count">{count}</span>}
             </button>
-          ))}
-        </div>
-
-        <div style={{ maxHeight: 380, overflow: 'auto', margin: '12px 0' }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Description</th>
-                <th>Type</th>
-                <th>Amount</th>
-                <th>Category</th>
-                <th>Subcategory</th>
-                <th>Confidence</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleIndices.map((i) => (
-                <ReviewRow
-                  key={i}
-                  index={i}
-                  row={transactions[i]}
-                  error={rowErrors[i]}
-                  onUpdate={updateTxn}
-                  onRemove={removeTxn}
-                  onRestore={restoreTxn}
-                />
-              ))}
-            </tbody>
-          </table>
-          <datalist id="cashflow-review-subcategories">
-            {CASH_FLOW_SUBCATEGORIES.map((s) => (
-              <option key={s} value={s} />
-            ))}
-          </datalist>
-        </div>
-        <button type="button" className="btn secondary" style={{ fontSize: 11, padding: '4px 10px' }} onClick={addTxn}>
-          <Plus size={12} /> Add transaction
-        </button>
-
-        {error && (
-          <div className="notice error" role="alert" style={{ marginTop: 'var(--space-3)' }}>
-            <AlertTriangle />
-            <div className="notice-body">{error}</div>
+            {checksOpen && (
+              <div className="cf-checks-list">
+                {checks.map((c) => {
+                  const Icon = c.icon
+                  return (
+                    <div key={c.key} className={`cf-check ${c.tone}`}>
+                      <Icon size={14} />
+                      <div className="cf-check-body">{c.body}</div>
+                      {c.action}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
-        )}
 
-        <div className="modal-actions">
-          <button className="btn secondary" onClick={cancel} disabled={busy}>
-            Cancel
-          </button>
-          <button className="btn" onClick={submit} disabled={busy || needsCardWarning}>
-            {busy ? 'Saving…' : `Save ${destinationLabel}`}
+          <div className="segmented small" role="group" aria-label="Show rows" style={{ flexWrap: 'wrap' }}>
+            {(
+              [
+                ['all', 'All', null],
+                ['flagged', 'Flagged', flaggedCount],
+                ['low_confidence', 'Unsure', lowConfidenceCount],
+                ['uncategorized', 'Uncategorized', uncategorizedCount],
+                ['transfer', 'Transfers', transferCount]
+              ] as [FilterMode, string, number | null][]
+            ).map(([mode, label, count]) => (
+              <button key={mode} type="button" aria-pressed={filter === mode} onClick={() => setFilter(mode)}>
+                {label}
+                {count !== null && <span className="segmented-count">{count}</span>}
+              </button>
+            ))}
+          </div>
+
+          <div className="card cf-review-list">
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: 28 }}>
+                    <span className="sr-only">Confidence</span>
+                  </th>
+                  <th>Transaction</th>
+                  <th>Category</th>
+                  <th className="num">Amount</th>
+                  <th style={{ width: 72 }}>
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleIndices.map((i) => (
+                  <ReviewRow
+                    key={i}
+                    index={i}
+                    row={transactions[i]}
+                    error={rowErrors[i]}
+                    onUpdate={updateTxn}
+                    onRemove={removeTxn}
+                    onRestore={restoreTxn}
+                  />
+                ))}
+                {visibleIndices.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="muted">
+                      Nothing in this view.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <button type="button" className="cf-link-btn" style={{ marginTop: 'var(--space-3)' }} onClick={addTxn}>
+            <Plus size={12} /> Add a missing transaction
           </button>
         </div>
+
+        <footer className="sheet-footer">
+          {error ? (
+            <div className="cf-sheet-error" role="alert">
+              <AlertTriangle size={14} /> {error}
+            </div>
+          ) : (
+            <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>
+              {needsCardWarning ? 'Confirm the statement type above to continue.' : 'Nothing is saved until you click Save.'}
+            </span>
+          )}
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <button className="btn secondary" onClick={cancel} disabled={busy}>
+              Cancel
+            </button>
+            <button className="btn" onClick={submit} disabled={busy || needsCardWarning}>
+              {busy ? 'Saving…' : `Save ${destinationLabel}`}
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   )
@@ -537,27 +687,33 @@ interface RowProps {
   onRestore: (index: number) => void
 }
 
-const CONFIDENCE_COLOR: Record<EditableRow['confidence'], string> = {
-  high: 'var(--text-faint)',
-  medium: 'var(--amber)',
-  low: 'var(--red)'
+const CONFIDENCE: Record<EditableRow['confidence'], { color: string; label: string }> = {
+  high: { color: 'transparent', label: 'AI is confident about this line' },
+  medium: { color: 'var(--amber)', label: 'AI is fairly sure — worth a glance' },
+  low: { color: 'var(--red)', label: 'AI is unsure — check this against the statement' }
 }
 
 // Memoized so editing one row doesn't re-render every other row in a 100+ row
 // statement — safe because `transactions[i]`'s object reference only changes for
 // the row actually touched (see updateTxn's functional setState), and onUpdate/
 // onRemove/onRestore are stable (useCallback, no closed-over state).
+// Reads as a plain line until clicked; a row with a problem opens itself.
 const ReviewRow = memo(function ReviewRow({ index, row, error, onUpdate, onRemove, onRestore }: RowProps): JSX.Element {
-  const [descFocused, setDescFocused] = useState(false)
+  const [editing, setEditing] = useState(row.description === '')
+  const open = editing || error !== null
 
   if (row.removed) {
     return (
-      <tr style={{ opacity: 0.5 }}>
-        <td className="muted" style={{ textDecoration: 'line-through' }}>{formatDate(row.txn_date)}</td>
-        <td style={{ textDecoration: 'line-through' }}>{row.description}</td>
-        <td colSpan={5} className="muted">Removed</td>
+      <tr className="cf-review-removed">
+        <td />
         <td>
-          <button type="button" className="icon-btn" onClick={() => onRestore(index)} title="Restore">
+          <div className="cf-row-title">{row.description}</div>
+          <div className="cf-row-meta">{formatDate(row.txn_date)} · removed</div>
+        </td>
+        <td />
+        <td className="num">{row.amountText}</td>
+        <td style={{ textAlign: 'right' }}>
+          <button type="button" className="icon-btn" onClick={() => onRestore(index)} title="Put back" aria-label="Put back">
             <RotateCcw size={14} />
           </button>
         </td>
@@ -565,113 +721,136 @@ const ReviewRow = memo(function ReviewRow({ index, row, error, onUpdate, onRemov
     )
   }
 
+  const amount = parseIndianAmount(row.amountText)
+  const conf = CONFIDENCE[row.confidence]
+  const flagged = row.possibleDuplicate || row.isOutlier || row.possibleCardBillDouble
+
   return (
-    <tr
-      style={
-        row.possibleDuplicate
-          ? { background: 'var(--amber-soft)' }
-          : row.isOutlier || row.possibleCardBillDouble
-            ? { background: 'var(--red-soft)' }
-            : undefined
-      }
-    >
-      <td>
-        <input
-          type="date"
-          aria-label={`Row ${index + 1} date`}
-          style={{ width: 130, borderColor: !isValidIsoDate(row.txn_date) ? 'var(--red)' : undefined }}
-          value={row.txn_date}
-          onChange={(e) => onUpdate(index, { txn_date: e.target.value })}
-        />
-      </td>
-      <td>
-        <input
-          aria-label={`Row ${index + 1} description`}
-          style={{ width: descFocused ? 320 : 190, transition: 'width 120ms ease' }}
-          value={row.description}
-          onChange={(e) => onUpdate(index, { description: e.target.value })}
-          onFocus={() => setDescFocused(true)}
-          onBlur={() => setDescFocused(false)}
-          placeholder="Description"
-          title={row.raw_text && row.raw_text !== row.description ? `Original: ${row.raw_text}` : undefined}
-        />
-        {(row.possibleDuplicate || row.isOutlier || row.possibleCardBillDouble) && (
-          <span style={{ display: 'inline-flex', gap: 'var(--space-1)', marginLeft: 'var(--space-1)', verticalAlign: 'middle' }}>
+    <>
+      <tr
+        className={`cf-row ${flagged ? 'cf-review-flagged' : ''} ${error ? 'cf-review-error' : ''}`}
+        onClick={() => setEditing((v) => !v)}
+      >
+        <td>
+          {row.confidence !== 'high' && (
+            <span className="cf-conf-dot" style={{ background: conf.color }} title={conf.label} aria-label={conf.label} role="img" />
+          )}
+        </td>
+        <td className="cf-row-main">
+          <div className="cf-row-title">
+            {row.description || <span className="muted">New transaction</span>}
             {row.possibleDuplicate && (
-              <span title="Possible duplicate of an existing transaction" style={{ color: 'var(--amber)' }}>
-                <Copy size={13} aria-label="Possible duplicate" />
+              <span title="Possible duplicate of an existing transaction" className="cf-flag warn">
+                <Copy size={12} aria-label="Possible duplicate" />
               </span>
             )}
             {row.isOutlier && (
-              <span title="Unusually large amount for this statement" style={{ color: 'var(--red)' }}>
-                <AlertTriangle size={13} aria-label="Unusually large" />
+              <span title="Unusually large amount for this statement" className="cf-flag bad">
+                <AlertTriangle size={12} aria-label="Unusually large" />
               </span>
             )}
             {row.possibleCardBillDouble && (
-              <span title="Looks like a card bill payment — possible double count" style={{ color: 'var(--amber)' }}>
-                <CreditCard size={13} aria-label="Possible card bill" />
+              <span title="Looks like a card bill payment — possible double count" className="cf-flag warn">
+                <CreditCard size={12} aria-label="Possible card bill" />
               </span>
             )}
-          </span>
-        )}
-      </td>
-      <td>
-        <select
-          aria-label={`Row ${index + 1} direction`}
-          value={row.direction}
-          onChange={(e) => {
-            const direction = e.target.value as CashFlowDirection
-            const categories = categoriesFor(direction, 'short')
-            const category = categories.some((c) => c.value === row.category) ? row.category : categories[2].value
-            onUpdate(index, { direction, category })
-          }}
-        >
-          <option value="income">Income</option>
-          <option value="expense">Expense</option>
-        </select>
-      </td>
-      <td>
-        <input
-          aria-label={`Row ${index + 1} amount`}
-          style={{ width: 90, borderColor: parseIndianAmount(row.amountText) === null ? 'var(--red)' : undefined }}
-          value={row.amountText}
-          onChange={(e) => onUpdate(index, { amountText: e.target.value })}
-          placeholder="Amount"
-        />
-        {row.currency !== 'INR' && <div style={{ fontSize: 10 }} className="muted">{row.currency}</div>}
-      </td>
-      <td>
-        <select
-          aria-label={`Row ${index + 1} category`}
-          value={row.category}
-          onChange={(e) => onUpdate(index, { category: e.target.value as CashFlowCategory })}
-        >
-          {categoriesFor(row.direction, 'short').map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-      </td>
-      <td>
-        <input
-          aria-label={`Row ${index + 1} subcategory`}
-          style={{ width: 120 }}
-          value={row.subcategory}
-          onChange={(e) => onUpdate(index, { subcategory: e.target.value })}
-          placeholder="Optional"
-          list="cashflow-review-subcategories"
-        />
-      </td>
-      <td style={{ color: CONFIDENCE_COLOR[row.confidence], fontSize: 11, textTransform: 'capitalize' }}>
-        {row.confidence}
-      </td>
-      <td>
-        <button type="button" className="icon-btn" onClick={() => onRemove(index)} title="Remove">
-          <Trash2 size={14} />
-        </button>
-        {error && <div style={{ fontSize: 11, color: 'var(--red)', whiteSpace: 'nowrap' }}>{error}</div>}
-      </td>
-    </tr>
+          </div>
+          <div className="cf-row-meta" title={row.raw_text ?? undefined}>
+            {formatDateShort(row.txn_date)}
+            {row.raw_text && row.raw_text !== row.description ? ` · ${row.raw_text}` : ''}
+          </div>
+        </td>
+        <td onClick={(e) => e.stopPropagation()}>
+          <CashFlowCategoryPicker
+            direction={row.direction}
+            value={{ category: row.category, subcategory: row.subcategory || null }}
+            onChange={(next) => onUpdate(index, { category: next.category, subcategory: next.subcategory ?? '' })}
+          />
+        </td>
+        <td className={`num ${!countsTowardPnl(row.category) ? 'amount-muted' : row.direction === 'income' ? 'amount-in' : 'amount-out'}`}>
+          {amount === null ? (
+            <span style={{ color: 'var(--red)' }}>—</span>
+          ) : (
+            <>
+              {row.direction === 'income' ? '+' : '−'}
+              {formatCurrency(amount)}
+            </>
+          )}
+          {row.currency !== 'INR' && <div className="cf-row-meta">{row.currency}</div>}
+        </td>
+        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => setEditing((v) => !v)}
+            title={open ? 'Done editing' : 'Edit'}
+            aria-label={open ? 'Done editing' : 'Edit'}
+            aria-expanded={open}
+          >
+            <Pencil size={14} />
+          </button>
+          <button type="button" className="icon-btn" onClick={() => onRemove(index)} title="Leave this line out" aria-label="Leave this line out">
+            <Trash2 size={14} />
+          </button>
+        </td>
+      </tr>
+      {open && (
+        <tr className="cf-review-editor">
+          <td />
+          <td colSpan={4}>
+            <div className="cf-review-fields">
+              <label>
+                Date
+                <input
+                  type="date"
+                  value={row.txn_date}
+                  className={!isValidIsoDate(row.txn_date) ? 'cf-invalid' : undefined}
+                  onChange={(e) => onUpdate(index, { txn_date: e.target.value })}
+                />
+              </label>
+              <label className="cf-review-desc">
+                Description
+                <input
+                  value={row.description}
+                  placeholder="What was it?"
+                  onChange={(e) => onUpdate(index, { description: e.target.value })}
+                  className={!row.description.trim() ? 'cf-invalid' : undefined}
+                  autoFocus={row.description === ''}
+                />
+              </label>
+              <label>
+                In or out
+                <select
+                  value={row.direction}
+                  onChange={(e) => {
+                    const direction = e.target.value as CashFlowDirection
+                    // Keep the category if it exists on the other side; otherwise
+                    // re-derive it from the name (or fall back to the catch-all).
+                    const keeps = categoriesFor(direction, 'short').some((c) => c.value === row.category)
+                    onUpdate(index, {
+                      direction,
+                      category: keeps ? row.category : defaultCategoryFor(row.subcategory, direction)
+                    })
+                  }}
+                >
+                  <option value="income">Money in</option>
+                  <option value="expense">Money out</option>
+                </select>
+              </label>
+              <label>
+                Amount
+                <input
+                  value={row.amountText}
+                  placeholder="e.g. 1,250"
+                  onChange={(e) => onUpdate(index, { amountText: e.target.value })}
+                  className={amount === null || amount <= 0 ? 'cf-invalid' : undefined}
+                />
+              </label>
+            </div>
+            {error && <div className="cf-review-row-error">{error}</div>}
+          </td>
+        </tr>
+      )}
+    </>
   )
 })

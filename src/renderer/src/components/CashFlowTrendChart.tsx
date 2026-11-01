@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from 'recharts'
 import { ChartColumn, Table as TableIcon } from 'lucide-react'
 import type { CashFlowMonthSummary } from '../../../shared/types'
 import { formatCurrency, formatMonthYear } from '../lib/format'
@@ -7,32 +7,23 @@ import { formatCurrency, formatMonthYear } from '../lib/format'
 interface Props {
   summary: CashFlowMonthSummary[]
   onMonthClick?: (month: string) => void
+  // The period on screen — its months render at full strength, the rest recede.
+  highlight?: { start: string; end: string }
 }
 
-// Colors are CSS custom properties (styles.css's :root / body.light-mode) resolved at
-// render time, so the chart re-themes with the rest of the app. Each direction gets
-// one validated ordinal ramp — green for income, red-orange for expense — stepping
-// from most essential (salary/fixed) to discretionary; see the --cf-* comment there.
-const SERIES: { key: keyof CashFlowMonthSummary; label: string; color: string }[] = [
-  { key: 'income_salary', label: 'Salary', color: 'var(--cf-income-1)' },
-  { key: 'income_other_fixed', label: 'Other fixed income', color: 'var(--cf-income-2)' },
-  { key: 'income_discretionary', label: 'Discretionary income', color: 'var(--cf-income-3)' },
-  { key: 'income_uncategorized', label: 'Uncategorized', color: 'var(--cf-uncategorized)' },
-  { key: 'expense_fixed_monthly', label: 'Fixed monthly expense', color: 'var(--cf-expense-1)' },
-  { key: 'expense_other_fixed', label: 'Other fixed expense', color: 'var(--cf-expense-2)' },
-  { key: 'expense_discretionary', label: 'Discretionary expense', color: 'var(--cf-expense-3)' },
-  // Same color/label as income_uncategorized by design (#111) — legendType="none"
-  // below keeps it off the legend so "Uncategorized" doesn't appear twice; the
-  // segment itself still renders and is still named correctly in the tooltip.
-  { key: 'expense_uncategorized', label: 'Uncategorized', color: 'var(--cf-uncategorized)' }
-]
-
+// Deliberately just two bars a month — money in vs money out. The per-category
+// stack (7 series + a smoothed net line) was too much to read at a glance, and the
+// smoothing drew net dips between months that never happened. Net and the split
+// live in the tooltip and the table view; categories live in "Where the money went".
+// --cf-in / --cf-out are a validated pair (styles.css).
 const RANGES: { label: string; months: number | null }[] = [
-  { label: '3M', months: 3 },
   { label: '6M', months: 6 },
   { label: '1Y', months: 12 },
   { label: 'All', months: null }
 ]
+
+// Months outside the period on screen stay readable but recede.
+const DIMMED = 0.45
 
 function compactRupees(v: number): string {
   if (v === 0) return '0'
@@ -41,38 +32,89 @@ function compactRupees(v: number): string {
   return String(v)
 }
 
-export default function CashFlowTrendChart({ summary, onMonthClick }: Props): JSX.Element {
-  const [range, setRange] = useState<(typeof RANGES)[number]>(RANGES[1])
+interface Row {
+  month: string
+  income_total: number
+  expense_total: number
+  net: number
+}
+
+function TrendTooltip({ active, payload }: { active?: boolean; payload?: { payload: Row }[] }): JSX.Element | null {
+  if (!active || !payload?.length) return null
+  const m = payload[0].payload
+  return (
+    <div className="cf-tooltip">
+      <div className="cf-tooltip-title">{formatMonthYear(m.month)}</div>
+      <div className="cf-tooltip-row">
+        <span className="chip-dot" style={{ background: 'var(--cf-in)' }} />
+        Money in <span className="num">{formatCurrency(m.income_total)}</span>
+      </div>
+      <div className="cf-tooltip-row">
+        <span className="chip-dot" style={{ background: 'var(--cf-out)' }} />
+        Money out <span className="num">{formatCurrency(m.expense_total)}</span>
+      </div>
+      <div className="cf-tooltip-row cf-tooltip-total">
+        Left over
+        <span className="num" style={m.net < 0 ? { color: 'var(--red)' } : undefined}>
+          {m.net < 0 ? '−' : ''}
+          {formatCurrency(Math.abs(m.net))}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+export default function CashFlowTrendChart({ summary, onMonthClick, highlight }: Props): JSX.Element {
+  const [range, setRange] = useState<(typeof RANGES)[number]>(RANGES[0])
   const [asTable, setAsTable] = useState(false)
 
-  const data = (range.months ? summary.slice(-range.months) : summary).map((m) => ({ ...m, net: m.income_total - m.expense_total }))
+  const data: Row[] = (range.months ? summary.slice(-range.months) : summary).map((m) => ({
+    month: m.month,
+    income_total: m.income_total,
+    expense_total: m.expense_total,
+    net: m.income_total - m.expense_total
+  }))
 
-  // Only show a series (and its legend entry) if some month in the visible range
-  // actually has it — "Uncategorized" in particular should disappear once
-  // everything is classified.
-  const activeSeries = SERIES.filter((s) => data.some((m) => (m[s.key] as number) > 0))
-  const labelByKey = Object.fromEntries(activeSeries.map((s) => [s.key, s.label]))
-  const lastIncomeIdx = activeSeries.map((s) => s.key.toString().startsWith('income_')).lastIndexOf(true)
-  const lastExpenseIdx = activeSeries.map((s) => s.key.toString().startsWith('expense_')).lastIndexOf(true)
+  // "Jun" is enough within one year; once the range crosses a year, "Jun '26".
+  const spansYears = new Set(data.map((m) => m.month.slice(0, 4))).size > 1
+  const tickLabel = (m: string): string => {
+    const [mon, yr] = formatMonthYear(m, 'short').split(' ')
+    return spansYears ? `${mon} '${yr.slice(2)}` : mon
+  }
 
-  // Range and chart/table switches stay put in both views, so flipping to the table
-  // doesn't lose the range or move the controls under the cursor.
+  const inHighlight = (month: string): boolean =>
+    !highlight || (month >= highlight.start.slice(0, 7) && month <= highlight.end.slice(0, 7))
+
   const controls = (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-      <div className="segmented small" role="group" aria-label="Time range">
-        {RANGES.map((r) => (
-          <button key={r.label} type="button" aria-pressed={range.label === r.label} onClick={() => setRange(r)}>
-            {r.label}
-          </button>
-        ))}
+    <div className="cf-chart-controls">
+      <div className="cf-legend" aria-hidden={asTable}>
+        {!asTable && (
+          <>
+            <span>
+              <span className="chip-dot" style={{ background: 'var(--cf-in)' }} /> Money in
+            </span>
+            <span>
+              <span className="chip-dot" style={{ background: 'var(--cf-out)' }} /> Money out
+            </span>
+          </>
+        )}
       </div>
-      <div className="segmented small" role="group" aria-label="Display as">
-        <button type="button" aria-pressed={!asTable} onClick={() => setAsTable(false)}>
-          <ChartColumn /> Chart
-        </button>
-        <button type="button" aria-pressed={asTable} onClick={() => setAsTable(true)}>
-          <TableIcon /> Table
-        </button>
+      <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <div className="segmented small" role="group" aria-label="Time range">
+          {RANGES.map((r) => (
+            <button key={r.label} type="button" aria-pressed={range.label === r.label} onClick={() => setRange(r)}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <div className="segmented small" role="group" aria-label="Display as">
+          <button type="button" aria-pressed={!asTable} onClick={() => setAsTable(false)} title="Chart" aria-label="Chart">
+            <ChartColumn />
+          </button>
+          <button type="button" aria-pressed={asTable} onClick={() => setAsTable(true)} title="Table" aria-label="Table">
+            <TableIcon />
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -86,19 +128,20 @@ export default function CashFlowTrendChart({ summary, onMonthClick }: Props): JS
             <thead>
               <tr>
                 <th>Month</th>
-                <th className="num">Income</th>
-                <th className="num">Expense</th>
-                <th className="num">Net</th>
+                <th className="num">In</th>
+                <th className="num">Out</th>
+                <th className="num">Left over</th>
               </tr>
             </thead>
             <tbody>
-              {data.map((m) => (
+              {[...data].reverse().map((m) => (
                 <tr key={m.month}>
                   <td>{formatMonthYear(m.month)}</td>
                   <td className="num">{formatCurrency(m.income_total)}</td>
                   <td className="num">{formatCurrency(m.expense_total)}</td>
                   <td className="num" style={m.net < 0 ? { color: 'var(--red)' } : undefined}>
-                    {formatCurrency(m.net)}
+                    {m.net < 0 ? '−' : ''}
+                    {formatCurrency(Math.abs(m.net))}
                   </td>
                 </tr>
               ))}
@@ -109,49 +152,50 @@ export default function CashFlowTrendChart({ summary, onMonthClick }: Props): JS
     )
   }
 
+  const clickable = onMonthClick
+    ? {
+        cursor: 'pointer',
+        onClick: (d: { payload?: { month?: string } }) => {
+          if (d.payload?.month) onMonthClick(d.payload.month)
+        }
+      }
+    : {}
+
   return (
     <div>
       {controls}
-      <ResponsiveContainer width="100%" height={260}>
-        <ComposedChart data={data}>
-          <XAxis dataKey="month" tick={{ fontSize: 11 }} tickFormatter={(m: string) => formatMonthYear(m, 'short')} />
-          <YAxis tick={{ fontSize: 11 }} tickFormatter={compactRupees} width={40} />
-          <Tooltip
-            contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10 }}
-            labelStyle={{ color: 'var(--text-faint)' }}
-            itemStyle={{ color: 'var(--text)' }}
-            labelFormatter={(m) => formatMonthYear(String(m))}
-            // Zero-value series (a category with nothing that month) are dropped
-            // from the tooltip entirely rather than listed as "₹0" (#108).
-            formatter={(v: unknown, name: unknown) => {
-              if (Number(v) === 0) return null
-              return [formatCurrency(Number(v)), name === 'net' ? 'Net' : labelByKey[String(name)] ?? String(name)]
-            }}
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart data={data} barGap={3} barCategoryGap="28%" margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+          <CartesianGrid vertical={false} stroke="var(--border-soft)" />
+          <XAxis
+            dataKey="month"
+            tick={{ fontSize: 11, fill: 'var(--text-faint)' }}
+            tickFormatter={tickLabel}
+            axisLine={false}
+            tickLine={false}
           />
-          <Legend formatter={(value: string) => (value === 'net' ? 'Net' : labelByKey[value] ?? value)} wrapperStyle={{ fontSize: 12, color: 'var(--text-faint)' }} />
-          {activeSeries.map((s, i) => (
-            <Bar
-              key={String(s.key)}
-              dataKey={s.key as string}
-              stackId={s.key.toString().startsWith('income_') ? 'income' : 'expense'}
-              fill={s.color}
-              stroke="var(--bg-card)"
-              strokeWidth={2}
-              radius={i === lastIncomeIdx || i === lastExpenseIdx ? [4, 4, 0, 0] : 0}
-              legendType={s.key === 'expense_uncategorized' ? 'none' : 'square'}
-              cursor={onMonthClick ? 'pointer' : undefined}
-              onClick={
-                onMonthClick
-                  ? (d: { payload?: { month?: string } }) => {
-                      if (d.payload?.month) onMonthClick(d.payload.month)
-                    }
-                  : undefined
-              }
-            />
-          ))}
-          <Line type="monotone" dataKey="net" stroke="var(--accent)" strokeWidth={2} strokeDasharray="4 3" dot={false} />
-        </ComposedChart>
+          <YAxis
+            tick={{ fontSize: 11, fill: 'var(--text-faint)' }}
+            tickFormatter={compactRupees}
+            width={36}
+            axisLine={false}
+            tickLine={false}
+            tickCount={4}
+          />
+          <Tooltip content={<TrendTooltip />} cursor={{ fill: 'var(--bg-card-hover)' }} />
+          <Bar dataKey="income_total" name="Money in" fill="var(--cf-in)" radius={[4, 4, 0, 0]} maxBarSize={16} {...clickable}>
+            {data.map((m) => (
+              <Cell key={m.month} fillOpacity={inHighlight(m.month) ? 1 : DIMMED} />
+            ))}
+          </Bar>
+          <Bar dataKey="expense_total" name="Money out" fill="var(--cf-out)" radius={[4, 4, 0, 0]} maxBarSize={16} {...clickable}>
+            {data.map((m) => (
+              <Cell key={m.month} fillOpacity={inHighlight(m.month) ? 1 : DIMMED} />
+            ))}
+          </Bar>
+        </BarChart>
       </ResponsiveContainer>
+      {onMonthClick && <div className="cf-chart-hint">Click a month to open it</div>}
     </div>
   )
 }

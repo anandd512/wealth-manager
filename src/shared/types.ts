@@ -361,6 +361,9 @@ export type CashFlowCategory = IncomeCategory | ExpenseCategory
 
 // A curated, non-exhaustive list offered as a <datalist> alongside a free-text
 // field — not a closed enum, so a user's own term is never rejected.
+// It's also the vocabulary the AI statement reader picks from (cashFlowParser.ts),
+// and each name maps to a default category in cashFlowCategories.ts's
+// EVERYDAY_CATEGORIES — keep the two in step when adding a name.
 export const CASH_FLOW_SUBCATEGORIES = [
   'Food & Dining',
   'Groceries',
@@ -368,6 +371,10 @@ export const CASH_FLOW_SUBCATEGORIES = [
   'Shopping',
   'Bills & Utilities',
   'Rent / Housing',
+  'EMI / Loans',
+  'Subscriptions',
+  'Insurance',
+  'Taxes & Fees',
   'Healthcare',
   'Entertainment',
   'Travel',
@@ -375,6 +382,10 @@ export const CASH_FLOW_SUBCATEGORIES = [
   'Transfers',
   'Salary',
   'Interest / Dividends',
+  'Rental income',
+  'Bonus',
+  'Gifts',
+  'Refunds',
   'Other'
 ] as const
 
@@ -459,7 +470,7 @@ export type CashFlowRecurringInput = Omit<
 // kv_settings key (settings.ts), not a dedicated table; this is a short, rarely-
 // changed list a user edits by hand, not something queried/joined against.
 export interface CashFlowBudget {
-  key: string // a CashFlowCategory, or 'category:subcategory' for a finer budget
+  key: string // a CashFlowCategory (e.g. 'fixed_monthly'), or a subcategory name (e.g. 'Groceries') for a finer budget
   label: string
   monthlyAmount: number
 }
