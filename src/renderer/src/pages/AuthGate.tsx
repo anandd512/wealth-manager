@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { LockKeyhole, DatabaseBackup, Upload, ScanFace, HelpCircle, RotateCcw, ArrowLeft, AlertTriangle, Eye, EyeOff } from 'lucide-react'
+import { DatabaseBackup, Upload, ScanFace, HelpCircle, RotateCcw, ArrowLeft, AlertTriangle, Eye, EyeOff } from 'lucide-react'
 import logo from '../assets/logo.png'
 import { formatDate } from '../lib/format'
 

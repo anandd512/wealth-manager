@@ -51,6 +51,13 @@ export function deleteCreditCard(id: number): void {
     .run(new Date().toISOString(), id)
 }
 
+// Undo for deleteCreditCard.
+export function restoreCreditCard(id: number): void {
+  getDb()
+    .prepare('UPDATE credit_cards SET deleted = 0, updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), id)
+}
+
 // Bills are due this many days after the statement is generated. Not stored
 // per-card — a fixed, reasonable default rather than another field to fill in.
 const DUE_DATE_OFFSET_DAYS = 15

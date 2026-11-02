@@ -13,7 +13,7 @@ import {
   ScanFace,
   Timer,
   Lock,
-  HelpCircle,
+  SlidersHorizontal,
   Moon,
   Sun,
   Cloud,
@@ -21,7 +21,10 @@ import {
   RefreshCw,
   LogOut
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { formatDate } from '../lib/format'
+import { useTheme } from '../lib/theme'
+import ConfirmDialog from '../components/ConfirmDialog'
 import type {
   AppSettings,
   CheckInScheduleSettings,
@@ -31,17 +34,21 @@ import type {
   UpdateStatus
 } from '../../../shared/types'
 
-type TabId = 'data' | 'appearance' | 'security' | 'sync' | 'notifications' | 'ai' | 'help'
+// "General" absorbed the old Appearance tab (only a theme switch, which the
+// sidebar also has) and Help (updates + product tour) — two near-empty tabs.
+type TabId = 'general' | 'data' | 'security' | 'sync' | 'notifications' | 'ai'
 
-const TABS: { id: TabId; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
+const TABS: { id: TabId; label: string; icon: LucideIcon }[] = [
+  { id: 'general',       label: 'General',       icon: SlidersHorizontal },
   { id: 'data',          label: 'Data',          icon: DatabaseBackup },
-  { id: 'appearance',    label: 'Appearance',    icon: Moon },
   { id: 'security',      label: 'Security',      icon: Lock },
   { id: 'sync',          label: 'Cloud Sync',    icon: Cloud },
   { id: 'notifications', label: 'Notifications', icon: BellRing },
-  { id: 'ai',            label: 'AI',            icon: Sparkles },
-  { id: 'help',          label: 'Help',          icon: HelpCircle }
+  { id: 'ai',            label: 'AI',            icon: Sparkles }
 ]
+
+// Old ?tab= values still land somewhere sensible.
+const LEGACY_TABS: Record<string, TabId> = { appearance: 'general', help: 'general' }
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const OCCURRENCES: { value: 1 | 2 | 3 | 4; label: string }[] = [
@@ -50,6 +57,20 @@ const OCCURRENCES: { value: 1 | 2 | 3 | 4; label: string }[] = [
   { value: 3, label: 'Third' },
   { value: 4, label: 'Fourth' }
 ]
+
+interface StatusMsg {
+  tone: 'success' | 'error' | 'neutral'
+  text: string
+}
+
+function StatusLine({ msg }: { msg: StatusMsg }): JSX.Element {
+  const className = msg.tone === 'success' ? 'success-text' : msg.tone === 'error' ? 'error-text' : 'help-text'
+  return (
+    <div className={className} role={msg.tone === 'error' ? 'alert' : 'status'}>
+      {msg.text}
+    </div>
+  )
+}
 
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd']
@@ -60,7 +81,9 @@ function ordinal(n: number): string {
 export default function Settings(): JSX.Element {
   const [searchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
-  const initialTab: TabId = TABS.some((t) => t.id === requestedTab) ? (requestedTab as TabId) : 'data'
+  const initialTab: TabId = TABS.some((t) => t.id === requestedTab)
+    ? (requestedTab as TabId)
+    : (requestedTab && LEGACY_TABS[requestedTab]) || 'general'
   const [activeTab, setActiveTab] = useState<TabId>(initialTab)
 
   // Settings' tabs are local state, not routes, so App.tsx's route-change scroll
@@ -89,11 +112,12 @@ export default function Settings(): JSX.Element {
   // Document extraction provider
   const [provider, setProvider] = useState<ExtractionProvider>('anthropic')
   const [anthropicKey, setAnthropicKey] = useState('')
-  const [keyMsg, setKeyMsg] = useState<string | null>(null)
+  // Tone decides the styling — a failed test used to show in green success text.
+  const [keyMsg, setKeyMsg] = useState<StatusMsg | null>(null)
   const [openAiKey, setOpenAiKey] = useState('')
   const [openAiBaseUrl, setOpenAiBaseUrl] = useState('')
   const [openAiModel, setOpenAiModel] = useState('')
-  const [openAiMsg, setOpenAiMsg] = useState<string | null>(null)
+  const [openAiMsg, setOpenAiMsg] = useState<StatusMsg | null>(null)
 
   // Email reminders (notify)
   const [notifyStatus, setNotifyStatus] = useState<NotifyStatus | null>(null)
@@ -137,20 +161,19 @@ export default function Settings(): JSX.Element {
   const [syncError, setSyncError] = useState<string | null>(null)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
 
-  // Appearance
-  const [theme, setTheme] = useState<'dark' | 'light'>(
-    () => (localStorage.getItem('artha_theme') as 'dark' | 'light') ?? 'dark'
-  )
-
-  const toggleTheme = (next: 'dark' | 'light'): void => {
-    setTheme(next)
-    localStorage.setItem('artha_theme', next)
-    if (next === 'light') document.body.classList.add('light-mode')
-    else document.body.classList.remove('light-mode')
-  }
+  // Appearance — shared with the sidebar toggle (lib/theme), so the two can't disagree.
+  const [theme, toggleTheme] = useTheme()
 
   // Data summary
-  const [dataSummary, setDataSummary] = useState<{ accounts: number; policies: number; identityDocs: number; cards: number; vaultEntries: number } | null>(null)
+  const [dataSummary, setDataSummary] = useState<{
+    accounts: number
+    policies: number
+    identityDocs: number
+    cards: number
+    vaultEntries: number
+    transactions: number
+    statements: number
+  } | null>(null)
 
   // Backup & restore
   const [exportMsg, setExportMsg] = useState<string | null>(null)
@@ -163,6 +186,7 @@ export default function Settings(): JSX.Element {
   } | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importBusy, setImportBusy] = useState(false)
+  const [confirmingImport, setConfirmingImport] = useState(false)
 
   // Updates
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
@@ -222,19 +246,24 @@ export default function Settings(): JSX.Element {
       setHelloEnabled(enabled)
     })()
     ;(async () => {
-      const [accs, pols, ids, cards, vault] = await Promise.all([
+      const [accs, pols, ids, cards, vault, txns, imports] = await Promise.all([
         api().accounts.list(),
         api().insurance.list(),
         api().identityDocs.list(),
         api().creditCards.list(),
-        api().vault.list()
+        api().vault.list(),
+        api().cashFlow.list(),
+        api().cashFlow.listImports()
       ])
       setDataSummary({
         accounts: accs.length,
         policies: pols.length,
         identityDocs: ids.length,
         cards: cards.length,
-        vaultEntries: vault.length
+        vaultEntries: vault.length,
+        // Cash Flow is usually the bulk of what's in a backup, and wasn't listed here.
+        transactions: txns.length,
+        statements: imports.length
       })
     })()
   }, [])
@@ -262,10 +291,18 @@ export default function Settings(): JSX.Element {
   const saveAutoLock = (value: string): void => {
     setAutoLockMinutes(value)
     localStorage.setItem('artha_autolock_minutes', value)
+    // App re-arms its inactivity timer on this, so the new time applies now.
+    window.dispatchEvent(new Event('artha:autolock-changed'))
   }
 
-  const saveReminders = async (): Promise<void> => {
-    const r: ReminderSettings = { daysBefore, desktopNotifications, emailNotifications }
+  // Saves as soon as anything changes, like every other setting here (this section
+  // used to need its own Save button while the ones around it saved instantly).
+  const saveReminders = async (patch: Partial<ReminderSettings> = {}): Promise<void> => {
+    const r: ReminderSettings = { daysBefore, desktopNotifications, emailNotifications, ...patch }
+    r.daysBefore = Math.min(180, Math.max(1, Math.round(r.daysBefore || 30)))
+    setDaysBefore(r.daysBefore)
+    setDesktopNotifications(r.desktopNotifications)
+    setEmailNotifications(r.emailNotifications)
     await api().settings.setReminders(r)
     setReminderSaved(true)
     setTimeout(() => setReminderSaved(false), 2000)
@@ -286,28 +323,29 @@ export default function Settings(): JSX.Element {
   const saveKey = async (): Promise<void> => {
     await api().settings.setAnthropicKey(anthropicKey)
     setAnthropicKey('')
-    setKeyMsg('Saved and encrypted on this device.')
+    setKeyMsg({ tone: 'success', text: 'Saved and encrypted on this device.' })
     load()
   }
 
+  // Tests what's typed (or the saved key if the field is empty) WITHOUT saving it —
+  // testing used to save first, so a mistyped key got stored even when the test failed.
   const testAiKey = async (): Promise<void> => {
-    setKeyMsg('Testing…')
+    setKeyMsg({ tone: 'neutral', text: 'Testing…' })
     try {
-      if (anthropicKey) await api().settings.setAnthropicKey(anthropicKey)
-      const result = await api().settings.testAnthropicKey()
-      setKeyMsg(result.ok ? 'Connected — key is valid.' : (result.error ?? 'Key test failed'))
-      if (result.ok) {
-        setAnthropicKey('')
-        load()
-      }
+      const result = await api().settings.testAnthropicKey(anthropicKey || undefined)
+      setKeyMsg(
+        result.ok
+          ? { tone: 'success', text: anthropicKey ? 'Connected — the key works. Save it to start using it.' : 'Connected — your saved key works.' }
+          : { tone: 'error', text: result.error ?? 'Key test failed' }
+      )
     } catch (e) {
-      setKeyMsg((e as Error).message ?? 'Key test failed')
+      setKeyMsg({ tone: 'error', text: (e as Error).message ?? 'Key test failed' })
     }
   }
 
   const clearKey = async (): Promise<void> => {
     await api().settings.clearAnthropicKey()
-    setKeyMsg('API key removed.')
+    setKeyMsg({ tone: 'neutral', text: 'API key removed.' })
     load()
   }
 
@@ -318,30 +356,32 @@ export default function Settings(): JSX.Element {
       await api().settings.setOpenAiKey(openAiKey)
       setOpenAiKey('')
     }
-    setOpenAiMsg('Saved.')
+    setOpenAiMsg({ tone: 'success', text: 'Saved.' })
     load()
   }
 
   const clearOpenAiKey = async (): Promise<void> => {
     await api().settings.clearOpenAiKey()
-    setOpenAiMsg('API key removed.')
+    setOpenAiMsg({ tone: 'neutral', text: 'API key removed.' })
     load()
   }
 
+  // Same as testAiKey: the typed endpoint/model/key are tested as-is, nothing is saved.
   const testOpenAi = async (): Promise<void> => {
-    setOpenAiMsg('Testing…')
+    setOpenAiMsg({ tone: 'neutral', text: 'Testing…' })
     try {
-      await api().settings.setOpenAiBaseUrl(openAiBaseUrl)
-      await api().settings.setOpenAiModel(openAiModel)
-      if (openAiKey) await api().settings.setOpenAiKey(openAiKey)
-      const result = await api().settings.testOpenAiKey()
-      setOpenAiMsg(result.ok ? 'Connected — endpoint, model, and key are valid.' : (result.error ?? 'Test failed'))
-      if (result.ok) {
-        setOpenAiKey('')
-        load()
-      }
+      const result = await api().settings.testOpenAiKey({
+        apiKey: openAiKey || undefined,
+        baseUrl: openAiBaseUrl,
+        model: openAiModel
+      })
+      setOpenAiMsg(
+        result.ok
+          ? { tone: 'success', text: 'Connected — endpoint, model and key work. Save to start using them.' }
+          : { tone: 'error', text: result.error ?? 'Test failed' }
+      )
     } catch (e) {
-      setOpenAiMsg((e as Error).message ?? 'Test failed')
+      setOpenAiMsg({ tone: 'error', text: (e as Error).message ?? 'Test failed' })
     }
   }
 
@@ -417,6 +457,22 @@ export default function Settings(): JSX.Element {
       setTestBusy(false)
     }
   }
+
+  // There's no recovery for a forgotten master password, so say how strong a new
+  // one is while it's being typed rather than only checking its length on submit.
+  const passwordStrength = ((): { label: string; tone: 'error' | 'warn' | 'success'; pct: number } | null => {
+    if (!newPassword) return null
+    let score = 0
+    if (newPassword.length >= 8) score++
+    if (newPassword.length >= 12) score++
+    if (/[a-z]/.test(newPassword) && /[A-Z]/.test(newPassword)) score++
+    if (/\d/.test(newPassword)) score++
+    if (/[^A-Za-z0-9]/.test(newPassword)) score++
+    if (newPassword.length < 8) return { label: 'Too short — at least 8 characters', tone: 'error', pct: 15 }
+    if (score <= 2) return { label: 'Weak — add length, numbers or symbols', tone: 'warn', pct: 40 }
+    if (score <= 3) return { label: 'Okay', tone: 'warn', pct: 65 }
+    return { label: 'Strong', tone: 'success', pct: 100 }
+  })()
 
   const changePassword = async (): Promise<void> => {
     setPwError(null)
@@ -568,15 +624,11 @@ export default function Settings(): JSX.Element {
     }
   }
 
+  // Asked via the app's own ConfirmDialog (see confirmingImport below) instead of
+  // the OS's native confirm() box.
   const confirmImport = async (): Promise<void> => {
     if (!importPath) return
-    if (
-      !confirm(
-        'This replaces ALL current data on this device with the backup and restarts the app. Your current data is moved aside as a .bak file first, just in case. Continue?'
-      )
-    ) {
-      return
-    }
+    setConfirmingImport(false)
     setImportBusy(true)
     try {
       await api().backup.import(importPath)
@@ -600,19 +652,33 @@ export default function Settings(): JSX.Element {
     <div>
       <h1 className="page-title">Settings</h1>
 
-      {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
-        {TABS.map(t => (
+      {/* Tab bar — real tabs for screen readers (role/aria-selected), only the
+          active tab in the Tab order, and ←/→ (Home/End) to move between them. */}
+      <div
+        className="tabs"
+        role="tablist"
+        aria-label="Settings sections"
+        onKeyDown={(e) => {
+          const i = TABS.findIndex((t) => t.id === activeTab)
+          let next: number | null = null
+          if (e.key === 'ArrowRight') next = (i + 1) % TABS.length
+          else if (e.key === 'ArrowLeft') next = (i - 1 + TABS.length) % TABS.length
+          else if (e.key === 'Home') next = 0
+          else if (e.key === 'End') next = TABS.length - 1
+          if (next === null) return
+          e.preventDefault()
+          setActiveTab(TABS[next].id)
+          e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+        }}
+      >
+        {TABS.map((t) => (
           <button
             key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === t.id}
+            tabIndex={activeTab === t.id ? 0 : -1}
             onClick={() => setActiveTab(t.id)}
-            style={{
-              background: 'none', border: 'none', padding: '8px 16px', cursor: 'pointer',
-              color: activeTab === t.id ? 'var(--accent)' : 'var(--text-faint)',
-              borderBottom: activeTab === t.id ? '2px solid var(--accent)' : '2px solid transparent',
-              fontSize: 13, fontWeight: activeTab === t.id ? 600 : 400,
-              display: 'flex', alignItems: 'center', gap: 6, marginBottom: -1
-            }}
           >
             <t.icon size={13} /> {t.label}
           </button>
@@ -628,8 +694,10 @@ export default function Settings(): JSX.Element {
               <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
                 {[
                   { label: 'Accounts', count: dataSummary.accounts },
+                  { label: 'Cash flow transactions', count: dataSummary.transactions },
+                  { label: 'Bank statements', count: dataSummary.statements },
                   { label: 'Policies', count: dataSummary.policies },
-                  { label: 'Identity docs', count: dataSummary.identityDocs },
+                  { label: 'ID documents', count: dataSummary.identityDocs },
                   { label: 'Credit cards', count: dataSummary.cards },
                   { label: 'Vault entries', count: dataSummary.vaultEntries },
                 ].map(({ label, count }) => (
@@ -676,7 +744,7 @@ export default function Settings(): JSX.Element {
                   Importing replaces ALL data currently on this device and restarts the app. Your
                   current data is moved aside as a .bak file first, not deleted.
                 </p>
-                <button className="btn danger" onClick={confirmImport} disabled={importBusy}>
+                <button className="btn danger" onClick={() => setConfirmingImport(true)} disabled={importBusy}>
                   {importBusy ? 'Restoring…' : 'Import and restart'}
                 </button>
               </div>
@@ -686,7 +754,7 @@ export default function Settings(): JSX.Element {
       )}
 
       {/* ── APPEARANCE ───────────────────────────────────────────────── */}
-      {activeTab === 'appearance' && (
+      {activeTab === 'general' && (
         <div className="card section">
           <div className="section-header">
             <h2>Theme</h2>
@@ -737,6 +805,20 @@ export default function Settings(): JSX.Element {
               <div className="field">
                 <label>New password</label>
                 <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                {passwordStrength && (
+                  <div style={{ marginTop: 'var(--space-2)' }} aria-live="polite">
+                    <div className="cf-meter">
+                      <div
+                        className="cf-meter-fill"
+                        style={{
+                          width: `${passwordStrength.pct}%`,
+                          background: passwordStrength.tone === 'success' ? 'var(--green)' : passwordStrength.tone === 'warn' ? 'var(--amber)' : 'var(--red)'
+                        }}
+                      />
+                    </div>
+                    <div className="help-text">{passwordStrength.label}</div>
+                  </div>
+                )}
               </div>
             </div>
             <div className="field" style={{ maxWidth: '50%' }}>
@@ -746,6 +828,11 @@ export default function Settings(): JSX.Element {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
               />
+              {confirmPassword && (
+                <div className="help-text" style={{ color: confirmPassword === newPassword ? 'var(--green)' : 'var(--red)' }}>
+                  {confirmPassword === newPassword ? '✓ Passwords match' : "Doesn't match the new password yet"}
+                </div>
+              )}
             </div>
             {pwError && <div className="error-text">{pwError}</div>}
             {pwMsg && <div className="success-text">{pwMsg}</div>}
@@ -801,7 +888,7 @@ export default function Settings(): JSX.Element {
               </h2>
             </div>
             <p className="muted" style={{ marginTop: 0 }}>
-              Lock the app automatically after a period of inactivity. Takes effect on next unlock.
+              Lock the app automatically after a period of inactivity. Changes apply straight away.
             </p>
             <div className="field" style={{ maxWidth: 240 }}>
               <label>Lock after</label>
@@ -975,6 +1062,9 @@ export default function Settings(): JSX.Element {
                   max={180}
                   value={daysBefore}
                   onChange={(e) => setDaysBefore(Number(e.target.value))}
+                  // Saved (and clamped to 1–180) when you leave the field — an emptied
+                  // box used to save 0.
+                  onBlur={() => void saveReminders()}
                 />
               </div>
             </div>
@@ -984,24 +1074,25 @@ export default function Settings(): JSX.Element {
                   type="checkbox"
                   style={{ width: 'auto' }}
                   checked={desktopNotifications}
-                  onChange={(e) => setDesktopNotifications(e.target.checked)}
+                  onChange={(e) => void saveReminders({ desktopNotifications: e.target.checked })}
                 />
                 Desktop notifications
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: notifyStatus?.verified ? 1 : 0.6 }}
+                title={notifyStatus?.verified ? undefined : 'Verify an email address below first'}
+              >
                 <input
                   type="checkbox"
                   style={{ width: 'auto' }}
                   checked={emailNotifications}
-                  onChange={(e) => setEmailNotifications(e.target.checked)}
+                  disabled={!notifyStatus?.verified && !emailNotifications}
+                  onChange={(e) => void saveReminders({ emailNotifications: e.target.checked })}
                 />
-                Email notifications (requires a verified email below)
+                Email notifications {notifyStatus?.verified ? '' : '(verify an email below first)'}
               </label>
             </div>
-            <button className="btn" onClick={saveReminders}>
-              Save
-            </button>
-            {reminderSaved && <span className="success-text" style={{ marginLeft: 10 }}>Saved</span>}
+            {reminderSaved && <span className="success-text">Saved</span>}
           </div>
 
           <div className="card section">
@@ -1030,7 +1121,7 @@ export default function Settings(): JSX.Element {
                     <select
                       value={scheduleType}
                       onChange={(e) =>
-                        setCheckInSchedule({
+                        saveCheckInSchedule({
                           ...checkInSchedule,
                           scheduleType: e.target.value as 'weekday' | 'day_of_month'
                         })
@@ -1049,7 +1140,7 @@ export default function Settings(): JSX.Element {
                       <select
                         value={checkInSchedule.occurrence}
                         onChange={(e) =>
-                          setCheckInSchedule({
+                          saveCheckInSchedule({
                             ...checkInSchedule,
                             occurrence: Number(e.target.value) as CheckInScheduleSettings['occurrence']
                           })
@@ -1067,7 +1158,7 @@ export default function Settings(): JSX.Element {
                       <select
                         value={checkInSchedule.weekday}
                         onChange={(e) =>
-                          setCheckInSchedule({
+                          saveCheckInSchedule({
                             ...checkInSchedule,
                             weekday: Number(e.target.value) as CheckInScheduleSettings['weekday']
                           })
@@ -1093,7 +1184,7 @@ export default function Settings(): JSX.Element {
                         max={28}
                         value={dayOfMonth}
                         onChange={(e) =>
-                          setCheckInSchedule({
+                          saveCheckInSchedule({
                             ...checkInSchedule,
                             dayOfMonth: Math.min(28, Math.max(1, Number(e.target.value)))
                           })
@@ -1106,9 +1197,6 @@ export default function Settings(): JSX.Element {
                 <p style={{ fontSize: 12, color: 'var(--text-faint)', margin: '6px 0 8px' }}>
                   {checkInPreview}
                 </p>
-                <button className="btn" onClick={() => saveCheckInSchedule(checkInSchedule)}>
-                  Save
-                </button>
               </>
             )}
             {checkInSaved && <span className="success-text" style={{ marginLeft: 10 }}>Saved</span>}
@@ -1249,7 +1337,7 @@ export default function Settings(): JSX.Element {
                 className="btn secondary"
                 style={{ fontSize: 12, padding: '6px 14px', marginLeft: 8 }}
                 onClick={testAiKey}
-                disabled={!anthropicKey}
+                disabled={!anthropicKey && !settings.hasAnthropicKey}
               >
                 Test connection
               </button>
@@ -1258,7 +1346,7 @@ export default function Settings(): JSX.Element {
                   Remove key
                 </button>
               )}
-              {keyMsg && <div className="success-text">{keyMsg}</div>}
+              {keyMsg && <StatusLine msg={keyMsg} />}
             </>
           ) : (
             <>
@@ -1313,14 +1401,14 @@ export default function Settings(): JSX.Element {
                   Remove key
                 </button>
               )}
-              {openAiMsg && <div className="success-text">{openAiMsg}</div>}
+              {openAiMsg && <StatusLine msg={openAiMsg} />}
             </>
           )}
         </div>
       )}
 
       {/* ── HELP ─────────────────────────────────────────────────────── */}
-      {activeTab === 'help' && updateStatus && (
+      {activeTab === 'general' && updateStatus && (
         <div className="card section">
           <div className="section-header">
             <h2>Updates</h2>
@@ -1346,7 +1434,7 @@ export default function Settings(): JSX.Element {
         </div>
       )}
 
-      {activeTab === 'help' && (
+      {activeTab === 'general' && (
         <div className="card section">
           <div className="section-header">
             <h2>Product tour</h2>
@@ -1362,6 +1450,15 @@ export default function Settings(): JSX.Element {
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmingImport}
+        title="Replace all data with this backup?"
+        message="Everything currently on this device is replaced by the backup and the app restarts. Your current data is moved aside as a .bak file first, not deleted."
+        confirmLabel="Import and restart"
+        onConfirm={() => void confirmImport()}
+        onCancel={() => setConfirmingImport(false)}
+      />
     </div>
   )
 }

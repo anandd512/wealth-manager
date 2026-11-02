@@ -166,12 +166,11 @@ export async function migrateLegacyDocument(absolutePath: string): Promise<strin
   return storedName
 }
 
-export async function openDocumentForViewing(storedPath: string): Promise<string> {
+async function readDocumentPlaintext(storedPath: string): Promise<{ plaintext: Uint8Array; resolved: string }> {
   await ensureDocumentAvailableLocally(storedPath)
   const resolved = resolveDocumentPath(storedPath)
-  let plaintext: Uint8Array
   try {
-    plaintext = decrypt(readFileSync(resolved), getCurrentKey())
+    return { plaintext: decrypt(readFileSync(resolved), getCurrentKey()), resolved }
   } catch (err) {
     // A cache file written before the local-key/Data-Key fix (see module doc) can be
     // sitting here undecryptable with this device's key — ensureDocumentAvailableLocally
@@ -181,8 +180,34 @@ export async function openDocumentForViewing(storedPath: string): Promise<string
     if (isAbsolute(storedPath)) throw err
     rmSync(resolved, { force: true })
     await ensureDocumentAvailableLocally(storedPath)
-    plaintext = decrypt(readFileSync(resolved), getCurrentKey())
+    return { plaintext: decrypt(readFileSync(resolved), getCurrentKey()), resolved }
   }
+}
+
+const IMAGE_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp'
+}
+const MAX_PREVIEW_BYTES = 15 * 1024 * 1024
+
+// A stored image document as a data: URL, decrypted in memory only — for in-app
+// thumbnails/previews. The renderer can't read the stored file itself (it's
+// encrypted, and usually a relative path), so a file:// URL never worked.
+// Returns null for non-images or anything too large to inline.
+export async function documentImageDataUrl(storedPath: string): Promise<string | null> {
+  const mime = IMAGE_MIME[extname(storedPath.replace(/\.enc$/, '')).toLowerCase()]
+  if (!mime) return null
+  const { plaintext } = await readDocumentPlaintext(storedPath)
+  if (plaintext.byteLength > MAX_PREVIEW_BYTES) return null
+  return `data:${mime};base64,${Buffer.from(plaintext).toString('base64')}`
+}
+
+export async function openDocumentForViewing(storedPath: string): Promise<string> {
+  const { plaintext, resolved } = await readDocumentPlaintext(storedPath)
   const ext = extname(resolved.replace(/\.enc$/, ''))
   const tempPath = join(tempViewDir(), `${randomUUID()}${ext}`)
   writeFileSync(tempPath, plaintext, { mode: 0o600 })

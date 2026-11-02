@@ -5,8 +5,8 @@ const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [ta
 // Traps Tab/Shift+Tab inside the modal while it's open, and returns focus to
 // whatever was focused before it opened once it closes — a plain modal otherwise
 // lets Tab walk out into the page behind it, and closing one drops focus back to
-// <body>, both bad for anyone navigating by keyboard. Scoped to the cash-flow
-// modals for now rather than every modal in the app — see the project plan.
+// <body>, both bad for anyone navigating by keyboard. Used by the shared <Modal>
+// (so every form gets it) and directly by the cash-flow modals.
 export function useFocusTrap(active: boolean): React.RefObject<HTMLDivElement> {
   const containerRef = useRef<HTMLDivElement>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)

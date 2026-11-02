@@ -1,7 +1,9 @@
 import { api } from '../lib/api'
-import { useEffect, useState } from 'react'
+import Modal from './Modal'
+import { useState } from 'react'
 import type { InsurancePolicy, InsurancePolicyInput, PolicyExtraction } from '../../../shared/types'
 import { POLICY_TYPES, VEHICLE_POLICY_TYPES } from '../../../shared/insuranceTypes'
+import { parseOptionalAmount } from '../lib/format'
 
 interface Props {
   policy: InsurancePolicy | null
@@ -52,16 +54,20 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
 
   const isVehicle = VEHICLE_POLICY_TYPES.includes(policyType as never)
 
-  useEffect(() => {
-    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [onClose])
-
   const submit = async (): Promise<void> => {
     setError(null)
     if (!expiryDate) {
       setError('Expiry date is required so reminders can work.')
+      return
+    }
+    const sumAssuredNum = parseOptionalAmount(sumAssured)
+    const premiumNum = parseOptionalAmount(premiumAmount)
+    if (sumAssuredNum === undefined) {
+      setError('Enter the cover amount as a number, e.g. 5,00,000.')
+      return
+    }
+    if (premiumNum === undefined) {
+      setError('Enter the premium as a number, e.g. 12,500.')
       return
     }
     const resolvedType = policyType === 'other' ? customType.trim() || null : policyType || null
@@ -72,8 +78,8 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
       insured_name: insuredName.trim() || null,
       additional_insured: additionalInsured.trim() || null,
       vehicle_number: isVehicle && vehicleNumber.trim() ? vehicleNumber.trim().toUpperCase() : null,
-      sum_assured: sumAssured ? Number(sumAssured) : null,
-      premium_amount: premiumAmount ? Number(premiumAmount) : null,
+      sum_assured: sumAssuredNum,
+      premium_amount: premiumNum,
       premium_frequency: premiumFrequency || null,
       start_date: startDate || null,
       expiry_date: expiryDate,
@@ -97,9 +103,9 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{policy ? 'Edit policy' : 'Add policy'}</h2>
+    <Modal title={policy ? 'Edit policy' : 'Add policy'} onClose={onClose}>
+      {(requestClose) => (
+      <>
         {policy && seed && (
           <div className="help-text" style={{ marginBottom: 12 }}>
             Re-extracted from the saved document — review the fields below before saving.
@@ -232,14 +238,15 @@ export default function PolicyModal({ policy, prefill, onClose, onSaved }: Props
         {error && <div className="error-text">{error}</div>}
 
         <div className="modal-actions">
-          <button className="btn secondary" onClick={onClose} disabled={busy}>
+          <button className="btn secondary" onClick={requestClose} disabled={busy}>
             Cancel
           </button>
           <button className="btn" onClick={submit} disabled={busy}>
             {busy ? 'Saving…' : 'Save'}
           </button>
         </div>
-      </div>
-    </div>
+      </>
+      )}
+    </Modal>
   )
 }

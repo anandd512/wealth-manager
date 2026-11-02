@@ -1,5 +1,6 @@
 import { api } from '../lib/api'
-import { useEffect, useState } from 'react'
+import Modal from './Modal'
+import { useState } from 'react'
 import type {
   IdentityDocExtraction,
   IdentityDocType,
@@ -54,12 +55,6 @@ export default function IdentityDocModal({ doc, prefill, initialDocType, onClose
   const showRcFields = docType === 'rc'
   const showVoterFields = docType === 'voter_id'
 
-  useEffect(() => {
-    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [onClose])
-
   const submit = async (): Promise<void> => {
     setError(null)
     const input: IdentityDocumentInput = {
@@ -93,9 +88,9 @@ export default function IdentityDocModal({ doc, prefill, initialDocType, onClose
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{doc ? 'Edit ID document' : 'Add ID document'}</h2>
+    <Modal title={doc ? 'Edit ID document' : 'Add ID document'} onClose={onClose}>
+      {(requestClose) => (
+      <>
         {prefill && !doc && (
           <div className="help-text" style={{ marginBottom: 12 }}>
             Attached: {prefill.originalName}
@@ -228,14 +223,15 @@ export default function IdentityDocModal({ doc, prefill, initialDocType, onClose
         {error && <div className="error-text">{error}</div>}
 
         <div className="modal-actions">
-          <button className="btn secondary" onClick={onClose} disabled={busy}>
+          <button className="btn secondary" onClick={requestClose} disabled={busy}>
             Cancel
           </button>
           <button className="btn" onClick={submit} disabled={busy}>
             {busy ? 'Saving…' : 'Save'}
           </button>
         </div>
-      </div>
-    </div>
+      </>
+      )}
+    </Modal>
   )
 }

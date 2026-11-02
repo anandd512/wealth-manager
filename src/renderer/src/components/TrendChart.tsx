@@ -1,5 +1,6 @@
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import { formatCurrency, formatDate, formatDateShort } from '../lib/format'
+import { TOOLTIP_STYLE } from '../lib/chartStyle'
 
 interface Props {
   data: { date: string; value: number }[]
@@ -24,29 +25,27 @@ export default function TrendChart({ data, height = 220, label = 'Value' }: Prop
   return (
     <ResponsiveContainer width="100%" height={height}>
       <LineChart data={chartData}>
-        <CartesianGrid stroke="#2a3450" strokeDasharray="3 3" />
+        <CartesianGrid stroke="var(--border-soft)" vertical={false} />
         <XAxis
           dataKey="date"
           type="number"
           domain={['dataMin', 'dataMax']}
-          stroke="#93a0bd"
+          stroke="var(--text-faint)"
           fontSize={11}
           tickFormatter={(d) => formatDateShort(new Date(d).toISOString())}
         />
         <YAxis
-          stroke="#93a0bd"
+          stroke="var(--text-faint)"
           fontSize={11}
           tickFormatter={(v) => `${(v / 100000).toFixed(0)}L`}
           width={40}
         />
         <Tooltip
-          contentStyle={{ background: '#1b2436', border: '1px solid #2a3450', borderRadius: 8 }}
-          labelStyle={{ color: '#93a0bd' }}
-          itemStyle={{ color: '#e8ecf5' }}
+          {...TOOLTIP_STYLE}
           labelFormatter={(d) => formatDate(new Date(d as number).toISOString())}
-          formatter={(v: number) => [formatCurrency(v), label]}
+          formatter={(v) => [formatCurrency(Number(v)), label]}
         />
-        <Line type="monotone" dataKey="value" stroke="#5b8def" strokeWidth={2} dot={false} />
+        <Line type="monotone" dataKey="value" stroke="var(--accent)" strokeWidth={2} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   )

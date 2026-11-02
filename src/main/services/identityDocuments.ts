@@ -60,6 +60,13 @@ export function deleteIdentityDocument(id: number): void {
     .run(new Date().toISOString(), id)
 }
 
+// Undo for deleteIdentityDocument.
+export function restoreIdentityDocument(id: number): void {
+  getDb()
+    .prepare('UPDATE identity_documents SET deleted = 0, updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), id)
+}
+
 export function markReminderSent(id: number): void {
   getDb()
     .prepare('UPDATE identity_documents SET last_reminder_sent = ? WHERE id = ?')

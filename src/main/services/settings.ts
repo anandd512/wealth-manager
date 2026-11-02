@@ -1,5 +1,5 @@
 import { getDb } from '../db'
-import { getSecret, setSecret, hasSecret, clearSecret } from '../secrets'
+import { setSecret, hasSecret, clearSecret } from '../secrets'
 import type {
   AppSettings,
   CashFlowBudget,
@@ -109,7 +109,7 @@ export function setExtractionProvider(provider: ExtractionProvider): void {
 
 // The OpenAI SDK appends the operation path (e.g. /responses) itself, so strip it
 // if the user pasted the full endpoint Foundry displayed rather than just the root.
-function normalizeOpenAiBaseUrl(raw: string): string {
+export function normalizeOpenAiBaseUrl(raw: string): string {
   return raw.trim().replace(/\/(responses|chat\/completions)\/?$/, '')
 }
 

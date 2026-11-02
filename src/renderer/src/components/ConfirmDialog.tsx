@@ -1,6 +1,7 @@
 // A styled replacement for the native confirm() dialog, matching the rest of the
 // app's modal system (.modal-backdrop/.modal/.modal-actions, same classes every
 // other modal in this app already uses) rather than the OS's plain dialog box.
+import { useEffect, useId } from 'react'
 
 interface Props {
   open: boolean
@@ -19,11 +20,29 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel
 }: Props): JSX.Element | null {
+  const titleId = useId()
+
+  // Escape backs out, like every other dialog.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onCancel()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onCancel])
+
   if (!open) return null
   return (
     <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal confirm-modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{title}</h2>
+      <div
+        className="modal confirm-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id={titleId}>{title}</h2>
         <p className="confirm-message">{message}</p>
         <div className="modal-actions">
           <button className="btn secondary" onClick={onCancel}>

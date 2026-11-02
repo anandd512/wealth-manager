@@ -27,6 +27,7 @@ import IdentityDocuments from './pages/IdentityDocuments'
 import CreditCards from './pages/CreditCards'
 import Vault from './pages/Vault'
 import Settings from './pages/Settings'
+import { getTheme, useTheme } from './lib/theme'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -34,7 +35,7 @@ const NAV_ITEMS = [
   { to: '/cashflow', label: 'Cash Flow', icon: Receipt, end: false },
   { to: '/cards', label: 'Credit Cards', icon: CreditCardIcon, end: false },
   { to: '/insurance', label: 'Insurance', icon: ShieldCheck, end: false },
-  { to: '/ids', label: 'IDs', icon: IdCard, end: false },
+  { to: '/ids', label: 'ID documents', icon: IdCard, end: false },
   { to: '/vault', label: 'Vault', icon: KeyRound, end: false },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, end: false }
 ]
@@ -63,16 +64,19 @@ export default function App(): JSX.Element {
     window.api.storageMode.status().then((r) => setStorageModeState(r.mode ?? 'unanswered'))
   }, [])
 
-  // Item 47 — theme state
-  const [theme, setTheme] = useState<'dark' | 'light'>(
-    () => (localStorage.getItem('artha_theme') as 'dark' | 'light') ?? 'dark'
-  )
-
-  // Item 53 — first-run empty state
-  const [hasAccounts, setHasAccounts] = useState<boolean | null>(null)
+  // Item 47 — theme state (shared with Settings → Appearance via lib/theme)
+  const [theme, setTheme] = useTheme()
 
   // Item 55 — auto-lock warning state
   const [autoLockWarning, setAutoLockWarning] = useState(false)
+  // Bumped when Settings changes the auto-lock time, so the new time applies right
+  // away instead of "on next unlock".
+  const [autoLockVersion, setAutoLockVersion] = useState(0)
+  useEffect(() => {
+    const onChange = (): void => setAutoLockVersion((v) => v + 1)
+    window.addEventListener('artha:autolock-changed', onChange)
+    return () => window.removeEventListener('artha:autolock-changed', onChange)
+  }, [])
 
   const refreshStatus = async (): Promise<void> => {
     const s = await window.api.auth.status()
@@ -82,12 +86,6 @@ export default function App(): JSX.Element {
   useEffect(() => {
     refreshStatus()
   }, [])
-
-  // Item 53 — check if user has accounts after unlock
-  useEffect(() => {
-    if (!status?.unlocked) return
-    window.api.accounts.list().then((list) => setHasAccounts(list.length > 0))
-  }, [status?.unlocked])
 
   // Auto-lock after configurable period of inactivity (stored in localStorage, default 5 min)
   // Item 55 — warn 60s before lock
@@ -125,7 +123,7 @@ export default function App(): JSX.Element {
       clearTimeout(warnTimer)
       events.forEach((e) => window.removeEventListener(e, resetTimers))
     }
-  }, [status?.unlocked])
+  }, [status?.unlocked, autoLockVersion])
 
   useEffect(() => {
     const handler = (): void => setTourMode(true)
@@ -135,33 +133,31 @@ export default function App(): JSX.Element {
 
   // Apply saved theme on mount
   useEffect(() => {
-    const savedTheme = localStorage.getItem('artha_theme') ?? 'dark'
-    if (savedTheme === 'light') document.body.classList.add('light-mode')
-    else document.body.classList.remove('light-mode')
+    setTheme(getTheme())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Item 47 — theme toggle function
-  const toggleTheme = (): void => {
-    const next = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
-    localStorage.setItem('artha_theme', next)
-    if (next === 'light') document.body.classList.add('light-mode')
-    else document.body.classList.remove('light-mode')
-  }
+  const toggleTheme = (): void => setTheme(theme === 'dark' ? 'light' : 'dark')
 
-  // Item 48 — global keyboard shortcuts
+  // Item 48 — global keyboard shortcuts. Ctrl/⌘ + 1…8 follow the sidebar order
+  // (derived from NAV_ITEMS, so they can't drift — Cash Flow used to have no
+  // shortcut and Ctrl+3 opened Cards, the fourth item).
   useEffect(() => {
     if (!status?.unlocked) return
     const handler = (e: KeyboardEvent): void => {
       const mod = e.metaKey || e.ctrlKey
-      if (mod && e.key === 'l') { e.preventDefault(); window.api.auth.lock().then(refreshStatus) }
-      if (mod && e.key === '1') { e.preventDefault(); window.location.hash = '#/' }
-      if (mod && e.key === '2') { e.preventDefault(); window.location.hash = '#/accounts' }
-      if (mod && e.key === '3') { e.preventDefault(); window.location.hash = '#/cards' }
-      if (mod && e.key === '4') { e.preventDefault(); window.location.hash = '#/insurance' }
-      if (mod && e.key === '5') { e.preventDefault(); window.location.hash = '#/ids' }
-      if (mod && e.key === '6') { e.preventDefault(); window.location.hash = '#/vault' }
-      if (mod && e.key === '7') { e.preventDefault(); window.location.hash = '#/settings' }
+      if (!mod) return
+      if (e.key === 'l') {
+        e.preventDefault()
+        window.api.auth.lock().then(refreshStatus)
+        return
+      }
+      const index = Number(e.key) - 1
+      if (Number.isInteger(index) && index >= 0 && index < NAV_ITEMS.length) {
+        e.preventDefault()
+        window.location.hash = `#${NAV_ITEMS[index].to}`
+      }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -257,16 +253,8 @@ export default function App(): JSX.Element {
         </div>
       </aside>
       <main className="main" ref={mainRef}>
-        {/* Item 53 — first-run banner */}
-        {hasAccounts === false && (
-          <div style={{ background: 'var(--accent)', color: '#fff', borderRadius: 'var(--radius)', padding: '14px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>Welcome to Artha!</div>
-              <div style={{ fontSize: 12.5, opacity: 0.85, marginTop: 2 }}>Start by adding your first account to see your net worth.</div>
-            </div>
-            <a href="#/accounts" style={{ color: '#fff', fontWeight: 600, fontSize: 13, textDecoration: 'none', background: 'rgba(255,255,255,0.2)', padding: '7px 14px', borderRadius: 6 }}>Add account →</a>
-          </div>
-        )}
+        {/* (The global "Welcome to Artha" banner was removed — it appeared on every
+            tab and duplicated the Dashboard's own setup checklist.) */}
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/accounts" element={<Accounts />} />

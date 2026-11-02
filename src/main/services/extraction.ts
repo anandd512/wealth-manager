@@ -3,7 +3,7 @@ import OpenAI from 'openai'
 import { readFileSync } from 'fs'
 import { extname } from 'path'
 import { getSecret } from '../secrets'
-import { getExtractionProvider, getOpenAiBaseUrl, getOpenAiModel } from './settings'
+import { getExtractionProvider, getOpenAiBaseUrl, getOpenAiModel, normalizeOpenAiBaseUrl } from './settings'
 
 // Shared document-reading core for every "upload a file and have the model extract
 // structured fields" feature (insurance policies, ID documents, and anything added
@@ -179,8 +179,11 @@ export async function extractStructured<T>(spec: ExtractionSpec): Promise<T> {
 // the key without ever calling the provider), these make an actual minimal request
 // and throw with the provider's own error message on failure, so a bad key/endpoint/
 // model is caught before the user tries a real (and slower, costlier) extraction.
-export async function testAnthropicConnection(): Promise<void> {
-  const apiKey = getSecret('anthropicApiKey')
+// The test functions accept the values typed into Settings so a key can be checked
+// BEFORE it's saved (testing used to save first, so a bad key got stored); anything
+// not passed falls back to what's saved, so a saved key can still be re-tested.
+export async function testAnthropicConnection(apiKeyOverride?: string): Promise<void> {
+  const apiKey = apiKeyOverride?.trim() || getSecret('anthropicApiKey')
   if (!apiKey) throw new Error('No Anthropic API key configured. Add one first.')
   const client = new Anthropic({ apiKey })
   await client.messages.create({
@@ -190,12 +193,14 @@ export async function testAnthropicConnection(): Promise<void> {
   })
 }
 
-export async function testOpenAiConnection(): Promise<void> {
-  const apiKey = getSecret('openaiApiKey')
+export async function testOpenAiConnection(
+  overrides: { apiKey?: string; baseUrl?: string; model?: string } = {}
+): Promise<void> {
+  const apiKey = overrides.apiKey?.trim() || getSecret('openaiApiKey')
   if (!apiKey) throw new Error('No OpenAI/Azure API key configured. Add one first.')
-  const baseUrl = getOpenAiBaseUrl()
+  const baseUrl = overrides.baseUrl?.trim() ? normalizeOpenAiBaseUrl(overrides.baseUrl) : getOpenAiBaseUrl()
   if (!baseUrl) throw new Error('No OpenAI-compatible endpoint configured. Add one first.')
-  const model = getOpenAiModel()
+  const model = overrides.model?.trim() || getOpenAiModel()
   if (!model) throw new Error('No model/deployment name configured. Add one first.')
   const client = new OpenAI({ apiKey, baseURL: baseUrl })
   const response = await client.responses.create({

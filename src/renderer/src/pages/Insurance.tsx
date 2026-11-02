@@ -1,6 +1,6 @@
 import { api } from '../lib/api'
-import { useEffect, useRef, useState } from 'react'
-import { Plus, Upload, ShieldCheck, RefreshCw, HelpCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Plus, Upload, ShieldCheck, RefreshCw, HelpCircle, ChevronDown, PenLine, AlertTriangle, X } from 'lucide-react'
 import type { InsurancePolicy, PolicyExtraction } from '../../../shared/types'
 import { POLICY_TYPE_LABELS } from '../../../shared/insuranceTypes'
 import { getPolicyTypeIcon } from '../lib/typeIcons'
@@ -10,10 +10,14 @@ import ActionMenu from '../components/ActionMenu'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { ICON_VIEW, ICON_DOWNLOAD, ICON_EDIT, ICON_DELETE, ICON_SYNC } from '../lib/actionIcons'
 import { useDecryptedUpload } from '../lib/useDecryptedUpload'
+import { useUndoToast } from '../lib/useUndoToast'
+import { friendlyError } from '../lib/friendlyError'
+import SummaryStrip from '../components/SummaryStrip'
 
 export default function Insurance(): JSX.Element {
   const { ensureDecrypted, modal: passwordModal } = useDecryptedUpload()
   const [policies, setPolicies] = useState<InsurancePolicy[]>([])
+  const { offerUndo, undoToast } = useUndoToast()
   const [editing, setEditing] = useState<InsurancePolicy | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [prefill, setPrefill] = useState<{
@@ -41,11 +45,15 @@ export default function Insurance(): JSX.Element {
 
   const confirmRemove = async (): Promise<void> => {
     if (!pendingDelete) return
-    const { id } = pendingDelete
+    const { id, label } = pendingDelete
     setPendingDelete(null)
     setPolicies((prev) => prev.filter((p) => p.id !== id))
     await api().insurance.remove(id)
     load()
+    offerUndo(`"${label}"`, async () => {
+      await api().insurance.restore(id)
+      load()
+    })
   }
 
   const uploadAndExtract = async (): Promise<void> => {
@@ -60,7 +68,7 @@ export default function Insurance(): JSX.Element {
       setEditing(null)
       setShowModal(true)
     } catch (e) {
-      setExtractError((e as Error).message)
+      setExtractError(friendlyError(e))
     } finally {
       setExtracting(false)
     }
@@ -75,31 +83,72 @@ export default function Insurance(): JSX.Element {
       setEditing(policy)
       setShowModal(true)
     } catch (e) {
-      setExtractError((e as Error).message)
+      setExtractError(friendlyError(e))
     } finally {
       setSyncingId(null)
     }
   }
 
-  const badgeFor = (date: string | null): JSX.Element => {
-    const d = daysUntil(date)
-    if (d === null) return <span className="badge neutral">Not set</span>
-    if (d < 0) return <span className="badge danger">Expired</span>
-    if (d <= 15) return <span className="badge danger">{d} days</span>
-    if (d <= 45) return <span className="badge warn">{d} days</span>
-    return <span className="badge ok">{d} days</span>
+  // One status per policy (there used to be two that disagreed: a "Lapsed / Renews in
+  // Nd / Active" line under the type on a 90-day rule, and a badge in this column on
+  // 15/45-day rules). Only exceptions get a badge — "Active, 120 days" on every row
+  // was noise.
+  //  - Expired: past the expiry date — the cover itself has ended.
+  //  - Renewal overdue: only the renewal date has passed. That alone doesn't mean
+  //    lapsed — the premium may well have been paid and the date never updated.
+  //  - Due in Nd: within 45 days of the next date (red within 15).
+  const statusBadge = (p: InsurancePolicy): JSX.Element | null => {
+    const toExpiry = daysUntil(p.expiry_date)
+    if (toExpiry !== null && toExpiry < 0) return <span className="badge danger">Expired</span>
+    const toRenewal = daysUntil(p.renewal_date)
+    if (toRenewal !== null && toRenewal < 0) {
+      return (
+        <span className="badge warn" title="The renewal date has passed — if you've renewed, edit the policy to update it">
+          Renewal overdue
+        </span>
+      )
+    }
+    const next = toRenewal ?? toExpiry
+    if (next === null) return <span className="badge neutral">No date</span>
+    if (next <= 15) return <span className="badge danger">Due in {next}d</span>
+    if (next <= 45) return <span className="badge warn">Due in {next}d</span>
+    return null
   }
 
-  const getStatus = (policy: InsurancePolicy): { label: string; color: string } | null => {
-    if (!policy.renewal_date) return null
-    const days = Math.floor((new Date(policy.renewal_date).getTime() - Date.now()) / 86400000)
-    if (days < 0) return { label: 'Lapsed', color: 'var(--red)' }
-    if (days <= 90) return { label: `Renews in ${days}d`, color: '#e8b14f' }
-    return { label: 'Active', color: 'var(--green)' }
-  }
+  // Soonest renewal (or expiry) first — the order that matters when scanning the list.
+  const nextDate = (p: InsurancePolicy): string => p.renewal_date ?? p.expiry_date ?? '9999-12-31'
+  const sortedPolicies = [...policies].sort((a, b) => nextDate(a).localeCompare(nextDate(b)))
 
+  // ── Summary: only policies still in force count toward cover and premium ──
+  const inForce = policies.filter((p) => {
+    const d = daysUntil(p.expiry_date)
+    return d === null || d >= 0
+  })
+  const coverOf = (types: string[]): number =>
+    inForce.filter((p) => types.includes(p.policy_type ?? '')).reduce((s, p) => s + (p.sum_assured ?? 0), 0)
+  const lifePolicies = inForce.filter((p) => p.policy_type === 'term_life' || p.policy_type === 'life')
+  const noNominee = lifePolicies.filter((p) => !p.nominee_name?.trim()).length
+  // Premium per year, so monthly and yearly policies add up like for like. One-time
+  // premiums aren't a recurring cost; an unknown frequency isn't guessed at.
+  const PER_YEAR: Record<string, number> = { monthly: 12, quarterly: 4, 'half-yearly': 2, yearly: 1 }
+  let yearlyPremium = 0
+  let premiumUnknown = 0
+  for (const p of inForce) {
+    if (p.premium_amount == null || p.premium_frequency === 'single') continue
+    const times = p.premium_frequency ? PER_YEAR[p.premium_frequency] : undefined
+    if (times === undefined) premiumUnknown++
+    else yearlyPremium += p.premium_amount * times
+  }
+  const upcoming = sortedPolicies.find((p) => {
+    const d = daysUntil(p.renewal_date ?? p.expiry_date)
+    return d !== null && d >= 0
+  })
+  const upcomingDays = upcoming ? daysUntil(upcoming.renewal_date ?? upcoming.expiry_date) : null
+
+  // Unknown frequency shows nothing rather than guessing "/yr" — a monthly premium
+  // read as yearly understates the real cost twelvefold.
   const frequencyLabel = (freq: string | null): string => {
-    if (!freq) return '/yr' // TODO: add premium_frequency to policy if missing
+    if (!freq) return ''
     const map: Record<string, string> = {
       monthly: '/mo',
       quarterly: '/qtr',
@@ -118,42 +167,104 @@ export default function Insurance(): JSX.Element {
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {policies.length > 0 && (
-            <button
-              className="btn secondary"
-              style={{ fontSize: 11, padding: '4px 10px' }}
-              onClick={() => setShowSecondary((s) => !s)}
-            >
-              {showSecondary ? 'Fewer columns' : 'More columns'}
+            <button className="btn secondary small" onClick={() => setShowSecondary((s) => !s)}>
+              {showSecondary ? 'Fewer details' : 'More details'}
             </button>
           )}
-          <button
-            className="btn secondary"
-            onClick={() => {
-              setEditing(null)
-              setPrefill(null)
-              setShowModal(true)
-            }}
-          >
-            <Plus size={14} /> Add manually
-          </button>
-          <button
-            className="btn"
-            onClick={uploadAndExtract}
-            disabled={extracting}
-            title="Upload a PDF and AI fills the details automatically. Your chosen AI provider reads the document, and the details are saved privately on your device."
-          >
-            <Upload size={14} /> {extracting ? 'Reading document…' : 'Add via PDF (AI)'}
-          </button>
+          {/* One Add button with both routes in it, like Cash Flow's. */}
+          <ActionMenu
+            triggerClassName="btn"
+            trigger={
+              <>
+                <Plus size={14} /> Add <ChevronDown size={13} />
+              </>
+            }
+            items={[
+              {
+                icon: Upload,
+                label: extracting ? 'Reading a document…' : 'From the policy PDF',
+                hint: 'AI reads the policy number, cover, premium and dates for you to check',
+                onClick: () => {
+                  if (!extracting) void uploadAndExtract()
+                }
+              },
+              {
+                icon: PenLine,
+                label: 'Enter details yourself',
+                hint: 'Type them in from the policy document',
+                onClick: () => {
+                  setEditing(null)
+                  setPrefill(null)
+                  setShowModal(true)
+                }
+              }
+            ]}
+          />
         </div>
       </div>
 
-      {(extracting || syncingId !== null) && (
-        <div className="syncing-banner">
-          <RefreshCw size={15} className="spin" />
-          {syncingId !== null ? 'Your AI provider is re-reading the document…' : 'Your AI provider is reading the document…'}
+      {inForce.length > 0 && (
+        <SummaryStrip
+          stats={[
+            {
+              label: 'Life cover',
+              value: formatCurrency(coverOf(['term_life', 'life'])),
+              hint: 'Total sum assured across life and term policies still in force.',
+              note:
+                noNominee > 0 ? (
+                  <span style={{ color: 'var(--amber)' }}>
+                    {noNominee} polic{noNominee === 1 ? 'y has' : 'ies have'} no nominee
+                  </span>
+                ) : lifePolicies.length > 0 ? (
+                  'Nominee set on every policy'
+                ) : (
+                  'No life policy yet'
+                )
+            },
+            {
+              label: 'Health cover',
+              value: formatCurrency(coverOf(['health'])),
+              hint: 'Total sum insured across health policies still in force.'
+            },
+            {
+              label: 'Premiums per year',
+              value: formatCurrency(yearlyPremium),
+              hint: 'Every premium converted to a yearly amount (monthly × 12, quarterly × 4 …). One-time premiums are left out.',
+              note: premiumUnknown > 0 ? `${premiumUnknown} without a payment frequency not included` : undefined
+            },
+            {
+              label: 'Next renewal',
+              value: upcomingDays === null ? '—' : upcomingDays === 0 ? 'Today' : `${upcomingDays} days`,
+              tone: upcomingDays !== null && upcomingDays <= 15 ? 'warn' : undefined,
+              note: upcoming
+                ? `${POLICY_TYPE_LABELS[upcoming.policy_type ?? ''] ?? upcoming.policy_type ?? 'Policy'}${upcoming.insurer ? ` · ${upcoming.insurer}` : ''}`
+                : undefined
+            }
+          ]}
+        />
+      )}
+
+      {extractError && (
+        <div className="notice error section" role="alert">
+          <AlertTriangle />
+          <div className="notice-body">{extractError}</div>
+          <button className="icon-btn" onClick={() => setExtractError(null)} title="Dismiss" aria-label="Dismiss">
+            <X size={14} />
+          </button>
         </div>
       )}
-      {extractError && <div className="error-text section">{extractError}</div>}
+
+      {/* AI reading progress floats over the page instead of pushing it down. */}
+      {(extracting || syncingId !== null) && (
+        <div className="toast-region" aria-live="polite">
+          <div className="toast">
+            <RefreshCw className="spin" />
+            <div className="toast-body">
+              {syncingId !== null ? 'Your AI provider is re-reading the document…' : 'Your AI provider is reading the document…'}
+            </div>
+          </div>
+        </div>
+      )}
 
       {policies.length === 0 ? (
         <div className="card empty-state">
@@ -172,32 +283,24 @@ export default function Insurance(): JSX.Element {
                 <th>Insurer</th>
                 <th>Insured</th>
                 {showSecondary && <th>Nominee</th>}
-                <th>Premium</th>
+                <th className="num">Premium</th>
                 {showSecondary && (
+                  // The tooltip lives on the <th> — lucide icons don't take a `title`
+                  // prop, so the one passed to the icon never showed.
                   <th title="Last day your policy provides cover">
-                    Expiry{' '}
-                    <HelpCircle
-                      size={11}
-                      style={{ verticalAlign: 'middle' }}
-                      title="Last day your policy provides cover"
-                    />
+                    Expiry <HelpCircle size={11} style={{ verticalAlign: 'middle' }} aria-hidden />
                   </th>
                 )}
-                <th title="Date your premium is due for renewal">
-                  Renewal{' '}
-                  <HelpCircle
-                    size={11}
-                    style={{ verticalAlign: 'middle' }}
-                    title="Date your premium is due for renewal"
-                  />
+                <th title="Your next renewal date (or the expiry date, if no renewal date is set)">
+                  Next date <HelpCircle size={11} style={{ verticalAlign: 'middle' }} aria-hidden />
                 </th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {policies.map((p) => {
+              {sortedPolicies.map((p) => {
                 const TypeIcon = getPolicyTypeIcon(p.policy_type)
-                const status = getStatus(p)
+                const status = statusBadge(p)
                 return (
                   <tr key={p.id} style={syncingId === p.id ? { opacity: 0.55 } : undefined}>
                     <td>
@@ -208,11 +311,6 @@ export default function Insurance(): JSX.Element {
                         {POLICY_TYPE_LABELS[p.policy_type ?? ''] ?? p.policy_type ?? '—'}
                         {syncingId === p.id && <RefreshCw size={12} className="spin" style={{ marginLeft: 6, verticalAlign: 'middle' }} />}
                       </span>
-                      {status && (
-                        <div style={{ fontSize: 10, color: status.color, fontWeight: 600 }}>
-                          {status.label}
-                        </div>
-                      )}
                     </td>
                     {showSecondary && <td>{p.policy_number ?? '—'}</td>}
                     <td className="muted">{p.insurer ?? '—'}</td>
@@ -233,23 +331,24 @@ export default function Insurance(): JSX.Element {
                     {showSecondary && (
                       <td className="muted">{p.nominee_name ?? '—'}</td>
                     )}
-                    <td>
+                    <td className="num">
                       {p.premium_amount != null ? formatCurrency(p.premium_amount) : '—'}
-                      <span style={{ fontSize: 10, color: 'var(--text-faint)', marginLeft: 3 }}>
-                        {frequencyLabel(p.premium_frequency)}
-                      </span>
+                      {p.premium_amount != null && frequencyLabel(p.premium_frequency) && (
+                        <span style={{ fontSize: 10, color: 'var(--text-faint)', marginLeft: 3 }}>
+                          {frequencyLabel(p.premium_frequency)}
+                        </span>
+                      )}
                     </td>
                     {showSecondary && (
                       <td className="muted">{formatDate(p.expiry_date)}</td>
                     )}
                     <td>
-                      {p.renewal_date ? (
-                        <>
-                          {formatDate(p.renewal_date)} {badgeFor(p.renewal_date)}
-                        </>
-                      ) : (
-                        badgeFor(p.expiry_date)
+                      {(p.renewal_date || p.expiry_date) && (
+                        <span title={p.renewal_date ? 'Renewal date' : 'Expiry date (no renewal date set)'}>
+                          {formatDate(p.renewal_date ?? p.expiry_date)}{' '}
+                        </span>
                       )}
+                      {status}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <ActionMenu
@@ -313,11 +412,12 @@ export default function Insurance(): JSX.Element {
       <ConfirmDialog
         open={pendingDelete !== null}
         title="Delete policy"
-        message={`Delete "${pendingDelete?.label}"? This can't be undone.`}
+        message={`Delete "${pendingDelete?.label}"? You can undo this for a few seconds after.`}
         onConfirm={() => void confirmRemove()}
         onCancel={() => setPendingDelete(null)}
       />
 
+      {undoToast}
       {passwordModal}
     </div>
   )

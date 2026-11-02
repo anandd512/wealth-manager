@@ -37,6 +37,7 @@ import {
   Upload,
   Cloud,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import logo from '../assets/logo.png'
 import Dashboard from '../pages/Dashboard'
 import Accounts from '../pages/Accounts'
@@ -53,7 +54,7 @@ interface TourStep {
   key: string
   nav: string
   route: string | null   // null = show a full-screen overlay instead of real page
-  icon: React.ComponentType<{ size?: number }>
+  icon: LucideIcon
   title: string
   desc: string
   tip?: string
@@ -400,7 +401,7 @@ interface AIModalProps {
   FormNav?: React.ComponentType  // NEW — component rendered during form_nav phase
 }
 
-function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, onDone, buttonLabel, buttonHint, FormNav }: AIModalProps): JSX.Element {
+function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, onDone, buttonLabel, buttonHint, FormNav }: AIModalProps): JSX.Element | null {
   const [phase, setPhase] = useState<AIPhase>('button')
   const [highlightedFile, setHighlightedFile] = useState<string | null>(null)
 
@@ -560,7 +561,7 @@ function DemoAIModalBase({ title, fileName, pickerTitle, pickerFiles, fields, on
       )}
 
       {/* Main form modal */}
-      {phase !== 'picker' && phase !== 'button' && (
+      {phase !== 'picker' && (
         <div className="modal">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <h2 style={{ margin: 0 }}>{title}</h2>
@@ -995,7 +996,7 @@ function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
   const pwLabels = ['', 'Weak', 'Fair', 'Good', 'Strong', 'Very strong']
   const pwColor = pwColors[pwScore] ?? 'var(--green)'
 
-  const isTyping = (key: string, idx: number): boolean => fi === idx && phase === 'typing'
+  const isTyping = (_key: string, idx: number): boolean => fi === idx && phase === 'typing'
   const activeStyle = (idx: number) => ({
     borderColor: fi === idx && phase === 'typing' ? 'var(--accent)' : undefined,
     boxShadow: fi === idx && phase === 'typing' ? '0 0 0 3px var(--accent-soft)' : undefined,
@@ -1023,7 +1024,7 @@ function DemoVaultModal({ onDone }: { onDone: () => void }): JSX.Element {
           </div>
           <div className="field">
             <label>Category</label>
-            <select readOnly value={typed[1] || ''} style={activeStyle(1)}>
+            <select value={typed[1] || ''} onChange={() => {}} style={activeStyle(1)}>
               <option value="">— Select category —</option>
               {typed[1] && <option value={typed[1]}>{typed[1]}</option>}
             </select>

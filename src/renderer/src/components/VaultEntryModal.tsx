@@ -1,5 +1,6 @@
 import { api } from '../lib/api'
-import { useEffect, useState } from 'react'
+import Modal from './Modal'
+import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import type { VaultEntry, VaultEntryInput, VaultCategory } from '../../../shared/types'
 import { VAULT_CATEGORIES } from '../../../shared/types'
@@ -72,12 +73,6 @@ export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [onClose])
-
   const submit = async (): Promise<void> => {
     setError(null)
     if (!serviceName.trim()) {
@@ -106,9 +101,9 @@ export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{entry ? 'Edit entry' : 'Add entry'}</h2>
+    <Modal title={entry ? 'Edit entry' : 'Add entry'} onClose={onClose}>
+      {(requestClose) => (
+      <>
 
         <div className="form-row">
           <div className="field">
@@ -222,14 +217,15 @@ export default function VaultEntryModal({ entry, onClose, onSaved }: Props): JSX
         {error && <div className="error-text">{error}</div>}
 
         <div className="modal-actions">
-          <button className="btn secondary" onClick={onClose} disabled={busy}>
+          <button className="btn secondary" onClick={requestClose} disabled={busy}>
             Cancel
           </button>
           <button className="btn" onClick={submit} disabled={busy}>
             {busy ? 'Saving…' : 'Save'}
           </button>
         </div>
-      </div>
-    </div>
+      </>
+      )}
+    </Modal>
   )
 }

@@ -9,7 +9,7 @@ import type {
   LoanScheduleExtraction,
   RsuStatementExtraction
 } from '../../../shared/types'
-import { formatCurrency, formatDate } from '../lib/format'
+import { formatCurrency, formatDate, parseIndianAmount, parseOptionalAmount } from '../lib/format'
 import {
   CATEGORY_IS_LIABILITY,
   CATEGORY_LABELS,
@@ -19,6 +19,7 @@ import {
 } from '../lib/categories'
 import { ICON_VIEW, ICON_DOWNLOAD } from '../lib/actionIcons'
 import { useDecryptedUpload } from '../lib/useDecryptedUpload'
+import Modal from './Modal'
 
 interface Props {
   account: Account | null
@@ -258,11 +259,6 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [onClose])
 
   const submit = async (): Promise<void> => {
     setError(null)
@@ -270,9 +266,31 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
       setError('Name is required')
       return
     }
-    const value = Number(currentValue)
-    if (isNaN(value)) {
-      setError('Current value must be a number')
+    // Accepts "10,00,000" / "₹1,250.50" like every other amount field; blank stays 0.
+    const value = currentValue.trim() ? parseIndianAmount(currentValue) : 0
+    if (value === null) {
+      setError('Enter the current value as a number, e.g. 10,00,000.')
+      return
+    }
+    const principalNum = parseOptionalAmount(principalAmount)
+    const emiNum = parseOptionalAmount(emiAmount)
+    const purchasePriceNum = parseOptionalAmount(purchasePrice)
+    if (principalNum === undefined || emiNum === undefined || purchasePriceNum === undefined) {
+      setError('Amounts must be numbers, e.g. 25,00,000.')
+      return
+    }
+    // Plain numbers (not money): reject anything that isn't one rather than saving NaN.
+    const plain = (text: string): number | null | undefined => {
+      if (!text.trim()) return null
+      const n = Number(text.replace(/,/g, ''))
+      return Number.isFinite(n) ? n : undefined
+    }
+    const quantityNum = plain(quantity)
+    const interestNum = plain(interestRate)
+    const tenureNum = plain(tenureMonths)
+    const ownershipNum = plain(ownershipPct)
+    if ([quantityNum, interestNum, tenureNum, ownershipNum].includes(undefined)) {
+      setError('Quantity, interest rate, tenure and ownership must be numbers.')
       return
     }
     const input: AccountInput = {
@@ -283,7 +301,7 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
       currency: 'INR',
       is_liability: CATEGORY_IS_LIABILITY[category] ? 1 : 0,
       current_value: value,
-      quantity: showQuantity && quantity ? Number(quantity) : null,
+      quantity: showQuantity ? (quantityNum ?? null) : null,
       account_number: showAccountNumber && accountNumber.trim() ? accountNumber.trim() : null,
       ifsc_code: showBankExtras && ifscCode.trim() ? ifscCode.trim().toUpperCase() : null,
       debit_card_number:
@@ -296,17 +314,16 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
       debit_card_cvv: showBankExtras && showDebitCard && debitCardCvv.trim() ? debitCardCvv.trim() : null,
       debit_card_name_on_card:
         showBankExtras && showDebitCard && debitCardName.trim() ? debitCardName.trim() : null,
-      principal_amount:
-        (isLoan || subtype === 'mutual_fund') && principalAmount ? Number(principalAmount) : null,
-      interest_rate: isLoan && interestRate ? Number(interestRate) : null,
-      tenure_months: isLoan && tenureMonths ? Number(tenureMonths) : null,
-      emi_amount: isLoan && emiAmount ? Number(emiAmount) : null,
+      principal_amount: isLoan || subtype === 'mutual_fund' ? principalNum : null,
+      interest_rate: isLoan ? (interestNum ?? null) : null,
+      tenure_months: isLoan ? (tenureNum ?? null) : null,
+      emi_amount: isLoan ? emiNum : null,
       loan_start_date: isLoan && loanStartDate ? loanStartDate : null,
       document_path: isLoan || isRsu ? documentPath : null,
       document_original_name: isLoan || isRsu ? documentOriginalName : null,
-      purchase_price: showPurchaseFields && purchasePrice ? Number(purchasePrice) : null,
+      purchase_price: showPurchaseFields ? purchasePriceNum : null,
       purchase_date: showPurchaseFields && purchaseDate ? purchaseDate : null,
-      ownership_pct: showOwnershipField && ownershipPct ? Number(ownershipPct) : null,
+      ownership_pct: showOwnershipField ? (ownershipNum ?? null) : null,
       notes: notes.trim() || null
     }
     setBusy(true)
@@ -336,9 +353,9 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
 
   return (
     <>
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{account ? 'Edit account' : 'Add account'}</h2>
+    <Modal title={account ? 'Edit account' : 'Add account'} onClose={onClose}>
+      {(requestClose) => (
+      <>
 
         <div className="form-row">
           <div className="field">
@@ -756,15 +773,16 @@ export default function AccountModal({ account, initial, autoSync, onClose, onSa
         {error && <div className="error-text">{error}</div>}
 
         <div className="modal-actions">
-          <button className="btn secondary" onClick={onClose} disabled={busy}>
+          <button className="btn secondary" onClick={requestClose} disabled={busy}>
             Cancel
           </button>
           <button className="btn" onClick={submit} disabled={busy}>
             {busy ? 'Saving…' : 'Save'}
           </button>
         </div>
-      </div>
-    </div>
+      </>
+      )}
+    </Modal>
     {passwordModal}
     </>
   )

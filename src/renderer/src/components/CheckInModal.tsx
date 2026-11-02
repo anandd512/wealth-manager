@@ -1,9 +1,10 @@
 import { api } from '../lib/api'
+import Modal from './Modal'
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { Account, ValueHistoryRow } from '../../../shared/types'
 import { CHECKIN_INVESTED_VALUE_SUBTYPES, CHECKIN_QUANTITY_SUBTYPES } from '../lib/categories'
-import { formatCurrency, formatDate, todayLocalDateString } from '../lib/format'
+import { formatCurrency, formatDate, parseIndianAmount, parseOptionalAmount, todayLocalDateString } from '../lib/format'
 import { ICON_EDIT, ICON_DELETE } from '../lib/actionIcons'
 
 interface Props {
@@ -35,6 +36,16 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
   const [deletingHistoryId, setDeletingHistoryId] = useState<number | null>(null)
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Explicit rather than the modal's own "anything typed" tracking: edits to past
+  // entries below save immediately, so they shouldn't count as unsaved changes —
+  // only the new check-in, or a past entry left half-edited, should.
+  const isDirty =
+    date !== todayLocalDateString() ||
+    value !== String(account.current_value) ||
+    investedValue !== (account.principal_amount != null ? String(account.principal_amount) : '') ||
+    quantity !== (account.quantity != null ? String(account.quantity) : '') ||
+    editingId !== null
+
   const showInvestedValue = CHECKIN_INVESTED_VALUE_SUBTYPES.includes(account.subtype)
   const showQuantity = CHECKIN_QUANTITY_SUBTYPES.includes(account.subtype)
   const showExtraColumn = showInvestedValue || showQuantity
@@ -47,26 +58,23 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
     loadEntries()
   }, [])
 
-  useEffect(() => {
-    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [onClose])
-
   const submit = async (): Promise<void> => {
     setError(null)
-    const num = Number(value)
-    if (isNaN(num)) {
-      setError('Value must be a number')
+    // Required, and parsed like every other amount — Number('') is 0, which used to
+    // record a ₹0 check-in when the field was left empty.
+    const num = parseIndianAmount(value)
+    if (num === null) {
+      setError('Enter the value as a number, e.g. 2,45,000.')
       return
     }
     let investedNum: number | null = null
-    if (showInvestedValue && investedValue.trim()) {
-      investedNum = Number(investedValue)
-      if (isNaN(investedNum)) {
-        setError('Invested amount must be a number')
+    if (showInvestedValue) {
+      const parsed = parseOptionalAmount(investedValue)
+      if (parsed === undefined) {
+        setError('Enter the invested amount as a number, e.g. 2,00,000.')
         return
       }
+      investedNum = parsed
     }
     let quantityNum: number | null = null
     if (showQuantity && quantity.trim()) {
@@ -98,18 +106,19 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
 
   const saveEdit = async (): Promise<void> => {
     if (editingId === null) return
-    const num = Number(editValue)
-    if (isNaN(num)) {
-      setEntriesError('Value must be a number')
+    const num = parseIndianAmount(editValue)
+    if (num === null) {
+      setEntriesError('Enter the value as a number, e.g. 2,45,000.')
       return
     }
     let investedNum: number | null = null
-    if (showInvestedValue && editInvestedValue.trim()) {
-      investedNum = Number(editInvestedValue)
-      if (isNaN(investedNum)) {
-        setEntriesError('Invested amount must be a number')
+    if (showInvestedValue) {
+      const parsed = parseOptionalAmount(editInvestedValue)
+      if (parsed === undefined) {
+        setEntriesError('Enter the invested amount as a number, e.g. 2,00,000.')
         return
       }
+      investedNum = parsed
     }
     let quantityNum: number | null = null
     if (showQuantity && editQuantity.trim()) {
@@ -151,9 +160,9 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" style={{ width: 620 }} onClick={(e) => e.stopPropagation()}>
-        <h2>Update value</h2>
+    <Modal title="Update value" width={620} onClose={onClose} dirty={isDirty}>
+      {(requestClose) => (
+      <>
         <p className="help-text" style={{ marginBottom: 14 }}>
           Log {account.name}'s value as of a specific date. Logging the same date again updates
           that entry, not adds a new one. The account's current value always comes from the most
@@ -195,7 +204,7 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
         {error && <div className="error-text">{error}</div>}
 
         <div className="modal-actions" style={{ marginBottom: 20 }}>
-          <button className="btn secondary" onClick={onClose} disabled={busy}>
+          <button className="btn secondary" onClick={requestClose} disabled={busy}>
             Cancel
           </button>
           <button className="btn" onClick={submit} disabled={busy}>
@@ -319,7 +328,8 @@ export default function CheckInModal({ account, onClose, onSaved, onChanged }: P
             {entriesError && <div className="error-text">{entriesError}</div>}
           </div>
         )}
-      </div>
-    </div>
+      </>
+      )}
+    </Modal>
   )
 }

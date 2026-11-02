@@ -26,6 +26,9 @@ const NEVER_USED = {
   document_path: null,
   document_original_name: null,
   notes: null,
+  purchase_price: null,
+  purchase_date: null,
+  ownership_pct: null,
 } as const
 
 // ─── Demo accounts ────────────────────────────────────────────────────────────
@@ -103,6 +106,7 @@ export const DEMO_INSURANCE: InsurancePolicy[] = [
     start_date: '2015-04-01', expiry_date: '2040-04-01', renewal_date: '2026-04-01',
     document_path: null, document_original_name: null,
     last_reminder_sent: null, notes: null, created_at: '2026-01-01T00:00:00Z',
+    additional_insured: null, nominee_name: null, riders: null,
   },
   {
     id: 2, policy_number: 'SH-FAM-20251234', policy_type: 'health',
@@ -111,6 +115,7 @@ export const DEMO_INSURANCE: InsurancePolicy[] = [
     start_date: '2026-01-20', expiry_date: '2027-01-20', renewal_date: '2027-01-10',
     document_path: null, document_original_name: null,
     last_reminder_sent: null, notes: null, created_at: '2026-01-20T00:00:00Z',
+    additional_insured: null, nominee_name: null, riders: null,
   },
   {
     id: 3, policy_number: 'OG-24-1234-5678-01', policy_type: 'vehicle_4w',
@@ -120,6 +125,7 @@ export const DEMO_INSURANCE: InsurancePolicy[] = [
     start_date: '2025-03-10', expiry_date: '2026-03-10', renewal_date: '2026-03-01',
     document_path: null, document_original_name: null,
     last_reminder_sent: null, notes: null, created_at: '2025-03-10T00:00:00Z',
+    additional_insured: null, nominee_name: null, riders: null,
   },
 ]
 
@@ -190,24 +196,28 @@ export const DEMO_VAULT: VaultEntry[] = [
     id: 1, service_name: 'Gmail', category: 'Communication & Social',
     url: 'mail.google.com', username: 'dev.sharma@gmail.com',
     password: 'Gmail@Dev2024!', notes: null, password_changed_at: '2026-06-01T00:00:00Z',
+    entry_type: 'login',
     created_at: '2026-01-01T00:00:00Z',
   },
   {
     id: 2, service_name: 'HDFC NetBanking', category: 'Finance & Banking',
     url: 'netbanking.hdfcbank.com', username: '30985678****',
     password: 'HDFC@Bank#99', notes: null, password_changed_at: '2026-08-15T00:00:00Z',
+    entry_type: 'login',
     created_at: '2026-01-01T00:00:00Z',
   },
   {
     id: 3, service_name: 'Zerodha', category: 'Finance & Banking',
     url: 'kite.zerodha.com', username: 'DS1234',
     password: 'Zr0dh@Secur3!', notes: null, password_changed_at: '2026-09-01T00:00:00Z',
+    entry_type: 'login',
     created_at: '2026-01-01T00:00:00Z',
   },
   {
     id: 4, service_name: 'Amazon', category: 'Shopping & E-commerce',
     url: 'amazon.in', username: 'dev.sharma@gmail.com',
     password: 'Amazon@Shop24', notes: null, password_changed_at: '2026-10-01T00:00:00Z',
+    entry_type: 'login',
     created_at: '2026-01-01T00:00:00Z',
   },
 ]
@@ -259,6 +269,12 @@ const store = {
 
 export function createTourApi(): typeof window.api {
   return {
+    clipboard: {
+      writeSecret: async (text: string) => {
+        await navigator.clipboard.writeText(text).catch(() => {})
+        return { ok: true }
+      },
+    },
     auth: {
       status:                  async () => ({ initialized: true, unlocked: true }),
       setup:                   async () => ({ ok: true }),
@@ -304,6 +320,7 @@ export function createTourApi(): typeof window.api {
         return store.accounts.find(a => a.id === id)!
       },
       remove:              async () => {},
+      restore:          async () => ({ ok: true }),
       history:             async () => [],
       checkIn:             async () => {},
       updateValueHistory:  async () => {},
@@ -340,6 +357,7 @@ export function createTourApi(): typeof window.api {
       },
       update:           async () => {},
       remove:           async () => {},
+      restore:          async () => ({ ok: true }),
       pickFile:         async () => null,
       extract:          async () => { throw new Error('Not available in tour') },
       reExtract:        async () => { throw new Error('Not available in tour') },
@@ -355,10 +373,12 @@ export function createTourApi(): typeof window.api {
       },
       update:           async () => {},
       remove:           async () => {},
+      restore:          async () => ({ ok: true }),
       pickFile:         async () => null,
       extract:          async () => { throw new Error('Not available in tour') },
       reExtract:        async () => { throw new Error('Not available in tour') },
       openDocument:     async () => {},
+      preview:          async () => null,
       downloadDocument: async () => ({ ok: false }),
     },
     creditCards: {
@@ -370,6 +390,7 @@ export function createTourApi(): typeof window.api {
       },
       update:   async () => {},
       remove:   async () => {},
+      restore:          async () => ({ ok: true }),
       dueDates: async () => [],
     },
     // Not part of the tour (no /cashflow route registered in TourMode's own Routes) —
@@ -434,6 +455,7 @@ export function createTourApi(): typeof window.api {
       },
       update: async () => {},
       remove: async () => {},
+      restore:          async () => ({ ok: true }),
     },
     settings: {
       get: async () => ({

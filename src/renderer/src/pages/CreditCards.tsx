@@ -9,6 +9,10 @@ import MiniCard from '../components/MiniCard'
 import ActionMenu from '../components/ActionMenu'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { ICON_EDIT, ICON_DELETE } from '../lib/actionIcons'
+import { useUndoToast } from '../lib/useUndoToast'
+import { formatCurrency, formatDate, formatDateShort } from '../lib/format'
+import Tip from '../components/Tip'
+import SummaryStrip from '../components/SummaryStrip'
 
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd']
@@ -18,12 +22,16 @@ function ordinal(n: number): string {
 
 export default function CreditCards(): JSX.Element {
   const [cards, setCards] = useState<CreditCard[]>([])
+  const { offerUndo, undoToast } = useUndoToast()
   const [dueByCardId, setDueByCardId] = useState<Map<number, UpcomingItem>>(new Map())
   const [editing, setEditing] = useState<CreditCard | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<{ id: number; label: string } | null>(null)
   const [revealed, setRevealed] = useState<Set<number>>(new Set())
+  // copiedId drives the brief ✓; countdownId keeps the "clears in Ns" hint on the
+  // card that was copied for the whole 30s (it used to vanish with the ✓ at 1.5s).
   const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [countdownId, setCountdownId] = useState<number | null>(null)
   const [clipboardCountdown, setClipboardCountdown] = useState<number | null>(null)
   const clipboardIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const revealTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
@@ -83,8 +91,10 @@ export default function CreditCards(): JSX.Element {
   const copyNumber = async (card: CreditCard): Promise<void> => {
     const digits = cardDigits(card.card_number)
     if (!digits) return
-    await navigator.clipboard.writeText(digits)
+    // Main process clears it after 30s, but only if it's still this number.
+    await api().clipboard.writeSecret(digits, 30_000)
     setCopiedId(card.id)
+    setCountdownId(card.id)
     if (clipboardIntervalRef.current !== null) clearInterval(clipboardIntervalRef.current)
     setClipboardCountdown(30)
     clipboardIntervalRef.current = setInterval(() => {
@@ -100,8 +110,6 @@ export default function CreditCards(): JSX.Element {
       })
     }, 1000)
     setTimeout(() => setCopiedId((id) => (id === card.id ? null : id)), 1500)
-    // Auto-clear clipboard after 30s for security
-    setTimeout(() => navigator.clipboard.writeText('').catch(() => {}), 30_000)
   }
 
   const toggleStatus = async (card: CreditCard): Promise<void> => {
@@ -117,11 +125,15 @@ export default function CreditCards(): JSX.Element {
 
   const confirmRemove = async (): Promise<void> => {
     if (!pendingDelete) return
-    const { id } = pendingDelete
+    const { id, label } = pendingDelete
     setPendingDelete(null)
     setCards((prev) => prev.filter((c) => c.id !== id))
     await api().creditCards.remove(id)
     load()
+    offerUndo(`"${label}"`, async () => {
+      await api().creditCards.restore(id)
+      load()
+    })
   }
 
   const resolveDue = async (item: UpcomingItem, status: 'paid' | 'dismissed'): Promise<void> => {
@@ -146,9 +158,52 @@ export default function CreditCards(): JSX.Element {
         </button>
       </div>
 
-      <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
-        Card numbers show only the last 4 digits until you reveal them.
-      </p>
+      <Tip storageKey="artha_tip_cards">
+        Card numbers show only the last 4 digits until you reveal them, and a copied number is cleared from the
+        clipboard after 30 seconds.
+      </Tip>
+
+      {cards.length > 0 &&
+        (() => {
+          const active = cards.filter((c) => c.status !== 'disabled')
+          const limit = active.reduce((s, c) => s + (c.credit_limit ?? 0), 0)
+          const withoutLimit = active.filter((c) => c.credit_limit == null).length
+          const dues = active
+            .map((c) => ({ card: c, due: dueByCardId.get(c.id) }))
+            .filter((x): x is { card: CreditCard; due: UpcomingItem } => x.due !== undefined)
+            .sort((a, b) => a.due.daysLeft - b.due.daysLeft)
+          const next = dues[0]
+          const thisWeek = dues.filter((d) => d.due.daysLeft <= 7).length
+          return (
+            <SummaryStrip
+              stats={[
+                {
+                  label: 'Active cards',
+                  value: String(active.length),
+                  note: cards.length > active.length ? `${cards.length - active.length} disabled` : undefined
+                },
+                {
+                  label: 'Total credit limit',
+                  value: formatCurrency(limit),
+                  hint: 'Sum of the credit limits on your active cards.',
+                  note: withoutLimit > 0 ? `${withoutLimit} card${withoutLimit === 1 ? '' : 's'} without a limit set` : undefined
+                },
+                {
+                  label: 'Next payment due',
+                  value: next ? (next.due.daysLeft <= 0 ? 'Today' : `${next.due.daysLeft} days`) : 'Nothing due',
+                  tone: next && next.due.daysLeft <= 3 ? 'warn' : undefined,
+                  note: next ? `${next.card.nickname} · ${formatDateShort(next.due.dueDate)}` : undefined
+                },
+                {
+                  label: 'Due this week',
+                  value: String(thisWeek),
+                  tone: thisWeek > 0 ? 'warn' : undefined,
+                  hint: 'Card bills due in the next 7 days that you haven’t marked as paid.'
+                }
+              ]}
+            />
+          )
+        })()}
 
       {cards.length === 0 ? (
         <div className="card empty-state">
@@ -162,10 +217,10 @@ export default function CreditCards(): JSX.Element {
               <tr>
                 <th>Label</th>
                 <th>Issuer</th>
-                <th>Network</th>
                 <th>Number</th>
                 <th>Expiry</th>
-                <th>Statement date</th>
+                <th>Statement</th>
+                <th>Next payment due</th>
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -177,13 +232,10 @@ export default function CreditCards(): JSX.Element {
                 const daysUntilDue = due != null ? due.daysLeft : null
                 const isRevealed = revealed.has(c.id)
                 const hasNumber = cardDigits(c.card_number).length > 0
-                const rowStyle = disabled
-                  ? { opacity: 0.55 }
-                  : daysUntilDue != null && daysUntilDue <= 3
-                    ? { background: 'rgba(239,91,91,0.04)' }
-                    : undefined
+                // One "due" highlight (the row-due class); the extra hardcoded red tint
+                // within 3 days stacked a second, theme-blind colour on top of it.
                 return (
-                  <tr key={c.id} className={due ? 'row-due' : undefined} style={rowStyle}>
+                  <tr key={c.id} className={due ? 'row-due' : undefined} style={disabled ? { opacity: 0.55 } : undefined}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <MiniCard card={c} />
@@ -191,7 +243,6 @@ export default function CreditCards(): JSX.Element {
                       </div>
                     </td>
                     <td className="muted">{c.issuer ?? '—'}</td>
-                    <td className="muted">{c.network ?? '—'}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <span style={{ fontVariantNumeric: 'tabular-nums' }}>
                         {!hasNumber
@@ -219,39 +270,59 @@ export default function CreditCards(): JSX.Element {
                           >
                             {copiedId === c.id ? <Check size={14} /> : <Copy size={14} />}
                           </button>
-                          {copiedId === c.id && clipboardCountdown !== null && (
-                            <span style={{ fontSize: 10, color: 'var(--text-faint)', marginLeft: 4 }}>
-                              {clipboardCountdown}s
+                          {countdownId === c.id && clipboardCountdown !== null && (
+                            <span style={{ fontSize: 10, color: 'var(--text-faint)', marginLeft: 4 }} title="Clipboard clears automatically">
+                              clears in {clipboardCountdown}s
                             </span>
                           )}
                         </>
                       )}
                     </td>
-                    <td className="muted">
+                    <td className="muted" style={{ whiteSpace: 'nowrap' }}>
                       {c.expiry_month && c.expiry_year
                         ? `${String(c.expiry_month).padStart(2, '0')}/${String(c.expiry_year % 100).padStart(2, '0')}`
                         : '—'}
+                      {(() => {
+                        // A card is valid through the last day of its expiry month.
+                        if (!c.expiry_month || !c.expiry_year || disabled) return null
+                        const lastDay = new Date(c.expiry_year, c.expiry_month, 0)
+                        const days = Math.ceil((lastDay.getTime() - Date.now()) / 86400000)
+                        if (days < 0) return <span className="badge danger" style={{ marginLeft: 6 }}>Expired</span>
+                        if (days <= 60) return <span className="badge warn" style={{ marginLeft: 6 }}>Expires soon</span>
+                        return null
+                      })()}
                     </td>
-                    <td className="muted">
-                      {c.statement_day != null ? ordinal(c.statement_day) : '—'}
-                      {daysUntilDue != null && daysUntilDue <= 7 && (
-                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)', marginLeft: 6 }}>
-                          Due in {daysUntilDue}d
+                    <td className="muted">{c.statement_day != null ? ordinal(c.statement_day) : '—'}</td>
+                    {/* The payment date is what matters — it used to appear only as tiny
+                        red text inside the statement column, and only within 7 days. */}
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {due ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                          <span title={formatDate(due.dueDate)}>{formatDateShort(due.dueDate)}</span>
+                          {daysUntilDue != null && daysUntilDue <= 7 && (
+                            <span className={`badge ${daysUntilDue <= 3 ? 'danger' : 'warn'}`}>
+                              {daysUntilDue <= 0 ? 'Today' : `${daysUntilDue}d`}
+                            </span>
+                          )}
+                          <button className="btn secondary small" onClick={() => resolveDue(due, 'paid')} title={due.actionLabel}>
+                            <Check size={13} /> Mark paid
+                          </button>
                         </span>
+                      ) : (
+                        <span className="muted">—</span>
                       )}
                     </td>
                     <td>
-                      <span className={`badge ${disabled ? 'neutral' : 'ok'}`}>
-                        {disabled ? 'Disabled' : 'Active'}
-                      </span>
+                      {/* Only the exception is labelled — "Active" on every row was noise. */}
+                      {disabled && <span className="badge neutral">Disabled</span>}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <ActionMenu
                         items={[
                           ...(due
                             ? [
-                                { icon: Check, label: 'Mark as paid', onClick: () => resolveDue(due, 'paid') },
-                                { icon: X, label: 'Ignore', onClick: () => resolveDue(due, 'dismissed') }
+                                // "Mark paid" is a visible button in the Next payment due column.
+                                { icon: X, label: 'Ignore this bill', onClick: () => resolveDue(due, 'dismissed') }
                               ]
                             : []),
                           {
@@ -293,10 +364,12 @@ export default function CreditCards(): JSX.Element {
       <ConfirmDialog
         open={pendingDelete !== null}
         title="Delete card"
-        message={`Delete "${pendingDelete?.label}"? This can't be undone.`}
+        message={`Delete "${pendingDelete?.label}"? You can undo this for a few seconds after.`}
         onConfirm={() => void confirmRemove()}
         onCancel={() => setPendingDelete(null)}
       />
+
+      {undoToast}
     </div>
   )
 }

@@ -125,6 +125,16 @@ export function parseIndianAmount(input: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+// For optional money fields in forms: blank → null (left empty), a valid amount ≥ 0
+// (Indian or plain grouping, optional ₹) → the number, anything else → undefined,
+// meaning "invalid — show an error". Replaces bare Number(), which turned "5,00,000"
+// into NaN and saved it.
+export function parseOptionalAmount(text: string): number | null | undefined {
+  if (!text.trim()) return null
+  const n = parseIndianAmount(text)
+  return n !== null && n >= 0 ? n : undefined
+}
+
 // True only for a real calendar date in plain YYYY-MM-DD form — rejects both
 // malformed strings and JS's own date-rollover behavior (e.g. "2026-02-30" silently
 // becoming March 2nd), by round-tripping through toLocalDateString and comparing.
@@ -141,4 +151,21 @@ export function daysUntil(iso: string | null | undefined): number | null {
   const now = new Date()
   const fromMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
   return Math.round((targetMs - fromMs) / (1000 * 60 * 60 * 24))
+}
+
+// "today", "3 days ago", "2 months ago", "1 year ago" — for "last updated" columns,
+// where how long ago matters more than the exact date (which stays in a tooltip).
+export function formatAgo(iso: string | null | undefined): string {
+  const d = daysUntil(iso?.slice(0, 10))
+  if (d === null) return '—'
+  const ago = -d
+  if (ago <= 0) return 'today'
+  if (ago === 1) return 'yesterday'
+  if (ago < 30) return `${ago} days ago`
+  if (ago < 365) {
+    const m = Math.floor(ago / 30)
+    return `${m} month${m === 1 ? '' : 's'} ago`
+  }
+  const y = Math.floor(ago / 365)
+  return `${y} year${y === 1 ? '' : 's'} ago`
 }

@@ -82,6 +82,15 @@ export function deleteAccount(id: number): void {
   recordSnapshot()
 }
 
+// Undo for deleteAccount — un-flags the tombstone (bumping the timestamp so sync
+// pushes the revival too) and re-snapshots so net worth includes it again.
+export function restoreAccount(id: number): void {
+  getDb()
+    .prepare('UPDATE accounts SET deleted = 0, last_updated = ? WHERE id = ?')
+    .run(new Date().toISOString(), id)
+  recordSnapshot()
+}
+
 export function recordValueHistory(
   accountId: number,
   value: number,

@@ -60,6 +60,13 @@ export function deletePolicy(id: number): void {
     .run(new Date().toISOString(), id)
 }
 
+// Undo for deletePolicy.
+export function restorePolicy(id: number): void {
+  getDb()
+    .prepare('UPDATE insurance_policies SET deleted = 0, updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), id)
+}
+
 export function markReminderSent(id: number): void {
   getDb()
     .prepare('UPDATE insurance_policies SET last_reminder_sent = ? WHERE id = ?')

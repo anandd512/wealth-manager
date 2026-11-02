@@ -7,14 +7,21 @@ import VaultEntryModal from '../components/VaultEntryModal'
 import ActionMenu from '../components/ActionMenu'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { ICON_EDIT, ICON_DELETE } from '../lib/actionIcons'
+import { useUndoToast } from '../lib/useUndoToast'
+import Tip from '../components/Tip'
+import SummaryStrip from '../components/SummaryStrip'
 
 
 export default function Vault(): JSX.Element {
   const [entries, setEntries] = useState<VaultEntry[]>([])
+  const { offerUndo, undoToast } = useUndoToast()
   const [editing, setEditing] = useState<VaultEntry | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [revealed, setRevealed] = useState<Set<number>>(new Set())
+  // copiedId drives the brief ✓; countdownId keeps the "clears in Ns" hint on the
+  // entry that was copied for the whole 30s (it used to vanish with the ✓ at 1.5s).
   const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [countdownId, setCountdownId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<'name' | 'recent' | 'changed'>('name')
   const [clipboardCountdown, setClipboardCountdown] = useState<number | null>(null)
@@ -41,11 +48,15 @@ export default function Vault(): JSX.Element {
 
   const confirmRemove = async (): Promise<void> => {
     if (!pendingDelete) return
-    const { id } = pendingDelete
+    const { id, label } = pendingDelete
     setPendingDelete(null)
     setEntries((prev) => prev.filter((e) => e.id !== id))
     await api().vault.remove(id)
     load()
+    offerUndo(`"${label}"`, async () => {
+      await api().vault.restore(id)
+      load()
+    })
   }
 
   const toggleReveal = (id: number): void => {
@@ -81,8 +92,10 @@ export default function Vault(): JSX.Element {
 
   const copyPassword = async (entry: VaultEntry): Promise<void> => {
     if (!entry.password) return
-    await navigator.clipboard.writeText(entry.password)
+    // Main process clears it after 30s, but only if it's still this password.
+    await api().clipboard.writeSecret(entry.password, 30_000)
     setCopiedId(entry.id)
+    setCountdownId(entry.id)
     // Start countdown from 30
     if (clipboardIntervalRef.current !== null) clearInterval(clipboardIntervalRef.current)
     setClipboardCountdown(30)
@@ -100,8 +113,6 @@ export default function Vault(): JSX.Element {
     }, 1000)
     // Reset the UI indicator after 1.5s
     setTimeout(() => setCopiedId((id) => (id === entry.id ? null : id)), 1500)
-    // Auto-clear clipboard after 30s for security
-    setTimeout(() => navigator.clipboard.writeText('').catch(() => {}), 30_000)
   }
 
   const getDomain = (url: string): string => {
@@ -111,6 +122,20 @@ export default function Vault(): JSX.Element {
       return url
     }
   }
+
+  // ── Password health ──
+  // The same password on several logins is the biggest real risk here (one breach
+  // opens them all), and nothing flagged it before — only length and age.
+  const usesByPassword = new Map<string, number>()
+  for (const e of entries) if (e.password) usesByPassword.set(e.password, (usesByPassword.get(e.password) ?? 0) + 1)
+  const isReused = (e: VaultEntry): boolean => !!e.password && (usesByPassword.get(e.password) ?? 0) > 1
+  const reusedCount = entries.filter(isReused).length
+  const weakCount = entries.filter((e) => e.password && e.password.length < 8).length
+  const oldCount = entries.filter((e) => {
+    if (!e.password) return false
+    if (!e.password_changed_at) return true
+    return (Date.now() - new Date(e.password_changed_at).getTime()) / 86400000 > 365
+  }).length
 
   const renderRows = (group: VaultEntry[], domainCounts: Map<string, number>): JSX.Element[] =>
     group.map((e) => {
@@ -128,16 +153,23 @@ export default function Vault(): JSX.Element {
       return (
         <tr key={e.id}>
           <td>
-            <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
               {e.service_name}
+              {isReused(e) && (
+                <span className="badge warn" title={`This password is also used on ${(usesByPassword.get(e.password!) ?? 1) - 1} other login(s)`}>
+                  Reused
+                </span>
+              )}
             </span>
             {e.url && (
               <div className="muted" style={{ fontSize: 12, display: 'flex', alignItems: 'center' }}>
-                {e.url}
+                {/* Just the site, not the whole URL; the full address is on hover. */}
+                <span title={e.url}>{getDomain(e.url).replace(/^www\./, '')}</span>
                 <button
                   className="icon-btn"
                   title={`Open ${e.url}`}
-                  style={{ marginLeft: 4 }}
+                  aria-label={`Open ${getDomain(e.url)}`}
+                  style={{ marginLeft: 4, width: 24, height: 24 }}
                   onClick={() => window.open(e.url!.startsWith('http') ? e.url! : `https://${e.url}`, '_blank')}
                 >
                   <ExternalLink size={12} />
@@ -156,7 +188,10 @@ export default function Vault(): JSX.Element {
           <td>{e.username ?? '—'}</td>
           <td style={{ whiteSpace: 'nowrap' }}>
             <>
-              <span>{isRevealed ? e.password ?? '—' : e.password ? '••••••••' : '—'}</span>
+              {/* Monospace when revealed, so l/I/1 and O/0 can be told apart. */}
+              <span style={isRevealed ? { fontFamily: 'ui-monospace, Consolas, "Cascadia Mono", monospace' } : undefined}>
+                {isRevealed ? e.password ?? '—' : e.password ? '••••••••' : '—'}
+              </span>
               {e.password && (
                 <>
                   <button
@@ -176,8 +211,10 @@ export default function Vault(): JSX.Element {
                   >
                     {copiedId === e.id ? <Check size={14} /> : <Copy size={14} />}
                   </button>
-                  {copiedId === e.id && clipboardCountdown !== null && (
-                    <span style={{ fontSize: 10, color: 'var(--text-faint)', marginLeft: 4 }}>{clipboardCountdown}s</span>
+                  {countdownId === e.id && clipboardCountdown !== null && (
+                    <span style={{ fontSize: 10, color: 'var(--text-faint)', marginLeft: 4 }} title="Clipboard clears automatically">
+                      clears in {clipboardCountdown}s
+                    </span>
                   )}
                 </>
               )}
@@ -254,18 +291,10 @@ export default function Vault(): JSX.Element {
       <>
         {orderedKeys.map((cat) => (
           <div key={cat} style={{ marginBottom: 24 }}>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                color: 'var(--muted)',
-                marginBottom: 6,
-                paddingLeft: 2
-              }}
-            >
-              {cat}
+            {/* Was coloured with an undefined --muted var, so it rendered at full
+                text brightness; now uses the shared section heading. */}
+            <div className="section-header" style={{ marginBottom: 'var(--space-2)' }}>
+              <h2>{cat}</h2>
             </div>
             <div className="card" style={{ padding: 0 }}>
               <table>
@@ -303,54 +332,71 @@ export default function Vault(): JSX.Element {
           <Plus size={14} /> Add login
         </button>
       </div>
-      {(() => {
-        const now = Date.now()
-        const oldPasswords = entries.filter((e) => {
-          if (!e.password) return false
-          if (!e.password_changed_at) return true
-          return (now - new Date(e.password_changed_at).getTime()) / 86400000 > 365
-        })
-        const weakPasswords = entries.filter((e) => e.password && e.password.length < 8)
-        if (oldPasswords.length === 0 && weakPasswords.length === 0) return null
-        return (
-          <div style={{ background: 'rgba(232,177,79,0.08)', border: '1px solid rgba(232,177,79,0.3)', borderRadius: 'var(--radius)', padding: '10px 14px', marginBottom: 16, fontSize: 12.5, color: 'var(--text-dim)', display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-            {oldPasswords.length > 0 && (
-              <button
-                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 12.5, padding: 0, textDecoration: 'underline dotted', textUnderlineOffset: 3 }}
-                title="Filter to show only passwords older than 1 year"
-                onClick={() => { setSortBy('changed'); setSearch('') }}
-              >
-                ⚠ {oldPasswords.length} password{oldPasswords.length > 1 ? 's' : ''} not updated in over a year — click to review
-              </button>
-            )}
-            {weakPasswords.length > 0 && (
-              <span title={weakPasswords.map(e => e.service_name).join(', ')}>
-                ⚠ {weakPasswords.length} weak password{weakPasswords.length > 1 ? 's' : ''} (under 8 characters){weakPasswords.length <= 3 ? `: ${weakPasswords.map(e => e.service_name).join(', ')}` : ''}
-              </span>
-            )}
-          </div>
-        )
-      })()}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, marginTop: -4 }}>
-        <div style={{ position: 'relative' }}>
-          <Search size={14} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-faint)', pointerEvents: 'none' }} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search…"
-            style={{ paddingLeft: 30, width: 200 }}
-          />
-        </div>
-        <select value={sortBy} onChange={e => setSortBy(e.target.value as 'name' | 'recent' | 'changed')} style={{ fontSize: 12, padding: '4px 8px' }}>
-          <option value="name">A → Z</option>
-          <option value="recent">Date added</option>
-          <option value="changed">Recently changed</option>
-        </select>
-      </div>
+      {entries.length > 0 && (
+        <SummaryStrip
+          stats={[
+            { label: 'Logins', value: String(entries.length) },
+            {
+              label: 'Reused',
+              value: String(reusedCount),
+              tone: reusedCount > 0 ? 'bad' : 'good',
+              hint: 'Logins sharing a password with another login. If one site leaks it, the others are open too.',
+              note: reusedCount > 0 ? 'Give each a unique password — look for the “Reused” tag' : 'Every password is unique'
+            },
+            {
+              label: 'Weak',
+              value: String(weakCount),
+              tone: weakCount > 0 ? 'warn' : 'good',
+              hint: 'Passwords shorter than 8 characters.',
+              note: weakCount > 0 && weakCount <= 3
+                ? entries.filter((e) => e.password && e.password.length < 8).map((e) => e.service_name).join(', ')
+                : undefined
+            },
+            {
+              label: 'Not changed in a year',
+              value: String(oldCount),
+              tone: oldCount > 0 ? 'warn' : 'good',
+              hint: 'Passwords not changed in over 12 months (or never recorded as changed).',
+              note:
+                oldCount > 0 ? (
+                  // Honest label — this re-sorts the list, it doesn't filter it.
+                  <button
+                    className="cf-link-btn"
+                    onClick={() => {
+                      setSortBy('changed')
+                      setSearch('')
+                    }}
+                  >
+                    Sort by last changed
+                  </button>
+                ) : undefined
+            }
+          ]}
+        />
+      )}
+      <Tip storageKey="artha_tip_vault">
+        Passwords stay masked until you reveal them, and are protected by your master password. A copied password is
+        cleared from the clipboard after 30 seconds.
+      </Tip>
 
-      <p className="muted" style={{ marginBottom: 20 }}>
-        Passwords are masked by default and protected by your master password. Clipboard clears automatically after 30 seconds.
-      </p>
+      {entries.length > 0 && (
+        <div className="cf-filterbar-row" style={{ marginBottom: 'var(--space-4)' }}>
+          <div className="cf-search" style={{ maxWidth: 280 }}>
+            <Search aria-hidden />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search logins…" aria-label="Search logins" />
+          </div>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'name' | 'recent' | 'changed')}
+            aria-label="Sort logins"
+            style={{ width: 'auto' }}
+          >
+            <option value="name">Sort: A → Z</option>
+            <option value="recent">Sort: date added</option>
+            <option value="changed">Sort: recently changed</option>
+          </select>
+        </div>
+      )}
 
       {entries.length === 0 ? (
         <div className="card empty-state">
@@ -375,10 +421,12 @@ export default function Vault(): JSX.Element {
       <ConfirmDialog
         open={pendingDelete !== null}
         title="Delete entry"
-        message={`Delete "${pendingDelete?.label}"? This can't be undone.`}
+        message={`Delete "${pendingDelete?.label}"? You can undo this for a few seconds after.`}
         onConfirm={() => void confirmRemove()}
         onCancel={() => setPendingDelete(null)}
       />
+
+      {undoToast}
     </div>
   )
 }

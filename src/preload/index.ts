@@ -22,6 +22,10 @@ import type {
 } from '../shared/types'
 
 const api = {
+  clipboard: {
+    writeSecret: (text: string, clearAfterMs: number) =>
+      ipcRenderer.invoke(CHANNELS.clipboardWriteSecret, text, clearAfterMs)
+  },
   auth: {
     status: () => ipcRenderer.invoke(CHANNELS.authStatus),
     setup: (password: string) => ipcRenderer.invoke(CHANNELS.authSetup, password),
@@ -58,6 +62,7 @@ const api = {
     update: (id: number, input: Partial<AccountInput>) =>
       ipcRenderer.invoke(CHANNELS.accountsUpdate, id, input),
     remove: (id: number) => ipcRenderer.invoke(CHANNELS.accountsDelete, id),
+    restore: (id: number) => ipcRenderer.invoke(CHANNELS.accountsRestore, id),
     history: (id: number) => ipcRenderer.invoke(CHANNELS.accountsHistory, id),
     checkIn: (
       id: number,
@@ -115,6 +120,7 @@ const api = {
     update: (id: number, input: Partial<InsurancePolicyInput>) =>
       ipcRenderer.invoke(CHANNELS.insuranceUpdate, id, input),
     remove: (id: number) => ipcRenderer.invoke(CHANNELS.insuranceDelete, id),
+    restore: (id: number) => ipcRenderer.invoke(CHANNELS.insuranceRestore, id),
     pickFile: () => ipcRenderer.invoke(CHANNELS.insurancePickFile),
     extract: (sourcePath: string) => ipcRenderer.invoke(CHANNELS.insuranceExtract, sourcePath),
     reExtract: (id: number) => ipcRenderer.invoke(CHANNELS.insuranceReExtract, id),
@@ -128,10 +134,12 @@ const api = {
     update: (id: number, input: Partial<IdentityDocumentInput>) =>
       ipcRenderer.invoke(CHANNELS.identityDocsUpdate, id, input),
     remove: (id: number) => ipcRenderer.invoke(CHANNELS.identityDocsDelete, id),
+    restore: (id: number) => ipcRenderer.invoke(CHANNELS.identityDocsRestore, id),
     pickFile: () => ipcRenderer.invoke(CHANNELS.identityDocsPickFile),
     extract: (sourcePath: string) => ipcRenderer.invoke(CHANNELS.identityDocsExtract, sourcePath),
     reExtract: (id: number) => ipcRenderer.invoke(CHANNELS.identityDocsReExtract, id),
     openDocument: (docPath: string) => ipcRenderer.invoke(CHANNELS.identityDocsOpenDocument, docPath),
+    preview: (docPath: string): Promise<string | null> => ipcRenderer.invoke(CHANNELS.identityDocsPreview, docPath),
     downloadDocument: (docPath: string, suggestedName: string | null) =>
       ipcRenderer.invoke(CHANNELS.identityDocsDownloadDocument, docPath, suggestedName)
   },
@@ -141,6 +149,7 @@ const api = {
     update: (id: number, input: Partial<CreditCardInput>) =>
       ipcRenderer.invoke(CHANNELS.creditCardsUpdate, id, input),
     remove: (id: number) => ipcRenderer.invoke(CHANNELS.creditCardsDelete, id),
+    restore: (id: number) => ipcRenderer.invoke(CHANNELS.creditCardsRestore, id),
     dueDates: () => ipcRenderer.invoke(CHANNELS.creditCardsDueDates)
   },
   cashFlow: {
@@ -207,7 +216,8 @@ const api = {
     create: (input: VaultEntryInput) => ipcRenderer.invoke(CHANNELS.vaultCreate, input),
     update: (id: number, input: Partial<VaultEntryInput>) =>
       ipcRenderer.invoke(CHANNELS.vaultUpdate, id, input),
-    remove: (id: number) => ipcRenderer.invoke(CHANNELS.vaultDelete, id)
+    remove: (id: number) => ipcRenderer.invoke(CHANNELS.vaultDelete, id),
+    restore: (id: number) => ipcRenderer.invoke(CHANNELS.vaultRestore, id)
   },
   settings: {
     get: () => ipcRenderer.invoke(CHANNELS.settingsGet),
@@ -224,9 +234,11 @@ const api = {
     setOpenAiBaseUrl: (baseUrl: string) => ipcRenderer.invoke(CHANNELS.settingsSetOpenAiBaseUrl, baseUrl),
     setOpenAiModel: (model: string) => ipcRenderer.invoke(CHANNELS.settingsSetOpenAiModel, model),
     testEmail: () => ipcRenderer.invoke(CHANNELS.settingsTestEmail),
-    testAnthropicKey: (): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke(CHANNELS.settingsTestAnthropicKey),
-    testOpenAiKey: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke(CHANNELS.settingsTestOpenAiKey)
+    // Pass the unsaved form values to test them without saving; omit to test what's saved.
+    testAnthropicKey: (apiKey?: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(CHANNELS.settingsTestAnthropicKey, apiKey),
+    testOpenAiKey: (overrides?: { apiKey?: string; baseUrl?: string; model?: string }): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(CHANNELS.settingsTestOpenAiKey, overrides)
   },
   notify: {
     status: () => ipcRenderer.invoke(CHANNELS.notifyStatus),

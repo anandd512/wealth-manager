@@ -65,3 +65,10 @@ export function deleteVaultEntry(id: number): void {
     .prepare('UPDATE credential_vault SET deleted = 1, updated_at = ? WHERE id = ?')
     .run(new Date().toISOString(), id)
 }
+
+// Undo for deleteVaultEntry.
+export function restoreVaultEntry(id: number): void {
+  getDb()
+    .prepare('UPDATE credential_vault SET deleted = 0, updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), id)
+}

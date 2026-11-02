@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog, shell, BrowserWindow } from 'electron'
+import { app, ipcMain, dialog, shell, clipboard, BrowserWindow } from 'electron'
 import { writeFileSync, readFileSync, unlinkSync, existsSync, rmSync, statSync } from 'fs'
 import { basename, extname, join } from 'path'
 import { CHANNELS } from '../shared/ipc'
@@ -56,10 +56,10 @@ import { parseCsvStatement } from './services/cashFlowCsvParser'
 import {
   storeDocument,
   openDocumentForViewing,
+  documentImageDataUrl,
   cleanupTempViewFiles,
   resolveDocumentPath,
   ensureDocumentAvailableLocally,
-  documentsDir,
   writeDecryptedPdfToTemp,
   deleteStoredDocument
 } from './fileStore'
@@ -131,6 +131,23 @@ async function downloadDocument(
 }
 
 export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void {
+  // Copies a secret (card number, password, ID number) and clears it again after
+  // `clearAfterMs` — but only if the clipboard still holds that same text, so
+  // anything the user copied in the meantime is left alone. Done here rather than
+  // in the renderer because navigator.clipboard can't read while the window is in
+  // the background, which is exactly when the timer usually fires.
+  let clipboardClearTimer: ReturnType<typeof setTimeout> | null = null
+  // (Electron 44's clipboard read/write are async — hence the awaits.)
+  ipcMain.handle(CHANNELS.clipboardWriteSecret, async (_e, text: string, clearAfterMs: number) => {
+    await clipboard.writeText(text)
+    if (clipboardClearTimer) clearTimeout(clipboardClearTimer)
+    clipboardClearTimer = setTimeout(async () => {
+      clipboardClearTimer = null
+      if ((await clipboard.readText()) === text) clipboard.clear()
+    }, clearAfterMs)
+    return { ok: true }
+  })
+
   ipcMain.handle(CHANNELS.authStatus, (): AuthStatus => ({
     initialized: auth.isInitialized(),
     unlocked: isUnlocked()
@@ -311,6 +328,11 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     accounts.deleteAccount(id)
     return { ok: true }
   })
+  ipcMain.handle(CHANNELS.accountsRestore, (_e, id: number) => {
+    requireUnlocked()
+    accounts.restoreAccount(id)
+    return { ok: true }
+  })
   ipcMain.handle(CHANNELS.accountsHistory, (_e, id: number) => {
     requireUnlocked()
     return accounts.getValueHistory(id)
@@ -446,6 +468,11 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     insurance.deletePolicy(id)
     return { ok: true }
   })
+  ipcMain.handle(CHANNELS.insuranceRestore, (_e, id: number) => {
+    requireUnlocked()
+    insurance.restorePolicy(id)
+    return { ok: true }
+  })
   ipcMain.handle(CHANNELS.insurancePickFile, async () => {
     return pickDocumentFile(getWindow(), 'Select insurance policy document')
   })
@@ -498,6 +525,11 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     identityDocs.deleteIdentityDocument(id)
     return { ok: true }
   })
+  ipcMain.handle(CHANNELS.identityDocsRestore, (_e, id: number) => {
+    requireUnlocked()
+    identityDocs.restoreIdentityDocument(id)
+    return { ok: true }
+  })
   ipcMain.handle(CHANNELS.identityDocsPickFile, async () => {
     return pickDocumentFile(getWindow(), 'Select ID document')
   })
@@ -522,6 +554,10 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     await shell.openPath(tempPath)
     return { ok: true }
   })
+  ipcMain.handle(CHANNELS.identityDocsPreview, async (_e, docPath: string) => {
+    requireUnlocked()
+    return documentImageDataUrl(docPath)
+  })
   ipcMain.handle(
     CHANNELS.identityDocsDownloadDocument,
     async (_e, docPath: string, suggestedName: string | null) => {
@@ -545,6 +581,11 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
   ipcMain.handle(CHANNELS.creditCardsDelete, (_e, id: number) => {
     requireUnlocked()
     creditCards.deleteCreditCard(id)
+    return { ok: true }
+  })
+  ipcMain.handle(CHANNELS.creditCardsRestore, (_e, id: number) => {
+    requireUnlocked()
+    creditCards.restoreCreditCard(id)
     return { ok: true }
   })
   ipcMain.handle(CHANNELS.creditCardsDueDates, () => {
@@ -811,6 +852,11 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     vault.deleteVaultEntry(id)
     return { ok: true }
   })
+  ipcMain.handle(CHANNELS.vaultRestore, (_e, id: number) => {
+    requireUnlocked()
+    vault.restoreVaultEntry(id)
+    return { ok: true }
+  })
 
   ipcMain.handle(CHANNELS.settingsGet, () => {
     requireUnlocked()
@@ -893,23 +939,26 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     }
   })
 
-  ipcMain.handle(CHANNELS.settingsTestAnthropicKey, async () => {
+  ipcMain.handle(CHANNELS.settingsTestAnthropicKey, async (_e, apiKey?: string) => {
     try {
-      await testAnthropicConnection()
+      await testAnthropicConnection(apiKey)
       return { ok: true }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }
   })
 
-  ipcMain.handle(CHANNELS.settingsTestOpenAiKey, async () => {
-    try {
-      await testOpenAiConnection()
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, error: (err as Error).message }
+  ipcMain.handle(
+    CHANNELS.settingsTestOpenAiKey,
+    async (_e, overrides?: { apiKey?: string; baseUrl?: string; model?: string }) => {
+      try {
+        await testOpenAiConnection(overrides)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
     }
-  })
+  )
 
   ipcMain.handle(CHANNELS.remindersCheckNow, async () => {
     requireUnlocked()

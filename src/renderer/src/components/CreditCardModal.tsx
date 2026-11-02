@@ -1,7 +1,9 @@
 import { api } from '../lib/api'
-import { useEffect, useState } from 'react'
+import Modal from './Modal'
+import { useState } from 'react'
 import type { CreditCard, CreditCardInput, CreditCardStatus } from '../../../shared/types'
 import { cardDigits, detectNetwork, formatCardNumber } from '../lib/cardNumber'
+import { parseOptionalAmount } from '../lib/format'
 
 interface Props {
   card: CreditCard | null
@@ -44,12 +46,6 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    const h = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [onClose])
-
   const submit = async (): Promise<void> => {
     setError(null)
     if (!nickname.trim()) {
@@ -68,6 +64,11 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
       setError('Statement date must be between 1 and 31.')
       return
     }
+    const creditLimitNum = parseOptionalAmount(creditLimit)
+    if (creditLimitNum === undefined) {
+      setError('Enter the credit limit as a number, e.g. 2,00,000.')
+      return
+    }
     const input: CreditCardInput = {
       nickname: nickname.trim(),
       issuer: issuer.trim() || null,
@@ -78,7 +79,7 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
       // Entered as YY; stored as the full year.
       expiry_year: expiryYear ? 2000 + Number(expiryYear) : null,
       cvv: null,
-      credit_limit: creditLimit ? Number(creditLimit) : null,
+      credit_limit: creditLimitNum,
       statement_day: statementDay ? Number(statementDay) : null,
       notes: notes.trim() || null,
       status
@@ -96,9 +97,9 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{card ? 'Edit card' : 'Add credit card'}</h2>
+    <Modal title={card ? 'Edit card' : 'Add credit card'} onClose={onClose}>
+      {(requestClose) => (
+      <>
         <div className="form-row">
           <div className="field">
             <label>Label</label>
@@ -211,14 +212,15 @@ export default function CreditCardModal({ card, onClose, onSaved }: Props): JSX.
         {error && <div className="error-text">{error}</div>}
 
         <div className="modal-actions">
-          <button className="btn secondary" onClick={onClose} disabled={busy}>
+          <button className="btn secondary" onClick={requestClose} disabled={busy}>
             Cancel
           </button>
           <button className="btn" onClick={submit} disabled={busy}>
             {busy ? 'Saving…' : 'Save'}
           </button>
         </div>
-      </div>
-    </div>
+      </>
+      )}
+    </Modal>
   )
 }
