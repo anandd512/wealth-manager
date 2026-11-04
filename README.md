@@ -7,6 +7,14 @@ cards, and a password vault, all behind one master password.
 Everything lives on your machine. There is no cloud backend, no account, and no
 telemetry.
 
+![The Artha dashboard: net worth, assets and liabilities, and items that need attention (demo data)](docs/screenshots/dashboard.png)
+
+| Trends | Accounts |
+| --- | --- |
+| ![Net worth over time, asset allocation, and assets vs. liabilities](docs/screenshots/trends.png) | ![Accounts grouped by bank accounts and investments](docs/screenshots/accounts.png) |
+
+<sub>Screenshots use made-up demo data.</sub> · The story behind it: [ananddeshpande.in/projects/wealth-manager](https://ananddeshpande.in/projects/wealth-manager/)
+
 ## Installing Artha
 
 1. Download `Artha-Setup-<version>.exe` from the
