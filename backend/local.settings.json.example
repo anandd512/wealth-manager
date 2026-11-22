@@ -8,6 +8,12 @@
     "JWT_SIGNING_KEY": "<random 32+ byte secret, e.g. `openssl rand -base64 32`>",
     "ACS_CONNECTION_STRING": "<from `az communication list-key --name <acs-name>`>",
     "ACS_SENDER_ADDRESS": "DoNotReply@<generated-guid>.azurecomm.net — see README's Email verification section",
+    "GOOGLE_CLIENT_ID": "<Google Cloud OAuth client id, type Web application>",
+    "GOOGLE_CLIENT_SECRET": "<its client secret>",
+    "MICROSOFT_CLIENT_ID": "<Entra app registration Application (client) id>",
+    "MICROSOFT_CLIENT_SECRET": "<its client secret value>",
+    "OAUTH_CALLBACK_URL": "http://localhost:7071/api/auth/oauth/callback",
+    "ALLOW_EXPO_GO_REDIRECTS": "true",
     "ALLOWED_ORIGIN": "*"
   }
 }

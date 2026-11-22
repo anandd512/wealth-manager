@@ -73,7 +73,7 @@ const STEPS: Step[] = [
   {
     icon: LockKeyhole,
     title: 'Your data stays private',
-    desc: 'Everything is encrypted on this device before it ever syncs — the same zero-knowledge encryption as the desktop app. Unlock with Face ID, or your master password if you prefer.'
+    desc: 'Everything is encrypted on this device before it ever syncs — the same zero-knowledge encryption as the desktop app. Unlock with Face ID, or your phone passcode.'
   },
   {
     icon: Star,

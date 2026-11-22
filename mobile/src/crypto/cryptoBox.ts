@@ -5,17 +5,6 @@ import { gcm } from '@noble/ciphers/aes.js'
 import * as ExpoCrypto from 'expo-crypto'
 import { Buffer } from 'buffer'
 
-// Confirms a typed password re-derives the SAME Data Key — a local-only correctness
-// check, not a secret in its own right (the Data Key it's derived from is already
-// gated behind biometrics/passcode in SecureStore, so this verifier's only job is
-// giving immediate "wrong password" feedback during offline unlock instead of
-// leaving the user stuck on a confusing downstream decrypt failure). Cached
-// alongside the account's KDF salt after the first successful login/register — see
-// AuthContext's unlockWithPassword, which is what offline unlock actually uses.
-export function deriveVerifier(dataKey: Buffer): string {
-  return Buffer.from(sha256(dataKey)).toString('hex')
-}
-
 /**
  * Zero-knowledge crypto core for the mobile app — deliberately mirrors
  * src/main/auth.ts and src/main/db.ts in the Electron app almost line-for-line.
@@ -30,20 +19,18 @@ export function deriveVerifier(dataKey: Buffer): string {
  * this was written — the KDF and the record-encryption envelope stay byte-identical
  * across Electron, this app, and the backend either way.
  *
- * Key derivation: scrypt (same N/r/p as auth.ts) turns the master password + a
- * per-account salt into a 32-byte Master Key, which HKDF then splits into an
- * Auth Key (sent to the backend at register/login — see backend/src/lib/verifier.ts)
- * and a Data Key (stays on-device only, encrypts every synced record). The
- * password and the Data Key never leave the device.
+ * Record encryption: AES-256-GCM with the account's Data Key (see cloudKeys.ts for
+ * where that key comes from — it's random, never derived from a password).
+ *
+ * deriveKeys() below survives only to convert accounts created before passwordless
+ * sign-in: their Data Key was derived from a password (scrypt, same N/r/p as the
+ * desktop app's auth.ts, then HKDF split into an Auth Key the server checks and the
+ * Data Key). Converting proves the old password once and keeps that same Data Key.
  */
 
 export interface DerivedKeys {
   authKey: Buffer
   dataKey: Buffer
-}
-
-export function generateSaltHex(): string {
-  return Buffer.from(ExpoCrypto.getRandomBytes(16)).toString('hex')
 }
 
 // Intentionally slow (RFC 7914-style cost parameters, matching auth.ts) to make

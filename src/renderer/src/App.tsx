@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import splashMp4 from './assets/splash.mp4'
 import logo from './assets/logo.png'
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
@@ -18,6 +18,7 @@ import {
 import type { AuthStatus } from '../../shared/types'
 import AuthGate from './pages/AuthGate'
 import StorageChoiceGate from './pages/StorageChoiceGate'
+import CloudOnboardingGate from './pages/CloudOnboardingGate'
 import TourMode from './components/TourMode'
 import Dashboard from './pages/Dashboard'
 import Accounts from './pages/Accounts'
@@ -63,6 +64,9 @@ export default function App(): JSX.Element {
   useEffect(() => {
     window.api.storageMode.status().then((r) => setStorageModeState(r.mode ?? 'unanswered'))
   }, [])
+  // First-run cloud choice: sign-in + key step happen before the device password.
+  const [cloudOnboarded, setCloudOnboarded] = useState(false)
+  const finishCloudOnboarding = useCallback(() => setCloudOnboarded(true), [])
 
   // Item 47 — theme state (shared with Settings → Appearance via lib/theme)
   const [theme, setTheme] = useTheme()
@@ -193,14 +197,19 @@ export default function App(): JSX.Element {
     if (!status.initialized && storageMode === 'unanswered') {
       return <StorageChoiceGate onChosen={(mode) => setStorageModeState(mode)} />
     }
+    const firstRunCloud = !status.initialized && storageMode === 'cloud'
+    if (firstRunCloud && !cloudOnboarded) {
+      return <CloudOnboardingGate onDone={finishCloudOnboarding} onUseLocal={() => setStorageModeState('local')} />
+    }
     return (
       <AuthGate
         initialized={status.initialized}
+        cloud={firstRunCloud}
         onUnlocked={() => {
-          // A first-time cloud choice lands on Cloud Sync so there's something to do
-          // next; everyone else (including every "local" choice) goes to the
-          // dashboard exactly as before.
-          window.location.hash = !status.initialized && storageMode === 'cloud' ? '#/settings?tab=sync' : '#/'
+          // A first-time cloud setup pulls everything down right away and lands on
+          // Cloud Sync to show it; everyone else goes to the dashboard as before.
+          if (firstRunCloud) void window.api.sync.now()
+          window.location.hash = firstRunCloud ? '#/settings?tab=sync' : '#/'
           refreshStatus()
         }}
         onTakeTour={() => setTourMode(true)}

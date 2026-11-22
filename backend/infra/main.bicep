@@ -13,6 +13,15 @@ param namePrefix string
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
+@description('OAuth client id of the Google Cloud "Web application" client used for Google sign-in (not a secret). Leave empty to disable Google sign-in. Its secret goes in Key Vault as google-client-secret.')
+param googleClientId string = ''
+
+@description('Application (client) id of the Microsoft Entra app registration used for Microsoft sign-in (not a secret). Leave empty to disable Microsoft sign-in. Its secret goes in Key Vault as microsoft-client-secret.')
+param microsoftClientId string = ''
+
+@description('Allow sign-in redirects back to Expo Go (exp://<LAN address>) for mobile development. Set to false once the mobile app ships as a standalone build.')
+param allowExpoGoRedirects bool = true
+
 var storageAccountName = toLower('${namePrefix}st')
 var emailServiceName = toLower('${namePrefix}-email')
 var communicationServiceName = toLower('${namePrefix}-acs')
@@ -109,6 +118,21 @@ resource verificationsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDataba
   }
 }
 
+// Pending "approve this device" requests (see deviceLinks.ts) — a new device's public
+// key, then the Data Key sealed to it by an existing device. Same self-expiring setup as
+// verifications: each request sets its own 10-minute `ttl`.
+resource deviceLinksContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDb
+  name: 'deviceLinks'
+  properties: {
+    resource: {
+      id: 'deviceLinks'
+      partitionKey: { paths: ['/userId'], kind: 'Hash' }
+      defaultTtl: -1
+    }
+  }
+}
+
 // Email Communication Service with a free "Azure Managed Domain" — Azure generates
 // and owns a ready-to-send-from subdomain (no custom domain purchase or DNS records
 // needed). Takes a few minutes to provision after the domain resource is created;
@@ -179,7 +203,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     httpsOnly: true
     reserved: true
     siteConfig: {
-      linuxFxVersion: 'Node|20'
+      linuxFxVersion: 'Node|26'
       appSettings: [
         // Deliberately a plain connection string, not a Key Vault reference: both
         // `func azure functionapp publish` and `az functionapp deployment source
@@ -195,7 +219,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
-        { name: 'WEBSITE_NODE_DEFAULT_VERSION', value: '~20' }
+        { name: 'WEBSITE_NODE_DEFAULT_VERSION', value: '~26' }
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
         { name: 'ENABLE_ORYX_BUILD', value: 'true' }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
@@ -203,21 +227,29 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         // Not a secret — just the account name blobStorage.ts builds the blob
         // endpoint URL from; auth is via the managed identity role assignment below.
         { name: 'FILES_STORAGE_ACCOUNT_NAME', value: storage.name }
-        // ACS_SENDER_ADDRESS isn't knowable until the managed domain finishes
-        // provisioning (a few minutes after first deploy) — set via `az functionapp
-        // config appsettings set` once you've read it back, see backend/README.md.
-        { name: 'ACS_SENDER_ADDRESS', value: '' }
+        // The managed domain's only sender. Read from the domain resource so re-running
+        // this template doesn't blank it (it used to be hard-coded to '', which silently
+        // broke every email on each redeploy). On the very first deploy the domain may
+        // still be provisioning — if emails fail then, just run the deployment again.
+        { name: 'ACS_SENDER_ADDRESS', value: 'DoNotReply@${emailDomain.properties.mailFromSenderDomain}' }
         // Populated post-deploy via `az keyvault secret set` + these Key Vault
         // references — secrets are never stored in this template or in source control.
         { name: 'COSMOS_CONNECTION_STRING', value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=cosmos-connection-string)' }
         { name: 'JWT_SIGNING_KEY', value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=jwt-signing-key)' }
         { name: 'ACS_CONNECTION_STRING', value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=acs-connection-string)' }
+        // Google / Microsoft sign-in (see src/lib/oauth.ts). Client ids are public;
+        // the matching secrets only ever live in Key Vault.
+        { name: 'GOOGLE_CLIENT_ID', value: googleClientId }
+        { name: 'GOOGLE_CLIENT_SECRET', value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=google-client-secret)' }
+        { name: 'MICROSOFT_CLIENT_ID', value: microsoftClientId }
+        { name: 'MICROSOFT_CLIENT_SECRET', value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=microsoft-client-secret)' }
+        { name: 'ALLOW_EXPO_GO_REDIRECTS', value: string(allowExpoGoRedirects) }
       ]
     }
   }
 }
 
-// Lets the Function App's managed identity read the two secrets above via Key Vault references.
+// Lets the Function App's managed identity read the secrets above via Key Vault references.
 resource keyVaultSecretsUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(keyVault.id, functionApp.id, 'KeyVaultSecretsUser')
   scope: keyVault

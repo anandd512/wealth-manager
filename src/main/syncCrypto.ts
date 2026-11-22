@@ -1,14 +1,11 @@
 import { hkdfSync } from 'crypto'
 
-// Splits the existing master-password-derived key (see auth.ts's deriveKey — the
-// same key already used to encrypt the whole local DB file) into two independent
-// subkeys via HKDF, matching the mobile app's src/crypto/cryptoBox.ts exactly so a
-// password typed on either device derives identical keys:
-//   - authKey: sent to the backend at register/login (see sync.ts). Proves knowledge
-//     of the password without revealing anything that could decrypt data.
-//   - dataKey: stays on this device, encrypts every record pushed to the cloud.
-// The whole-DB file encryption keeps using the raw master key directly, unchanged —
-// this split only applies to the cloud-sync envelope.
+// Only used to convert cloud accounts created before passwordless sign-in (see
+// cloudAccount.ts convertLegacyAccount). Those accounts derived their keys from a
+// password: scrypt (auth.ts deriveKey) → this HKDF split, matching the mobile app's
+// cryptoBox.ts deriveKeys exactly:
+//   - authKey: proves the old password to the backend, one last time (keys/migrate)
+//   - dataKey: the account's Data Key — kept as-is, so nothing synced re-encrypts
 export interface SyncKeys {
   authKey: Buffer
   dataKey: Buffer

@@ -30,19 +30,19 @@ const OPTIONS: {
     title: 'Cloud sync',
     tagline: 'Access the same data from your phone too.',
     points: [
-      'Encrypted on this device before anything is sent — the server never sees a usable copy',
-      'Available from the Artha mobile app and any other device you add',
-      'Requires creating an account and a one-time setup step'
+      'Sign in with Google, Microsoft, or a code sent to your email — no password to remember',
+      'Encrypted on this device before it reaches Azure — the server only stores data it can\'t read',
+      'You save a recovery key once, as a backup for setting up new devices'
     ]
   }
 ]
 
 /** Shown once, only on a genuinely fresh install (see ipc.ts's storageModeStatus
  * handler — an existing install is auto-treated as "local" and never sees this).
- * Choosing "local" changes nothing about what happens next: the very next screen is
- * the same master-password setup this app has always had. Cloud sync is additive —
- * it can be turned on later from Settings → Cloud Sync regardless of what's picked
- * here. */
+ * "Local" goes straight to the master-password setup this app has always had. "Cloud"
+ * goes to CloudOnboardingGate first (passwordless sign-in + encryption key), then the
+ * same password screen to lock this computer's copy. Cloud sync can also be turned on
+ * later from Settings → Cloud Sync regardless of what's picked here. */
 export default function StorageChoiceGate({ onChosen }: Props): JSX.Element {
   const [selected, setSelected] = useState<'local' | 'cloud' | null>(null)
   const [busy, setBusy] = useState(false)

@@ -315,6 +315,30 @@ export interface AuthStatus {
   unlocked: boolean
 }
 
+// -- Cloud account (passwordless sign-in + zero-knowledge key) -- see src/main/cloudAccount.ts
+//  keyState: 'none'   brand-new account, no key yet - this device creates it
+//            'ready'  the account has a key - this device gets it by approval or recovery key
+//            'legacy' pre-passwordless account - converted with the old password, once
+export type CloudKeyState = 'none' | 'ready' | 'legacy'
+
+export interface CloudStatus {
+  // signedOut: no session. needsKey: signed in, but this device doesn't hold the
+  // account's Data Key yet. ready: syncing.
+  stage: 'signedOut' | 'needsKey' | 'ready'
+  email: string | null
+  keyState: CloudKeyState | null
+}
+
+export interface PendingDevice {
+  id: string
+  deviceName: string
+  createdAt: string
+  code: string // computed locally from publicKey - compare with the new device's screen
+  publicKey: string
+}
+
+export type CloudResult<T = object> = ({ ok: true } & T) | { ok: false; error: string }
+
 
 export type UpcomingItemType = 'insurance' | 'identity' | 'credit_card' | 'check_in'
 export type UpcomingAction = 'paid' | 'dismissed'

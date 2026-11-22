@@ -22,13 +22,16 @@ function senderAddress(): string {
   return address
 }
 
-export async function sendVerificationCodeEmail(email: string, code: string): Promise<void> {
+export async function sendVerificationCodeEmail(email: string, code: string, kind: 'signin' | 'notify'): Promise<void> {
+  const action = kind === 'signin' ? 'sign-in' : 'verification'
   const poller = await getClient().beginSend({
     senderAddress: senderAddress(),
     content: {
-      subject: `${code} is your Artha verification code`,
-      plainText: `Your Artha verification code is ${code}. It expires in 15 minutes.\n\nIf you didn't request this, you can ignore this email.`,
-      html: `<p>Your Artha verification code is <strong style="font-size:20px;letter-spacing:2px">${code}</strong>.</p><p>It expires in 15 minutes.</p><p style="color:#666;font-size:13px">If you didn't request this, you can ignore this email.</p>`
+      subject: `${code} is your Artha ${action} code`,
+      plainText: `Your Artha ${action} code is ${code}. It expires in 15 minutes.
+
+If you didn't request this, you can ignore this email — nobody can sign in without the code.`,
+      html: `<p>Your Artha ${action} code is <strong style="font-size:20px;letter-spacing:2px">${code}</strong>.</p><p>It expires in 15 minutes.</p><p style="color:#666;font-size:13px">If you didn't request this, you can ignore this email — nobody can sign in without the code.</p>`
     },
     recipients: {
       to: [{ address: email }]

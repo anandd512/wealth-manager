@@ -1,9 +1,6 @@
-import { randomBytes } from 'crypto'
 import { isAbsolute } from 'path'
 import { getDb, encrypt, decrypt } from './db'
-import { deriveSyncKeys } from './syncCrypto'
-import { deriveKey } from './auth'
-import { getSecret, setSecret, clearSecret } from './secrets'
+import { getSecret } from './secrets'
 import { apiRequest } from './backendApi'
 import { recomputeCurrentValueFromHistory } from './services/accounts'
 import { recordSnapshot } from './services/netWorth'
@@ -11,46 +8,14 @@ import { backfillUpload, migrateLegacyDocument } from './fileStore'
 
 /**
  * Cloud-sync client — talks to the Azure Functions backend in /backend. Every record
- * is encrypted with the Data Key (see syncCrypto.ts) before it leaves this process;
- * the server only ever sees ciphertext. See backend/README.md for the API contract
- * and src/main/db.ts's `encrypt`/`decrypt` for the shared AEAD envelope that makes a
+ * is encrypted with the account's Data Key before it leaves this process; the server
+ * only ever sees ciphertext. See backend/README.md for the API contract and
+ * src/main/db.ts's `encrypt`/`decrypt` for the shared AEAD envelope that makes a
  * record written here readable by the mobile app, and vice versa.
  *
- * Email + password only (no Google/Microsoft — removed: the mobile app runs in plain
- * Expo Go, which can't handle the OAuth redirect back into the app, so it never
- * actually worked end-to-end there). Registration requires proving the email address
- * first — see requestEmailVerification()/confirmEmailVerification() — before
- * registerSync() will succeed; the backend rejects a register call without a valid
- * verification token.
- *
- * The typed password derives both the server-side auth proof and the Data Key that
- * encrypts every record (registerSync/loginSync do both in one step via
- * deriveSyncKeys), so it's cached locally (OS-keychain-backed, like the API keys in
- * secrets.ts) right away — syncNow() doesn't need it passed in on every call, and
- * this avoids re-running scrypt (deliberately slow) more than once per login.
+ * Signing in and getting this device the Data Key live in cloudAccount.ts; this module
+ * just uses the session token + Data Key that it caches (secrets.ts).
  */
-
-interface KdfParams {
-  N: number
-  r: number
-  p: number
-}
-
-// Must match auth.ts's deriveKey() parameters exactly — this is the SAME scrypt
-// call auth.ts makes, just also recorded here so a new device can read back
-// whatever cost parameters this account was actually created with.
-const SCRYPT_KDF_PARAMS: KdfParams = { N: 1 << 15, r: 8, p: 1 }
-
-interface SaltResponse {
-  kdfAlgorithm: string
-  kdfSalt: string
-  kdfParams: KdfParams
-}
-
-interface AuthResponse {
-  userId: string
-  token: string
-}
 
 interface SyncPushItem {
   id: string
@@ -66,73 +31,9 @@ function sessionToken(): string | null {
   return getSecret('syncToken')
 }
 
-export function syncStatus(): { connected: boolean; email: string | null } {
-  const email = getSecret('syncEmail')
-  const token = getSecret('syncToken')
-  return { connected: Boolean(email && token), email }
-}
-
-function cacheDataKey(dataKey: Buffer): void {
-  setSecret('syncDataKey', dataKey.toString('base64'))
-}
-
 function cachedDataKey(): Buffer | null {
   const stored = getSecret('syncDataKey')
   return stored ? Buffer.from(stored, 'base64') : null
-}
-
-/** Step 1 of registration — emails a 6-digit code to this address. */
-export async function requestEmailVerification(email: string): Promise<void> {
-  await apiRequest('/api/auth/verify/request', { method: 'POST', body: { email, purpose: 'register' } })
-}
-
-/** Step 2 — exchanges the emailed code for a short-lived token, which registerSync()
- * then requires. Throws (e.g. "Incorrect or expired code") if the code is wrong. */
-export async function confirmEmailVerification(email: string, code: string): Promise<string> {
-  const result = await apiRequest<{ verificationToken: string }>('/api/auth/verify/confirm', {
-    method: 'POST',
-    body: { email, code, purpose: 'register' }
-  })
-  return result.verificationToken
-}
-
-export async function registerSync(email: string, password: string, verificationToken: string): Promise<void> {
-  const salt = randomBytes(16)
-  const masterKey = deriveKey(password, salt.toString('hex'))
-  const { authKey, dataKey } = deriveSyncKeys(masterKey)
-  const result = await apiRequest<AuthResponse>('/api/auth/register', {
-    method: 'POST',
-    body: {
-      email,
-      kdfSalt: salt.toString('base64'),
-      kdfParams: SCRYPT_KDF_PARAMS,
-      authKey: authKey.toString('base64'),
-      verificationToken
-    }
-  })
-  setSecret('syncEmail', email)
-  setSecret('syncToken', result.token)
-  cacheDataKey(dataKey)
-}
-
-export async function loginSync(email: string, password: string): Promise<void> {
-  const salt = await apiRequest<SaltResponse>(`/api/auth/salt?email=${encodeURIComponent(email)}`)
-  const saltHex = Buffer.from(salt.kdfSalt, 'base64').toString('hex')
-  const masterKey = deriveKey(password, saltHex)
-  const { authKey, dataKey } = deriveSyncKeys(masterKey)
-  const result = await apiRequest<AuthResponse>('/api/auth/login', {
-    method: 'POST',
-    body: { email, authKey: authKey.toString('base64') }
-  })
-  setSecret('syncEmail', email)
-  setSecret('syncToken', result.token)
-  cacheDataKey(dataKey)
-}
-
-export function logoutSync(): void {
-  clearSecret('syncEmail')
-  clearSecret('syncToken')
-  clearSecret('syncDataKey')
 }
 
 interface SyncableTable {

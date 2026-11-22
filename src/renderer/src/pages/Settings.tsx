@@ -17,14 +17,13 @@ import {
   Moon,
   Sun,
   Cloud,
-  CloudCheck,
-  RefreshCw,
   LogOut
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { formatDate } from '../lib/format'
 import { useTheme } from '../lib/theme'
 import ConfirmDialog from '../components/ConfirmDialog'
+import CloudSyncPanel from '../components/CloudSyncPanel'
 import type {
   AppSettings,
   CheckInScheduleSettings,
@@ -147,20 +146,6 @@ export default function Settings(): JSX.Element {
     localStorage.getItem('artha_autolock_minutes') ?? '5'
   )
 
-  // Cloud sync
-  const [syncStatus, setSyncStatus] = useState<{ connected: boolean; email: string | null } | null>(null)
-  const [syncMode, setSyncMode] = useState<'login' | 'register'>('login')
-  const [syncEmail, setSyncEmail] = useState('')
-  const [syncPassword, setSyncPassword] = useState('')
-  const [syncPasswordConfirm, setSyncPasswordConfirm] = useState('')
-  // Register mode only: null until a code's been emailed, then holds the address it
-  // was sent to (so a later email edit doesn't silently verify the wrong address).
-  const [verificationSentTo, setVerificationSentTo] = useState<string | null>(null)
-  const [verificationCode, setVerificationCode] = useState('')
-  const [syncBusy, setSyncBusy] = useState(false)
-  const [syncError, setSyncError] = useState<string | null>(null)
-  const [syncMsg, setSyncMsg] = useState<string | null>(null)
-
   // Appearance — shared with the sidebar toggle (lib/theme), so the two can't disagree.
   const [theme, toggleTheme] = useTheme()
 
@@ -224,17 +209,12 @@ export default function Settings(): JSX.Element {
     setOpenAiModel(s.openAiModel)
   }
 
-  const loadSyncStatus = async (): Promise<void> => {
-    setSyncStatus(await api().sync.status())
-  }
-
   const loadNotifyStatus = async (): Promise<void> => {
     setNotifyStatus(await api().notify.status())
   }
 
   useEffect(() => {
     load()
-    loadSyncStatus()
     loadNotifyStatus()
     api().updates.status().then(setUpdateStatus)
     ;(async () => {
@@ -494,102 +474,6 @@ export default function Settings(): JSX.Element {
     setNewPassword('')
     setConfirmPassword('')
     setPwMsg('Master password changed.')
-  }
-
-  // Login mode: straight to sync.login. Register mode: just sends the verification
-  // code — the account isn't created until confirmSyncRegistration() below.
-  const submitSyncEmailPassword = async (): Promise<void> => {
-    setSyncError(null)
-    setSyncMsg(null)
-
-    if (syncMode === 'register' && syncPassword !== syncPasswordConfirm) {
-      setSyncError("Passwords don't match.")
-      return
-    }
-
-    setSyncBusy(true)
-    try {
-      const email = syncEmail.trim().toLowerCase()
-      if (syncMode === 'login') {
-        const result = await api().sync.login(email, syncPassword)
-        if (!result.ok) {
-          setSyncError(result.error ?? 'Could not connect')
-          return
-        }
-        setSyncEmail('')
-        setSyncPassword('')
-        await loadSyncStatus()
-      } else {
-        const result = await api().sync.requestEmailVerification(email)
-        if (!result.ok) {
-          setSyncError(result.error ?? 'Could not send verification code')
-          return
-        }
-        setVerificationSentTo(email)
-        setSyncMsg(`Sent a code to ${email}.`)
-      }
-    } finally {
-      setSyncBusy(false)
-    }
-  }
-
-  const confirmSyncRegistration = async (): Promise<void> => {
-    if (!verificationSentTo) return
-    setSyncError(null)
-    setSyncMsg(null)
-    setSyncBusy(true)
-    try {
-      const confirmResult = await api().sync.confirmEmailVerification(verificationSentTo, verificationCode)
-      if (!confirmResult.ok || !confirmResult.verificationToken) {
-        setSyncError(confirmResult.error ?? 'Incorrect or expired code')
-        return
-      }
-      const registerResult = await api().sync.register(verificationSentTo, syncPassword, confirmResult.verificationToken)
-      if (!registerResult.ok) {
-        setSyncError(registerResult.error ?? 'Could not create account')
-        return
-      }
-      setSyncEmail('')
-      setSyncPassword('')
-      setSyncPasswordConfirm('')
-      setVerificationSentTo(null)
-      setVerificationCode('')
-      await loadSyncStatus()
-    } finally {
-      setSyncBusy(false)
-    }
-  }
-
-  const cancelSyncVerification = (): void => {
-    setVerificationSentTo(null)
-    setVerificationCode('')
-    setSyncError(null)
-    setSyncMsg(null)
-  }
-
-  const triggerSyncNow = async (): Promise<void> => {
-    setSyncError(null)
-    setSyncMsg(null)
-    setSyncBusy(true)
-    try {
-      const result = await api().sync.now()
-      setSyncMsg(result.ok ? 'Synced.' : null)
-      if (!result.ok) setSyncError(result.error ?? 'Sync failed')
-    } finally {
-      setSyncBusy(false)
-    }
-  }
-
-  const disconnectSync = async (): Promise<void> => {
-    setSyncBusy(true)
-    try {
-      await api().sync.logout()
-      await loadSyncStatus()
-      setSyncMsg(null)
-      setSyncError(null)
-    } finally {
-      setSyncBusy(false)
-    }
   }
 
   const exportBackup = async (): Promise<void> => {
@@ -909,140 +793,7 @@ export default function Settings(): JSX.Element {
       )}
 
       {/* ── CLOUD SYNC ───────────────────────────────────────────────── */}
-      {activeTab === 'sync' && syncStatus && (
-        <>
-          {!syncStatus.connected && !verificationSentTo && (
-            <div className="card section" style={{ borderColor: 'var(--accent-dim)' }}>
-              <div className="section-header">
-                <h2>
-                  <Cloud size={14} /> Connect to cloud sync
-                </h2>
-              </div>
-              <p className="muted" style={{ marginTop: 0 }}>
-                Keeps your data encrypted on this device before anything is sent — the server
-                never sees a usable copy. The same account works from the Artha mobile app.
-              </p>
-
-              <div className="form-row">
-                <div className="field">
-                  <label>Email</label>
-                  <input type="email" value={syncEmail} onChange={(e) => setSyncEmail(e.target.value)} />
-                </div>
-                <div className="field">
-                  <label>Password</label>
-                  <input type="password" value={syncPassword} onChange={(e) => setSyncPassword(e.target.value)} />
-                </div>
-              </div>
-              {syncMode === 'register' && (
-                <div className="field" style={{ maxWidth: '50%' }}>
-                  <label>Confirm password</label>
-                  <input
-                    type="password"
-                    value={syncPasswordConfirm}
-                    onChange={(e) => setSyncPasswordConfirm(e.target.value)}
-                  />
-                </div>
-              )}
-              {syncError && <div className="error-text">{syncError}</div>}
-              {syncMsg && <div className="success-text">{syncMsg}</div>}
-              <button
-                className="btn"
-                onClick={submitSyncEmailPassword}
-                disabled={
-                  syncBusy ||
-                  !syncEmail ||
-                  !syncPassword ||
-                  (syncMode === 'register' && !syncPasswordConfirm)
-                }
-              >
-                {syncMode === 'register' ? 'Send verification code' : 'Log in'}
-              </button>
-              <p style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 8 }}>
-                {syncMode === 'register' ? 'Already have an account?' : "Don't have an account?"}{' '}
-                <a
-                  href="#"
-                  style={{ color: 'var(--accent)' }}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    setSyncMode(syncMode === 'register' ? 'login' : 'register')
-                    setSyncError(null)
-                  }}
-                >
-                  {syncMode === 'register' ? 'Log in' : 'Create one'}
-                </a>
-              </p>
-            </div>
-          )}
-
-          {!syncStatus.connected && verificationSentTo && (
-            <div className="card section" style={{ borderColor: 'var(--accent-dim)' }}>
-              <div className="section-header">
-                <h2>
-                  <Lock size={14} /> Enter your verification code
-                </h2>
-              </div>
-              <p className="muted" style={{ marginTop: 0 }}>
-                We sent a 6-digit code to {verificationSentTo}. It expires in 15 minutes.
-              </p>
-              <div className="field" style={{ maxWidth: 200 }}>
-                <label>Code</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
-                  autoFocus
-                />
-              </div>
-              {syncError && <div className="error-text">{syncError}</div>}
-              <button
-                className="btn"
-                onClick={confirmSyncRegistration}
-                disabled={syncBusy || verificationCode.length !== 6}
-              >
-                Verify &amp; create account
-              </button>
-              <p style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 8 }}>
-                <a
-                  href="#"
-                  style={{ color: 'var(--accent)' }}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    cancelSyncVerification()
-                  }}
-                >
-                  Use a different email
-                </a>
-              </p>
-            </div>
-          )}
-
-          {syncStatus.connected && (
-            <div className="card section">
-              <div className="section-header">
-                <h2>
-                  <CloudCheck size={14} /> Connected
-                </h2>
-              </div>
-              <p className="muted" style={{ marginTop: 0 }}>
-                Signed in as {syncStatus.email}. Syncs your accounts to the cloud, encrypted on
-                this device first.
-              </p>
-              {syncError && <div className="error-text">{syncError}</div>}
-              {syncMsg && <div className="success-text">{syncMsg}</div>}
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button className="btn" onClick={triggerSyncNow} disabled={syncBusy}>
-                  <RefreshCw size={14} /> Sync now
-                </button>
-                <button className="btn secondary" onClick={disconnectSync} disabled={syncBusy}>
-                  <LogOut size={14} /> Disconnect
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
+      {activeTab === 'sync' && <CloudSyncPanel />}
 
       {/* ── NOTIFICATIONS ────────────────────────────────────────────── */}
       {activeTab === 'notifications' && (

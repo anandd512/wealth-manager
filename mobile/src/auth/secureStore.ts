@@ -4,9 +4,9 @@ import { Buffer } from 'buffer'
 
 /**
  * Local-device-only storage (iOS Keychain / Android Keystore via expo-secure-store).
- * The Data Key is gated behind Face ID / device passcode so the app can unlock on
- * launch without retyping the master password — see CryptoBox's module doc for why
- * the key itself never needs to be re-derived unless this device is wiped.
+ * The Data Key is gated behind Face ID so the app unlocks on launch without asking for
+ * anything else; it only has to be fetched again (device approval or recovery key)
+ * if this device is wiped or signed out.
  *
  * `requireAuthentication` needs NSFaceIDUsageDescription from this app's own
  * Info.plist (already set in app.json), which only takes effect in a dev client
@@ -17,6 +17,15 @@ const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreCl
 
 const SESSION_KEY = 'artha.session'
 const DATA_KEY_KEY = 'artha.dataKey'
+// Second copy of the Data Key, not biometric-gated, released only after the phone's
+// own passcode/biometric check (expo-local-authentication) in UnlockScreen. It's what
+// lets a passwordless account still unlock offline when Face ID fails or isn't set
+// up — the old design used a typed master password for that. Still Keychain/Keystore
+// encrypted and bound to this device (THIS_DEVICE_ONLY: never in backups).
+const DATA_KEY_FALLBACK_KEY = 'artha.dataKey.fallback'
+// sha256(HKDF(DataKey,'artha-key-proof')) — not secret. Lets sign-in check whether the
+// key already on this device is the account's current one without a Face ID prompt.
+const DATA_KEY_PROOF_KEY = 'artha.dataKeyProofHash'
 
 export interface StoredSession {
   email: string
@@ -37,16 +46,19 @@ export async function clearSession(): Promise<void> {
   await SecureStore.deleteItemAsync(SESSION_KEY)
 }
 
-export async function saveDataKey(dataKey: Buffer): Promise<void> {
+export async function saveDataKey(dataKey: Buffer, proofHash: string): Promise<void> {
   await SecureStore.setItemAsync(DATA_KEY_KEY, dataKey.toString('base64'), {
     keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     ...(isExpoGo ? {} : { requireAuthentication: true, authenticationPrompt: 'Unlock Artha' })
   })
+  await SecureStore.setItemAsync(DATA_KEY_FALLBACK_KEY, dataKey.toString('base64'), {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY
+  })
+  await SecureStore.setItemAsync(DATA_KEY_PROOF_KEY, proofHash)
 }
 
-/** Triggers the system Face ID / passcode prompt (outside Expo Go). Throws if the
- * user cancels or biometry isn't enrolled — callers should fall back to the
- * master-password screen. */
+/** Triggers the system Face ID / fingerprint prompt (outside Expo Go). Throws if the
+ * user cancels or biometry isn't enrolled — callers fall back to the passcode path. */
 export async function loadDataKey(): Promise<Buffer | null> {
   const raw = await SecureStore.getItemAsync(
     DATA_KEY_KEY,
@@ -55,39 +67,27 @@ export async function loadDataKey(): Promise<Buffer | null> {
   return raw ? Buffer.from(raw, 'base64') : null
 }
 
+/** Only call after LocalAuthentication.authenticateAsync() succeeded — see UnlockScreen. */
+export async function loadDataKeyAfterDeviceAuth(): Promise<Buffer | null> {
+  const raw = await SecureStore.getItemAsync(DATA_KEY_FALLBACK_KEY)
+  return raw ? Buffer.from(raw, 'base64') : null
+}
+
+export async function loadDataKeyProofHash(): Promise<string | null> {
+  return SecureStore.getItemAsync(DATA_KEY_PROOF_KEY)
+}
+
 export async function clearDataKey(): Promise<void> {
   await SecureStore.deleteItemAsync(DATA_KEY_KEY)
+  await SecureStore.deleteItemAsync(DATA_KEY_FALLBACK_KEY)
+  await SecureStore.deleteItemAsync(DATA_KEY_PROOF_KEY)
 }
 
-// Cached after the first successful login/register so unlock can fall back to a
-// typed master password with no network round-trip — see AuthContext's
-// unlockWithPassword. Not biometric-gated (it has to be readable precisely when
-// biometric unlock has failed), but it's still Keychain/Keystore-encrypted at rest
-// like everything else here, and on its own it reveals nothing: the salt is
-// non-secret by design (KDF salts aren't secrets) and the verifier is a one-way
-// hash of the Data Key, not the Data Key itself.
-const OFFLINE_SALT_KEY = 'artha.offlineSalt'
-const OFFLINE_VERIFIER_KEY = 'artha.offlineVerifier'
-
-export interface OfflineUnlockInfo {
-  saltHex: string
-  verifier: string
-}
-
-export async function saveOfflineUnlockInfo(info: OfflineUnlockInfo): Promise<void> {
-  await SecureStore.setItemAsync(OFFLINE_SALT_KEY, info.saltHex)
-  await SecureStore.setItemAsync(OFFLINE_VERIFIER_KEY, info.verifier)
-}
-
-export async function loadOfflineUnlockInfo(): Promise<OfflineUnlockInfo | null> {
-  const saltHex = await SecureStore.getItemAsync(OFFLINE_SALT_KEY)
-  const verifier = await SecureStore.getItemAsync(OFFLINE_VERIFIER_KEY)
-  return saltHex && verifier ? { saltHex, verifier } : null
-}
-
-export async function clearOfflineUnlockInfo(): Promise<void> {
-  await SecureStore.deleteItemAsync(OFFLINE_SALT_KEY)
-  await SecureStore.deleteItemAsync(OFFLINE_VERIFIER_KEY)
+// Left behind by the pre-passwordless offline-unlock design (KDF salt + verifier for
+// the old master password). Nothing reads them any more; removed on sign-out/wipe.
+export async function clearLegacyUnlockItems(): Promise<void> {
+  await SecureStore.deleteItemAsync('artha.offlineSalt')
+  await SecureStore.deleteItemAsync('artha.offlineVerifier')
 }
 
 // Per-device preference (never synced — biometric hardware/enrollment is a device

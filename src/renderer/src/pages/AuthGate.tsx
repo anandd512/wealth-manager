@@ -7,11 +7,14 @@ type Mode = 'password' | 'restore' | 'forgot-password' | 'reset-confirm'
 
 interface Props {
   initialized: boolean
+  // First run right after cloud sign-in: this password only locks the copy on this
+  // computer — the cloud account itself has no password.
+  cloud?: boolean
   onUnlocked: () => void
   onTakeTour: () => void
 }
 
-export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props): JSX.Element {
+export default function AuthGate({ initialized, cloud = false, onUnlocked, onTakeTour }: Props): JSX.Element {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -266,11 +269,13 @@ export default function AuthGate({ initialized, onUnlocked, onTakeTour }: Props)
         <div className="gate-icon">
           <img src={logo} alt="Artha" style={{ width: 56, height: 56, objectFit: 'contain' }} />
         </div>
-        <h1>{initialized ? 'Unlock Artha' : 'Set your master password'}</h1>
+        <h1>{initialized ? 'Unlock Artha' : cloud ? 'Lock Artha on this computer' : 'Set your master password'}</h1>
         <p>
           {initialized
             ? 'Welcome back. Enter your master password to open your vault.'
-            : 'This is the one password that unlocks everything — your accounts, cards, IDs, and saved passwords.'}
+            : cloud
+              ? "You're signed in. Now choose a password that unlocks Artha on this computer — it keeps your data safe if someone else uses it. It isn't used for signing in, and you can turn on Windows Hello later."
+              : 'This is the one password that unlocks everything — your accounts, cards, IDs, and saved passwords.'}
         </p>
         <p className="help-text" style={{ marginTop: -8, marginBottom: 12 }}>
           Keep it somewhere safe. There's no recovery if it's forgotten — that's what keeps Artha private.

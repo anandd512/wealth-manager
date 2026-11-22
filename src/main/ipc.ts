@@ -23,15 +23,8 @@ import type {
 } from '../shared/types'
 import * as auth from './auth'
 import { openDatabase, closeDatabase, rekeyDatabase, isUnlocked, decrypt, getCurrentKey } from './db'
-import {
-  syncStatus,
-  requestEmailVerification,
-  confirmEmailVerification,
-  registerSync,
-  loginSync,
-  logoutSync,
-  syncNow
-} from './sync'
+import { syncNow } from './sync'
+import * as cloud from './cloudAccount'
 import { getStorageMode, setStorageMode, type StorageMode } from './storageMode'
 import {
   notifyStatus,
@@ -226,50 +219,64 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     return { ok: true }
   })
 
-  ipcMain.handle(CHANNELS.syncStatus, () => syncStatus())
-
-  ipcMain.handle(CHANNELS.syncRequestEmailVerification, async (_e, email: string) => {
-    try {
-      await requestEmailVerification(email)
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, error: (err as Error).message }
-    }
-  })
-
-  ipcMain.handle(CHANNELS.syncConfirmEmailVerification, async (_e, email: string, code: string) => {
-    try {
-      const verificationToken = await confirmEmailVerification(email, code)
-      return { ok: true, verificationToken }
-    } catch (err) {
-      return { ok: false, error: (err as Error).message }
-    }
-  })
-
-  ipcMain.handle(
-    CHANNELS.syncRegister,
-    async (_e, email: string, password: string, verificationToken: string) => {
+  // -- Cloud account --
+  // Every handler resolves to { ok: true, ...result } or { ok: false, error } so the
+  // renderer can show the server's message without try/catch around each call.
+  const cloudCall =
+    <A extends unknown[], R extends object | void>(fn: (...args: A) => Promise<R> | R) =>
+    async (_e: unknown, ...args: A) => {
       try {
-        await registerSync(email, password, verificationToken)
-        return { ok: true }
+        const result = await fn(...args)
+        return { ok: true, ...(result ?? {}) }
       } catch (err) {
         return { ok: false, error: (err as Error).message }
       }
     }
+
+  ipcMain.handle(CHANNELS.cloudStatus, () => cloud.cloudStatus())
+  ipcMain.handle(CHANNELS.cloudRefresh, cloudCall(async () => ({ status: await cloud.refreshCloudStatus() })))
+  ipcMain.handle(CHANNELS.cloudEmailStart, cloudCall((email: string) => cloud.startEmailSignIn(email)))
+  ipcMain.handle(
+    CHANNELS.cloudEmailVerify,
+    cloudCall(async (email: string, code: string) => ({ status: await cloud.verifyEmailSignIn(email, code) }))
   )
-
-  ipcMain.handle(CHANNELS.syncLogin, async (_e, email: string, password: string) => {
-    try {
-      await loginSync(email, password)
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, error: (err as Error).message }
-    }
-  })
-
-  ipcMain.handle(CHANNELS.syncLogout, () => {
-    logoutSync()
-    return { ok: true }
+  ipcMain.handle(
+    CHANNELS.cloudOAuth,
+    cloudCall(async (provider: 'google' | 'microsoft') => {
+      if (provider !== 'google' && provider !== 'microsoft') throw new Error('Unknown provider')
+      return { status: await cloud.oauthSignIn(provider) }
+    })
+  )
+  ipcMain.handle(CHANNELS.cloudCancelOAuth, () => cloud.cancelOAuthSignIn())
+  ipcMain.handle(CHANNELS.cloudCreateKey, cloudCall(() => cloud.createAccountKey()))
+  ipcMain.handle(
+    CHANNELS.cloudUseRecoveryKey,
+    cloudCall(async (text: string) => ({ status: await cloud.useRecoveryKey(text) }))
+  )
+  ipcMain.handle(CHANNELS.cloudConvertLegacy, cloudCall((password: string) => cloud.convertLegacyAccount(password)))
+  ipcMain.handle(CHANNELS.cloudLinkStart, cloudCall(() => cloud.startDeviceLink()))
+  ipcMain.handle(
+    CHANNELS.cloudLinkPoll,
+    cloudCall(async () => {
+      const { status, cloud: cloudState } = await cloud.pollDeviceLink()
+      return { linkStatus: status, status: cloudState }
+    })
+  )
+  ipcMain.handle(CHANNELS.cloudLinkCancel, () => cloud.cancelDeviceLink())
+  ipcMain.handle(CHANNELS.cloudPendingDevices, cloudCall(async () => ({ devices: await cloud.listPendingDevices() })))
+  ipcMain.handle(
+    CHANNELS.cloudApproveDevice,
+    cloudCall((id: string, publicKey: string) => cloud.approveDevice(id, publicKey))
+  )
+  ipcMain.handle(CHANNELS.cloudDenyDevice, cloudCall((id: string) => cloud.denyDevice(id)))
+  ipcMain.handle(
+    CHANNELS.cloudRotateRecoveryKey,
+    cloudCall(async () => ({ recoveryKey: await cloud.rotateRecoveryKey() }))
+  )
+  ipcMain.handle(CHANNELS.cloudResetData, cloudCall(async () => ({ status: await cloud.resetCloudData() })))
+  ipcMain.handle(CHANNELS.cloudSignOut, () => {
+    cloud.signOut()
+    return cloud.cloudStatus()
   })
 
   ipcMain.handle(CHANNELS.syncNow, async () => {
@@ -278,6 +285,12 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
       await syncNow()
       return { ok: true }
     } catch (err) {
+      // Session ran out: drop the token (keeping the Data Key) so the UI asks for a
+      // quick sign-in rather than showing a raw "invalid token" error forever.
+      if (cloud.isSessionError(err)) {
+        cloud.expireSession()
+        return { ok: false, error: 'Your cloud session expired - sign in again to keep syncing.' }
+      }
       return { ok: false, error: (err as Error).message }
     }
   })

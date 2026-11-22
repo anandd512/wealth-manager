@@ -11,6 +11,7 @@ import { testAnthropicConnection, testOpenAiConnection } from '../lib/extraction
 import { exportBackup, pickBackupFile, readBackupSummary, importBackup } from '../lib/backup'
 import { friendlyErrorMessage } from '../lib/friendlyError'
 import { toLocalDateString } from '../lib/creditCardCycle'
+import { CloudSyncSettings } from '../components/CloudSyncSettings'
 
 type Provider = 'anthropic' | 'openai'
 
@@ -169,6 +170,9 @@ export function SettingsScreen({ onBack, onShowTour }: { onBack?: () => void; on
         </Pressable>
       </View>
 
+      <Text style={styles.sectionLabel}>Cloud Sync</Text>
+      <CloudSyncSettings />
+
       {onShowTour && (
         <>
           <Text style={styles.sectionLabel}>Help</Text>
@@ -186,7 +190,7 @@ export function SettingsScreen({ onBack, onShowTour }: { onBack?: () => void; on
           <View style={styles.switchLabelGroup}>
             <Text style={styles.switchLabel}>Require Face ID to unlock</Text>
             <Text style={styles.help}>
-              When off, Artha unlocks with your master password instead.
+              When off, Artha unlocks with your phone's passcode instead.
             </Text>
           </View>
           <Switch value={biometricEnabled} onValueChange={toggleBiometric} />

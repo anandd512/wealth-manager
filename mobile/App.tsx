@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { AuthProvider, useAuth } from './src/auth/AuthContext'
 import { AuthScreen } from './src/screens/AuthScreen'
 import { UnlockScreen } from './src/screens/UnlockScreen'
+import { KeySetupScreen } from './src/screens/KeySetupScreen'
 import { HomeScreen } from './src/screens/HomeScreen'
 
 function Root() {
@@ -20,6 +21,8 @@ function Root() {
       )
     case 'signedOut':
       return <AuthScreen />
+    case 'needsKey':
+      return <KeySetupScreen />
     case 'locked':
       return <UnlockScreen />
     case 'unlocked':

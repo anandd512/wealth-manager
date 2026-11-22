@@ -84,6 +84,16 @@ no password reset — if you forget it, the data cannot be recovered. The
 database file lives at `%APPDATA%\Artha\wealth.db.enc` (the dev build uses the same
 folder, so running from source on a machine with the app installed opens the same data).
 
+Before that, a fresh install asks **where your data should live**:
+
+- **This device only** — nothing leaves the computer; no account.
+- **Cloud sync** — sign in with Google, Microsoft, or a one-time code emailed to you
+  (no account password). Everything is encrypted on the device with a key Azure never
+  sees; you save a **recovery key** once. A second device (desktop or the mobile app)
+  gets the key by being approved from one that's already signed in, or with the
+  recovery key. The master password above still locks the copy on each computer.
+  Backend setup: [backend/README.md](backend/README.md).
+
 ### Troubleshooting `npm run dev`
 
 **`Error: Electron uninstall` / `getElectronPath`** — the `electron` npm package's
@@ -254,9 +264,9 @@ Everything else, including all your financial data, stays encrypted on your devi
 - Releases are unsigned until the SignPath Foundation application is approved, so
   Windows SmartScreen warns on install. Even signed, new releases may warn until they
   build up reputation.
-- Single-user, single-machine by design. If you ever want it on your phone too, the
-  cleanest path discussed was a small self-hosted sync server — deliberately left out
-  of this version.
+- Cloud sync is optional and zero-knowledge: lose every signed-in device *and* the
+  recovery key and the cloud copy can't be decrypted by anyone — the only way forward
+  is "Start over", which deletes it (local copies are kept and re-uploaded).
 
 ## Project layout
 

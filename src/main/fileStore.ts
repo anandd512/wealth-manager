@@ -13,8 +13,8 @@ import { getSecret } from './secrets'
 // so even the same password on two devices derives two different keys — which means
 // it can never be the key used for the CLOUD copy: anything uploaded has to be
 // decryptable by every device signed into the same sync account, and only the sync
-// Data Key (derived from the account's server-issued salt — see syncCrypto.ts, same
-// key mobile uses) is shared across devices. Every upload/download here therefore
+// Data Key (see cloudKeys.ts — the same key on every device of the account) is
+// shared across devices. Every upload/download here therefore
 // re-encrypts across that boundary — local-key bytes in, Data-Key bytes out to the
 // cloud, and back again on the way in — via cloudDataKey() below. (An earlier version
 // of this file uploaded the local-key-encrypted bytes directly, which any other

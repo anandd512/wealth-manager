@@ -62,9 +62,8 @@ export function getDb(): SQLiteDatabase {
   return db
 }
 
-// Used by the "forgot password" flow (see AuthContext.wipeLocalData) — a lost
-// master password on mobile is unrecoverable (it's the only key, zero-knowledge
-// design), so the only way forward is a clean local slate. Closes and deletes the
+// Used by AuthContext.wipeDeviceAndStartOver — a clean local slate on this device
+// only (the cloud copy is untouched). Closes and deletes the
 // SQLite file outright rather than dropping tables, so a stale handle can't
 // resurrect data mid-wipe; the next getDb() call recreates it from scratch.
 export function wipeLocalDb(): void {

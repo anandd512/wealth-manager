@@ -1,275 +1,144 @@
 import React, { useState } from 'react'
-import { Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import Svg, { Path, Rect } from 'react-native-svg'
 import { useAuth } from '../auth/AuthContext'
 import { friendlyErrorMessage } from '../lib/friendlyError'
+import { authStyles as styles } from '../components/authStyles'
 
-const MIN_PASSWORD_LENGTH = 8
-
-function passwordStrength(pw: string): { label: string; color: string } | null {
-  if (!pw) return null
-  let score = 0
-  if (pw.length >= MIN_PASSWORD_LENGTH) score++
-  if (pw.length >= 12) score++
-  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++
-  if (/[0-9]/.test(pw)) score++
-  if (/[^A-Za-z0-9]/.test(pw)) score++
-  if (score <= 1) return { label: 'Weak', color: '#c0392b' }
-  if (score <= 2) return { label: 'Fair', color: '#b8860b' }
-  if (score <= 3) return { label: 'Good', color: '#2e7d32' }
-  return { label: 'Strong', color: '#2e7d32' }
+function GoogleMark() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 48 48">
+      <Path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z" />
+      <Path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
+      <Path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z" />
+      <Path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.2-.1-2.4-.4-3.5z" />
+    </Svg>
+  )
 }
 
+function MicrosoftMark() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 21 21">
+      <Rect x={1} y={1} width={9} height={9} fill="#F25022" />
+      <Rect x={11} y={1} width={9} height={9} fill="#7FBA00" />
+      <Rect x={1} y={11} width={9} height={9} fill="#00A4EF" />
+      <Rect x={11} y={11} width={9} height={9} fill="#FFB900" />
+    </Svg>
+  )
+}
+
+/** Sign in with Google, Microsoft, or an emailed 6-digit code. No passwords — the first
+ * sign-in for an address creates the account. */
 export function AuthScreen() {
-  const { requestEmailVerification, register, login, error, wipeDeviceAndStartOver } = useAuth()
-  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login')
+  const { startEmailSignIn, verifyEmailSignIn, oauthSignIn, error, clearError } = useAuth()
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [passwordConfirm, setPasswordConfirm] = useState('')
-  // Register mode only: null until a code's been emailed, then holds the address it
-  // was sent to (so a later email edit doesn't silently verify the wrong address).
-  const [verificationSentTo, setVerificationSentTo] = useState<string | null>(null)
-  const [verificationCode, setVerificationCode] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [wiping, setWiping] = useState(false)
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null)
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState<null | 'google' | 'microsoft' | 'send' | 'verify'>(null)
 
-  const passwordsMismatch = mode === 'register' && passwordConfirm.length > 0 && password !== passwordConfirm
-  const passwordTooShort = mode === 'register' && password.length > 0 && password.length < MIN_PASSWORD_LENGTH
-  const strength = mode === 'register' ? passwordStrength(password) : null
-
-  const submit = async () => {
-    setSubmitting(true)
+  const run = async (kind: NonNullable<typeof busy>, fn: () => Promise<void>) => {
+    setBusy(kind)
     try {
-      if (mode === 'login') {
-        await login(email.trim().toLowerCase(), password)
-        return
-      }
-      await requestEmailVerification(email.trim().toLowerCase())
-      setVerificationSentTo(email.trim().toLowerCase())
+      await fn()
     } catch {
-      // error is surfaced via the shared `error` field from useAuth()
+      // surfaced through the shared `error` from useAuth()
     } finally {
-      setSubmitting(false)
+      setBusy(null)
     }
   }
 
-  const confirmAndRegister = async () => {
-    if (!verificationSentTo) return
-    setSubmitting(true)
-    try {
-      await register(verificationSentTo, password, verificationCode)
-    } catch {
-      // surfaced via the shared `error` field
-    } finally {
-      setSubmitting(false)
-    }
-  }
+  const sendCode = () =>
+    run('send', async () => {
+      const address = email.trim().toLowerCase()
+      await startEmailSignIn(address)
+      setCodeSentTo(address)
+      setCode('')
+    })
 
-  const confirmWipe = () => {
-    Alert.alert(
-      'Erase this device?',
-      "This is permanent. Everything cached on this device — accounts, policies, IDs, credit cards, vault entries, and uploaded files — will be erased. There's no undo, and your old account's password still can't be recovered (that's what keeps it private). You can sign in correctly afterward if the password comes back to you, or register fresh.",
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Erase & start over',
-          style: 'destructive',
-          onPress: async () => {
-            setWiping(true)
-            await wipeDeviceAndStartOver()
-            setWiping(false)
-            setMode('login')
-          }
-        }
-      ]
-    )
-  }
-
-  if (mode === 'forgot') {
+  if (codeSentTo) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Forgot your password</Text>
-        <Text style={styles.subtitle}>
-          Artha uses zero-knowledge encryption — your master password is never stored anywhere,
-          including on our servers, so it genuinely can't be recovered or reset.
-        </Text>
-        <Text style={[styles.subtitle, styles.warningText]}>
-          The only way forward is to erase this device's local data and start over. Your old
-          account's data stays encrypted and unreachable — this doesn't recover it, it just lets
-          you move on.
-        </Text>
-        <Pressable style={styles.dangerButton} onPress={confirmWipe} disabled={wiping}>
-          {wiping ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Erase this device & start over</Text>}
-        </Pressable>
-        <Pressable onPress={() => setMode('login')}>
-          <Text style={styles.switchMode}>Back to login</Text>
-        </Pressable>
-      </View>
-    )
-  }
-
-  if (verificationSentTo) {
-    return (
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <Text style={styles.title}>Check your email</Text>
-        <Text style={styles.subtitle}>
-          We sent a 6-digit code to {verificationSentTo}. It expires in 15 minutes.
-        </Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Verification code"
-          keyboardType="number-pad"
-          maxLength={6}
-          value={verificationCode}
-          onChangeText={(t) => setVerificationCode(t.replace(/\D/g, ''))}
-          autoFocus
-          returnKeyType="done"
-          onSubmitEditing={() => verificationCode.length === 6 && void confirmAndRegister()}
-        />
-
-        {error ? <Text style={styles.error}>{friendlyErrorMessage(error)}</Text> : null}
-
-        <Pressable
-          style={styles.button}
-          onPress={confirmAndRegister}
-          disabled={submitting || verificationCode.length !== 6}
-        >
-          {submitting ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Verify & create account</Text>
-          )}
-        </Pressable>
-
-        <Pressable
-          onPress={() => {
-            setVerificationSentTo(null)
-            setVerificationCode('')
-          }}
-        >
-          <Text style={styles.switchMode}>Use a different email, or resend the code</Text>
-        </Pressable>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+          <Text style={styles.title}>Check your email</Text>
+          <Text style={styles.subtitle}>We sent a 6-digit sign-in code to {codeSentTo}. It expires in 15 minutes.</Text>
+          <TextInput
+            style={[styles.input, styles.codeInput]}
+            placeholder="000000"
+            keyboardType="number-pad"
+            textContentType="oneTimeCode"
+            autoComplete="one-time-code"
+            maxLength={6}
+            value={code}
+            onChangeText={(t) => setCode(t.replace(/\D/g, ''))}
+            autoFocus
+            onSubmitEditing={() => code.length === 6 && run('verify', () => verifyEmailSignIn(codeSentTo, code))}
+          />
+          {error ? <Text style={styles.error}>{friendlyErrorMessage(error)}</Text> : null}
+          <Pressable
+            style={[styles.button, (busy !== null || code.length !== 6) && styles.disabled]}
+            onPress={() => run('verify', () => verifyEmailSignIn(codeSentTo, code))}
+            disabled={busy !== null || code.length !== 6}
+          >
+            {busy === 'verify' ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign in</Text>}
+          </Pressable>
+          <Pressable onPress={sendCode} disabled={busy !== null}>
+            <Text style={styles.link}>Send a new code</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setCodeSentTo(null)
+              clearError()
+            }}
+          >
+            <Text style={styles.link}>Use a different email</Text>
+          </Pressable>
+        </ScrollView>
       </KeyboardAvoidingView>
     )
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <Text style={styles.title}>Artha</Text>
-      <Text style={styles.subtitle}>
-        {mode === 'register'
-          ? 'Create your master password. It never leaves this device.'
-          : 'Unlock with your master password.'}
-      </Text>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <Text style={styles.title}>Artha</Text>
+        <Text style={styles.subtitle}>Sign in to sync your encrypted data with your other devices.</Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-        returnKeyType="next"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Master password"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-        returnKeyType={mode === 'register' ? 'next' : 'done'}
-        onSubmitEditing={mode === 'login' ? submit : undefined}
-      />
-      {mode === 'register' && strength && (
-        <Text style={[styles.strengthText, { color: strength.color }]}>Password strength: {strength.label}</Text>
-      )}
-      {mode === 'register' && (
+        <Pressable style={styles.outlineButton} onPress={() => run('google', () => oauthSignIn('google'))} disabled={busy !== null}>
+          {busy === 'google' ? <ActivityIndicator /> : <GoogleMark />}
+          <Text style={styles.outlineButtonText}>Continue with Google</Text>
+        </Pressable>
+        <Pressable style={styles.outlineButton} onPress={() => run('microsoft', () => oauthSignIn('microsoft'))} disabled={busy !== null}>
+          {busy === 'microsoft' ? <ActivityIndicator /> : <MicrosoftMark />}
+          <Text style={styles.outlineButtonText}>Continue with Microsoft</Text>
+        </Pressable>
+
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or use your email</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
         <TextInput
           style={styles.input}
-          placeholder="Confirm master password"
-          secureTextEntry
-          value={passwordConfirm}
-          onChangeText={setPasswordConfirm}
-          returnKeyType="done"
-          onSubmitEditing={submit}
+          placeholder="you@example.com"
+          autoCapitalize="none"
+          autoComplete="email"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+          returnKeyType="send"
+          onSubmitEditing={() => email.includes('@') && sendCode()}
         />
-      )}
-      {passwordTooShort ? (
-        <Text style={styles.error}>Use at least {MIN_PASSWORD_LENGTH} characters.</Text>
-      ) : null}
-      {passwordsMismatch ? <Text style={styles.error}>Passwords don't match.</Text> : null}
-      {mode === 'register' && (
-        <Text style={styles.warningText}>
-          This can't be recovered if you forget it — that's what keeps your data private. Keep it
-          somewhere safe.
-        </Text>
-      )}
-
-      {error ? <Text style={styles.error}>{friendlyErrorMessage(error)}</Text> : null}
-
-      <Pressable
-        style={styles.button}
-        onPress={submit}
-        disabled={
-          submitting ||
-          !email ||
-          !password ||
-          (mode === 'register' && (password.length < MIN_PASSWORD_LENGTH || !passwordConfirm || password !== passwordConfirm))
-        }
-      >
-        {submitting ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>{mode === 'register' ? 'Send verification code' : 'Unlock'}</Text>
-        )}
-      </Pressable>
-
-      <Pressable onPress={() => setMode(mode === 'register' ? 'login' : 'register')}>
-        <Text style={styles.switchMode}>
-          {mode === 'register' ? 'Already have an account? Log in' : "Don't have an account? Register"}
-        </Text>
-      </Pressable>
-      {mode === 'login' && (
-        <Pressable onPress={() => setMode('forgot')}>
-          <Text style={styles.switchMode}>Forgot password?</Text>
+        {error ? <Text style={styles.error}>{friendlyErrorMessage(error)}</Text> : null}
+        <Pressable
+          style={[styles.button, (busy !== null || !email.includes('@')) && styles.disabled]}
+          onPress={sendCode}
+          disabled={busy !== null || !email.includes('@')}
+        >
+          {busy === 'send' ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Email me a sign-in code</Text>}
         </Pressable>
-      )}
+        <Text style={styles.help}>No password needed. New here? Signing in creates your account.</Text>
+      </ScrollView>
     </KeyboardAvoidingView>
   )
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
-  title: { fontSize: 32, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
-  subtitle: { fontSize: 14, color: '#555', textAlign: 'center', marginBottom: 24 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    fontSize: 16
-  },
-  strengthText: { fontSize: 12, fontWeight: '600', marginTop: -6, marginBottom: 12 },
-  warningText: { fontSize: 12, color: '#b8860b', textAlign: 'center', marginBottom: 12, lineHeight: 17 },
-  button: {
-    backgroundColor: '#111',
-    borderRadius: 8,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 8
-  },
-  dangerButton: {
-    backgroundColor: '#c0392b',
-    borderRadius: 8,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 8
-  },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  switchMode: { color: '#555', textAlign: 'center', marginTop: 16 },
-  error: { color: '#c0392b', marginBottom: 12, textAlign: 'center' }
-})

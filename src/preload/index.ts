@@ -18,8 +18,13 @@ import type {
   CashFlowCategory,
   CashFlowRecurringInput,
   CashFlowBudget,
-  CashFlowSavingsGoal
+  CashFlowSavingsGoal,
+  CloudStatus,
+  CloudResult,
+  PendingDevice
 } from '../shared/types'
+
+type Cloud<T = object> = Promise<CloudResult<T>>
 
 const api = {
   clipboard: {
@@ -44,17 +49,35 @@ const api = {
     status: () => ipcRenderer.invoke(CHANNELS.storageModeStatus),
     set: (mode: 'local' | 'cloud') => ipcRenderer.invoke(CHANNELS.storageModeSet, mode)
   },
+  // Passwordless cloud account - see src/main/cloudAccount.ts.
+  cloud: {
+    status: (): Promise<CloudStatus> => ipcRenderer.invoke(CHANNELS.cloudStatus),
+    refresh: (): Cloud<{ status: CloudStatus }> => ipcRenderer.invoke(CHANNELS.cloudRefresh),
+    emailStart: (email: string): Cloud => ipcRenderer.invoke(CHANNELS.cloudEmailStart, email),
+    emailVerify: (email: string, code: string): Cloud<{ status: CloudStatus }> =>
+      ipcRenderer.invoke(CHANNELS.cloudEmailVerify, email, code),
+    oauth: (provider: 'google' | 'microsoft'): Cloud<{ status: CloudStatus }> =>
+      ipcRenderer.invoke(CHANNELS.cloudOAuth, provider),
+    cancelOAuth: (): Promise<void> => ipcRenderer.invoke(CHANNELS.cloudCancelOAuth),
+    createKey: (): Cloud<{ recoveryKey: string; status: CloudStatus }> => ipcRenderer.invoke(CHANNELS.cloudCreateKey),
+    useRecoveryKey: (text: string): Cloud<{ status: CloudStatus }> =>
+      ipcRenderer.invoke(CHANNELS.cloudUseRecoveryKey, text),
+    convertLegacy: (password: string): Cloud<{ recoveryKey: string; status: CloudStatus }> =>
+      ipcRenderer.invoke(CHANNELS.cloudConvertLegacy, password),
+    linkStart: (): Cloud<{ code: string; expiresInSeconds: number }> => ipcRenderer.invoke(CHANNELS.cloudLinkStart),
+    linkPoll: (): Cloud<{ linkStatus: 'pending' | 'approved' | 'expired'; status: CloudStatus }> =>
+      ipcRenderer.invoke(CHANNELS.cloudLinkPoll),
+    linkCancel: (): Promise<void> => ipcRenderer.invoke(CHANNELS.cloudLinkCancel),
+    pendingDevices: (): Cloud<{ devices: PendingDevice[] }> => ipcRenderer.invoke(CHANNELS.cloudPendingDevices),
+    approveDevice: (id: string, publicKey: string): Cloud =>
+      ipcRenderer.invoke(CHANNELS.cloudApproveDevice, id, publicKey),
+    denyDevice: (id: string): Cloud => ipcRenderer.invoke(CHANNELS.cloudDenyDevice, id),
+    rotateRecoveryKey: (): Cloud<{ recoveryKey: string }> => ipcRenderer.invoke(CHANNELS.cloudRotateRecoveryKey),
+    resetData: (): Cloud<{ status: CloudStatus }> => ipcRenderer.invoke(CHANNELS.cloudResetData),
+    signOut: (): Promise<CloudStatus> => ipcRenderer.invoke(CHANNELS.cloudSignOut)
+  },
   sync: {
-    status: () => ipcRenderer.invoke(CHANNELS.syncStatus),
-    requestEmailVerification: (email: string) =>
-      ipcRenderer.invoke(CHANNELS.syncRequestEmailVerification, email),
-    confirmEmailVerification: (email: string, code: string) =>
-      ipcRenderer.invoke(CHANNELS.syncConfirmEmailVerification, email, code),
-    register: (email: string, password: string, verificationToken: string) =>
-      ipcRenderer.invoke(CHANNELS.syncRegister, email, password, verificationToken),
-    login: (email: string, password: string) => ipcRenderer.invoke(CHANNELS.syncLogin, email, password),
-    logout: () => ipcRenderer.invoke(CHANNELS.syncLogout),
-    now: () => ipcRenderer.invoke(CHANNELS.syncNow)
+    now: (): Cloud => ipcRenderer.invoke(CHANNELS.syncNow)
   },
   accounts: {
     list: () => ipcRenderer.invoke(CHANNELS.accountsList),
