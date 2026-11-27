@@ -337,6 +337,13 @@ export interface PendingDevice {
   publicKey: string
 }
 
+// Which sign-in buttons to show — GET /api/auth/providers.
+export interface CloudProviders {
+  email: boolean
+  google: boolean
+  microsoft: boolean
+}
+
 export type CloudResult<T = object> = ({ ok: true } & T) | { ok: false; error: string }
 
 

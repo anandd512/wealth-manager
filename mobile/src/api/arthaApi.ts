@@ -92,6 +92,10 @@ async function request<T>(path: string, options: RequestInit & { token?: string 
 
 export const ArthaApi = {
   // ── Sign-in (no passwords) ──
+  providers(): Promise<{ email: boolean; google: boolean; microsoft: boolean }> {
+    return request('/api/auth/providers')
+  },
+
   emailStart(email: string): Promise<{ ok: true }> {
     return request('/api/auth/email/start', { method: 'POST', body: JSON.stringify({ email }) })
   },

@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import Svg, { Path, Rect } from 'react-native-svg'
 import { useAuth } from '../auth/AuthContext'
+import { ArthaApi } from '../api/arthaApi'
 import { friendlyErrorMessage } from '../lib/friendlyError'
 import { authStyles as styles } from '../components/authStyles'
 
@@ -35,6 +36,14 @@ export function AuthScreen() {
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null)
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState<null | 'google' | 'microsoft' | 'send' | 'verify'>(null)
+  // Only offer providers the backend has configured. If the check fails (offline / older
+  // backend) show them anyway — the attempt itself will explain.
+  const [providers, setProviders] = useState<{ google: boolean; microsoft: boolean } | null>(null)
+  useEffect(() => {
+    ArthaApi.providers()
+      .then(setProviders)
+      .catch(() => setProviders({ google: true, microsoft: true }))
+  }, [])
 
   const run = async (kind: NonNullable<typeof busy>, fn: () => Promise<void>) => {
     setBusy(kind)
@@ -103,20 +112,25 @@ export function AuthScreen() {
         <Text style={styles.title}>Artha</Text>
         <Text style={styles.subtitle}>Sign in to sync your encrypted data with your other devices.</Text>
 
-        <Pressable style={styles.outlineButton} onPress={() => run('google', () => oauthSignIn('google'))} disabled={busy !== null}>
-          {busy === 'google' ? <ActivityIndicator /> : <GoogleMark />}
-          <Text style={styles.outlineButtonText}>Continue with Google</Text>
-        </Pressable>
-        <Pressable style={styles.outlineButton} onPress={() => run('microsoft', () => oauthSignIn('microsoft'))} disabled={busy !== null}>
-          {busy === 'microsoft' ? <ActivityIndicator /> : <MicrosoftMark />}
-          <Text style={styles.outlineButtonText}>Continue with Microsoft</Text>
-        </Pressable>
-
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or use your email</Text>
-          <View style={styles.dividerLine} />
-        </View>
+        {providers?.google && (
+          <Pressable style={styles.outlineButton} onPress={() => run('google', () => oauthSignIn('google'))} disabled={busy !== null}>
+            {busy === 'google' ? <ActivityIndicator /> : <GoogleMark />}
+            <Text style={styles.outlineButtonText}>Continue with Google</Text>
+          </Pressable>
+        )}
+        {providers?.microsoft && (
+          <Pressable style={styles.outlineButton} onPress={() => run('microsoft', () => oauthSignIn('microsoft'))} disabled={busy !== null}>
+            {busy === 'microsoft' ? <ActivityIndicator /> : <MicrosoftMark />}
+            <Text style={styles.outlineButtonText}>Continue with Microsoft</Text>
+          </Pressable>
+        )}
+        {(providers?.google || providers?.microsoft) && (
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or use your email</Text>
+            <View style={styles.dividerLine} />
+          </View>
+        )}
 
         <TextInput
           style={styles.input}

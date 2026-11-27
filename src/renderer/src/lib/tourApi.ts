@@ -294,6 +294,7 @@ export function createTourApi(): typeof window.api {
     },
     cloud: {
       status:            async () => ({ stage: 'signedOut' as const, email: null, keyState: null }),
+      providers:         async () => ({ email: true, google: false, microsoft: false }),
       refresh:           async () => ({ ok: false as const, error: 'Not available in tour' }),
       emailStart:        async () => ({ ok: false as const, error: 'Not available in tour' }),
       emailVerify:       async () => ({ ok: false as const, error: 'Not available in tour' }),

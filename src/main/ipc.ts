@@ -234,6 +234,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     }
 
   ipcMain.handle(CHANNELS.cloudStatus, () => cloud.cloudStatus())
+  ipcMain.handle(CHANNELS.cloudProviders, () => cloud.signInProviders())
   ipcMain.handle(CHANNELS.cloudRefresh, cloudCall(async () => ({ status: await cloud.refreshCloudStatus() })))
   ipcMain.handle(CHANNELS.cloudEmailStart, cloudCall((email: string) => cloud.startEmailSignIn(email)))
   ipcMain.handle(

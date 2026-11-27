@@ -22,7 +22,7 @@ import {
   unwrapWithRecoveryKey,
   wrapWithRecoveryKey
 } from './cloudKeys'
-import type { CloudStatus, CloudKeyState, PendingDevice } from '../shared/types'
+import type { CloudStatus, CloudKeyState, CloudProviders, PendingDevice } from '../shared/types'
 
 /**
  * Passwordless cloud account: sign in with Google, Microsoft or an emailed one-time
@@ -140,6 +140,17 @@ export function isSessionError(err: unknown): boolean {
  * signing in again goes straight back to syncing — no recovery key, no approval. */
 export function expireSession(): void {
   clearSecret('syncToken')
+}
+
+/** Which sign-in methods the backend has configured, so the UI doesn't offer a button
+ * that would only open an error page. If the check itself fails (offline, or an older
+ * backend without the endpoint), every method is shown — the attempt will explain. */
+export async function signInProviders(): Promise<CloudProviders> {
+  try {
+    return await apiRequest<CloudProviders>('/api/auth/providers')
+  } catch {
+    return { email: true, google: true, microsoft: true }
+  }
 }
 
 // ── Sign-in: email code ───────────────────────────────────────────────────────

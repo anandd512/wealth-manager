@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'crypto'
 import { app, HttpRequest, HttpResponseInit } from '@azure/functions'
 import { openHandoff, sealHandoff, signOAuthState, verifyOAuthState } from '../lib/authToken'
-import { authorizeUrl, exchangeCode, isAllowedClientRedirect, isOAuthProvider } from '../lib/oauth'
+import { authorizeUrl, exchangeCode, isAllowedClientRedirect, isOAuthProvider, isProviderConfigured } from '../lib/oauth'
 import { findOrCreateUser, sessionFor, VerifiedIdentity } from '../lib/users'
 import { handle, HttpError, readJson } from '../lib/http'
 
@@ -38,6 +38,19 @@ function errorPage(message: string): HttpResponseInit {
     body: `<!doctype html><meta charset="utf-8"><title>Artha sign-in</title><body style="font-family:system-ui;max-width:420px;margin:80px auto;padding:0 16px"><h2>Sign-in didn't complete</h2><p>${safe}</p><p>Close this tab and try again from the Artha app.</p></body>`
   }
 }
+
+/** GET /api/auth/providers — which sign-in buttons the apps should show. Email codes
+ * are always available; Google/Microsoft only once their client id + secret are set. */
+app.http('authProviders', {
+  methods: ['GET'],
+  authLevel: 'anonymous',
+  route: 'auth/providers',
+  handler: async () => ({
+    status: 200,
+    headers: { 'Cache-Control': 'public, max-age=300' },
+    jsonBody: { email: true, google: isProviderConfigured('google'), microsoft: isProviderConfigured('microsoft') }
+  })
+})
 
 app.http('authOAuthStart', {
   methods: ['GET'],

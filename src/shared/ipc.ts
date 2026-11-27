@@ -15,6 +15,7 @@ export const CHANNELS = {
   storageModeSet: 'storageMode:set',
 
   cloudStatus: 'cloud:status',
+  cloudProviders: 'cloud:providers',
   cloudRefresh: 'cloud:refresh',
   cloudEmailStart: 'cloud:emailStart',
   cloudEmailVerify: 'cloud:emailVerify',

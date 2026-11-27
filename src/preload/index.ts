@@ -21,6 +21,7 @@ import type {
   CashFlowSavingsGoal,
   CloudStatus,
   CloudResult,
+  CloudProviders,
   PendingDevice
 } from '../shared/types'
 
@@ -52,6 +53,7 @@ const api = {
   // Passwordless cloud account - see src/main/cloudAccount.ts.
   cloud: {
     status: (): Promise<CloudStatus> => ipcRenderer.invoke(CHANNELS.cloudStatus),
+    providers: (): Promise<CloudProviders> => ipcRenderer.invoke(CHANNELS.cloudProviders),
     refresh: (): Cloud<{ status: CloudStatus }> => ipcRenderer.invoke(CHANNELS.cloudRefresh),
     emailStart: (email: string): Cloud => ipcRenderer.invoke(CHANNELS.cloudEmailStart, email),
     emailVerify: (email: string, code: string): Cloud<{ status: CloudStatus }> =>

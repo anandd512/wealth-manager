@@ -57,6 +57,17 @@ function config(provider: OAuthProvider): ProviderConfig {
   }
 }
 
+/** Whether the server has both the client id and a resolved secret for a provider —
+ * the apps only show buttons for providers this returns true for. */
+export function isProviderConfigured(provider: OAuthProvider): boolean {
+  try {
+    config(provider)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function isOAuthProvider(value: unknown): value is OAuthProvider {
   return value === 'google' || value === 'microsoft'
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Mail, ArrowLeft, Loader2 } from 'lucide-react'
-import type { CloudStatus } from '../../../shared/types'
+import type { CloudProviders, CloudStatus } from '../../../shared/types'
 
 interface Props {
   onSignedIn: (status: CloudStatus) => void
@@ -39,9 +39,16 @@ export default function CloudSignIn({ onSignedIn }: Props): JSX.Element {
   const [busy, setBusy] = useState<Busy>(null)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  // null while loading — provider buttons stay hidden rather than flashing in and out.
+  const [providers, setProviders] = useState<CloudProviders | null>(null)
 
-  // If the user navigates away mid-browser-sign-in, stop the loopback listener.
-  useEffect(() => () => void window.api.cloud.cancelOAuth(), [])
+  useEffect(() => {
+    window.api.cloud.providers().then(setProviders)
+    // If the user navigates away mid-browser-sign-in, stop the loopback listener.
+    return () => void window.api.cloud.cancelOAuth()
+  }, [])
+  const showGoogle = Boolean(providers?.google)
+  const showMicrosoft = Boolean(providers?.microsoft)
 
   const withProvider = async (provider: 'google' | 'microsoft'): Promise<void> => {
     setError(null)
@@ -145,16 +152,21 @@ export default function CloudSignIn({ onSignedIn }: Props): JSX.Element {
 
   return (
     <div className="cloud-signin">
-      <button type="button" className="btn secondary provider-btn" onClick={() => withProvider('google')} disabled={busy !== null}>
-        <GoogleMark /> Continue with Google
-      </button>
-      <button type="button" className="btn secondary provider-btn" onClick={() => withProvider('microsoft')} disabled={busy !== null}>
-        <MicrosoftMark /> Continue with Microsoft
-      </button>
-
-      <div className="cloud-divider">
-        <span>or use your email</span>
-      </div>
+      {showGoogle && (
+        <button type="button" className="btn secondary provider-btn" onClick={() => withProvider('google')} disabled={busy !== null}>
+          <GoogleMark /> Continue with Google
+        </button>
+      )}
+      {showMicrosoft && (
+        <button type="button" className="btn secondary provider-btn" onClick={() => withProvider('microsoft')} disabled={busy !== null}>
+          <MicrosoftMark /> Continue with Microsoft
+        </button>
+      )}
+      {(showGoogle || showMicrosoft) && (
+        <div className="cloud-divider">
+          <span>or use your email</span>
+        </div>
+      )}
 
       <div className="field">
         <label htmlFor="cloud-email">Email</label>
