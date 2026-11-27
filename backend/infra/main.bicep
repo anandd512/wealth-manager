@@ -203,7 +203,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     httpsOnly: true
     reserved: true
     siteConfig: {
-      linuxFxVersion: 'Node|26'
+      // Node 22 is the LAST version Linux Consumption (Y1) supports — 24/26 are listed by
+      // `az functionapp list-runtimes` but the host never starts on this plan (503). Newer
+      // Node needs the Flex Consumption plan.
+      linuxFxVersion: 'Node|22'
       appSettings: [
         // Deliberately a plain connection string, not a Key Vault reference: both
         // `func azure functionapp publish` and `az functionapp deployment source
@@ -219,7 +222,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
-        { name: 'WEBSITE_NODE_DEFAULT_VERSION', value: '~26' }
+        { name: 'WEBSITE_NODE_DEFAULT_VERSION', value: '~22' }
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
         { name: 'ENABLE_ORYX_BUILD', value: 'true' }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
