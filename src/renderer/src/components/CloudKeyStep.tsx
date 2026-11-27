@@ -109,6 +109,7 @@ export default function CloudKeyStep({ status: initial, onReady, onSignOut }: Pr
           setReadyStatus(next)
           setRecoveryKey(key)
         }}
+        onReset={setStatus}
         footer={footer}
       />
     )
@@ -117,18 +118,85 @@ export default function CloudKeyStep({ status: initial, onReady, onSignOut }: Pr
   return <ExistingAccountKey onReady={onReady} onReset={setStatus} footer={footer} />
 }
 
+/** "Delete the unreadable cloud copy and start the account over" — the way out when the
+ * key can't be recovered: a lost recovery key with no signed-in device, or a forgotten
+ * password on an account that hasn't been upgraded yet. Data on this computer is kept
+ * and uploaded again under the new key. */
+function StartOver({
+  reason,
+  onReset,
+  onBack
+}: {
+  reason: string
+  onReset: (status: CloudStatus) => void
+  onBack: () => void
+}): JSX.Element {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const reset = async (): Promise<void> => {
+    setError(null)
+    setBusy(true)
+    const result = await window.api.cloud.resetData()
+    setBusy(false)
+    if (result.ok) onReset(result.status)
+    else setError(result.error)
+  }
+
+  return (
+    <div>
+      <div className="key-step-intro danger">
+        <AlertTriangle size={18} color="var(--red)" />
+        <div>
+          <strong>Start your cloud data over?</strong>
+          <p className="help-text" style={{ margin: '2px 0 0' }}>
+            {reason} This deletes the cloud copy and sets up a new key. Everything stored on this computer is kept and
+            uploaded again. Anything that only exists in the cloud (for example, added on your phone and never synced
+            here) is lost, and other devices will need to be set up again.
+          </p>
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="reset-confirm">Type DELETE to confirm</label>
+        <input id="reset-confirm" value={text} onChange={(e) => setText(e.target.value)} autoFocus />
+      </div>
+      {error && <div className="error-text">{error}</div>}
+      <button className="btn danger" style={{ width: '100%' }} onClick={reset} disabled={busy || text !== 'DELETE'}>
+        <RotateCcw size={14} /> {busy ? 'Deleting…' : 'Delete cloud data and start over'}
+      </button>
+      <button type="button" className="btn secondary" style={{ width: '100%', marginTop: 8 }} onClick={onBack}>
+        Back
+      </button>
+    </div>
+  )
+}
+
 function LegacyConvert({
   email,
   onConverted,
+  onReset,
   footer
 }: {
   email: string | null
   onConverted: (recoveryKey: string, status: CloudStatus) => void
+  onReset: (status: CloudStatus) => void
   footer: JSX.Element
 }): JSX.Element {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [forgot, setForgot] = useState(false)
+
+  if (forgot) {
+    return (
+      <StartOver
+        reason="Your existing cloud data is encrypted with a key made from that password, so without it nobody — including Artha — can decrypt it."
+        onReset={onReset}
+        onBack={() => setForgot(false)}
+      />
+    )
+  }
 
   const submit = async (): Promise<void> => {
     setError(null)
@@ -172,6 +240,12 @@ function LegacyConvert({
       <button className="btn" style={{ width: '100%' }} onClick={submit} disabled={busy || !password}>
         {busy ? 'Unlocking… (takes a few seconds)' : 'Unlock and upgrade'}
       </button>
+      <p className="help-text" style={{ marginTop: 14, marginBottom: 0 }}>
+        Don't remember it?{' '}
+        <button type="button" className="link-btn" onClick={() => setForgot(true)}>
+          Start over without it
+        </button>
+      </p>
       {footer}
     </div>
   )
@@ -193,7 +267,6 @@ function ExistingAccountKey({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
-  const [resetText, setResetText] = useState('')
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const stopPolling = useCallback((): void => {
@@ -246,41 +319,13 @@ function ExistingAccountKey({
     else setError(result.error)
   }
 
-  const reset = async (): Promise<void> => {
-    setError(null)
-    setBusy(true)
-    const result = await window.api.cloud.resetData()
-    setBusy(false)
-    if (result.ok) onReset(result.status)
-    else setError(result.error)
-  }
-
   if (confirmReset) {
     return (
-      <div>
-        <div className="key-step-intro danger">
-          <AlertTriangle size={18} color="var(--red)" />
-          <div>
-            <strong>Start your cloud data over?</strong>
-            <p className="help-text" style={{ margin: '2px 0 0' }}>
-              Without a signed-in device or your recovery key, nobody — including Artha — can decrypt what's in the
-              cloud. This deletes it and sets up a new key. Data stored on this computer is kept and uploaded again.
-              Other devices will need to be set up again.
-            </p>
-          </div>
-        </div>
-        <div className="field">
-          <label htmlFor="reset-confirm">Type DELETE to confirm</label>
-          <input id="reset-confirm" value={resetText} onChange={(e) => setResetText(e.target.value)} autoFocus />
-        </div>
-        {error && <div className="error-text">{error}</div>}
-        <button className="btn danger" style={{ width: '100%' }} onClick={reset} disabled={busy || resetText !== 'DELETE'}>
-          <RotateCcw size={14} /> {busy ? 'Deleting…' : 'Delete cloud data and start over'}
-        </button>
-        <button type="button" className="btn secondary" style={{ width: '100%', marginTop: 8 }} onClick={() => setConfirmReset(false)}>
-          Back
-        </button>
-      </div>
+      <StartOver
+        reason="Without a signed-in device or your recovery key, nobody — including Artha — can decrypt what's in the cloud."
+        onReset={onReset}
+        onBack={() => setConfirmReset(false)}
+      />
     )
   }
 

@@ -13,6 +13,7 @@ export function KeySetupScreen() {
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [password, setPassword] = useState('')
+  const [forgot, setForgot] = useState(false)
 
   useEffect(() => {
     if (keyState === null) refreshAccount().catch(() => undefined)
@@ -71,6 +72,15 @@ export function KeySetupScreen() {
     )
   }
 
+  if (keyState === 'legacy' && forgot) {
+    return wrap(
+      <StartOverView
+        reason="Your existing cloud data is encrypted with a key made from that password, so without it nobody — including Artha — can decrypt it."
+        onBack={() => setForgot(false)}
+      />
+    )
+  }
+
   if (keyState === 'legacy') {
     return wrap(
       <>
@@ -96,6 +106,9 @@ export function KeySetupScreen() {
         >
           {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Unlock and upgrade</Text>}
         </Pressable>
+        <Pressable onPress={() => setForgot(true)}>
+          <Text style={styles.link}>Don't remember it? Start over without it</Text>
+        </Pressable>
         {footer}
       </>
     )
@@ -109,13 +122,52 @@ export function KeySetupScreen() {
   )
 }
 
+/** Delete the unreadable cloud copy and start the account over — see the desktop
+ * CloudKeyStep's StartOver for when this is the only way forward. */
+function StartOverView({ reason, onBack }: { reason: string; onBack: () => void }) {
+  const { error, resetCloudData } = useAuth()
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  return (
+    <>
+      <View style={[styles.callout, styles.calloutDanger]}>
+        <Text style={styles.calloutTitle}>Start your cloud data over?</Text>
+        <Text style={styles.calloutText}>
+          {reason} This deletes the cloud copy and sets up a new key. Anything that only exists in the cloud is lost,
+          and other devices will need to be set up again.
+        </Text>
+      </View>
+      <TextInput style={styles.input} placeholder="Type DELETE to confirm" autoCapitalize="characters" value={text} onChangeText={setText} />
+      {error ? <Text style={styles.error}>{friendlyErrorMessage(error)}</Text> : null}
+      <Pressable
+        style={[styles.dangerButton, (busy || text !== 'DELETE') && styles.disabled]}
+        disabled={busy || text !== 'DELETE'}
+        onPress={async () => {
+          setBusy(true)
+          try {
+            await resetCloudData()
+          } catch {
+            // shown via `error`
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        <Text style={styles.buttonText}>Delete cloud data and start over</Text>
+      </Pressable>
+      <Pressable onPress={onBack}>
+        <Text style={styles.link}>Back</Text>
+      </Pressable>
+    </>
+  )
+}
+
 function ExistingAccountKey() {
-  const { error, startDeviceLink, pollDeviceLink, cancelDeviceLink, useRecoveryKey, resetCloudData } = useAuth()
+  const { error, startDeviceLink, pollDeviceLink, cancelDeviceLink, useRecoveryKey } = useAuth()
   const [method, setMethod] = useState<'approve' | 'recovery' | 'reset'>('approve')
   const [code, setCode] = useState<string | null>(null)
   const [expired, setExpired] = useState(false)
   const [recoveryText, setRecoveryText] = useState('')
-  const [resetText, setResetText] = useState('')
   const [busy, setBusy] = useState(false)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -169,36 +221,10 @@ function ExistingAccountKey() {
 
   if (method === 'reset') {
     return (
-      <>
-        <View style={[styles.callout, styles.calloutDanger]}>
-          <Text style={styles.calloutTitle}>Start your cloud data over?</Text>
-          <Text style={styles.calloutText}>
-            Without a signed-in device or your recovery key, nobody — including Artha — can decrypt what's in the cloud.
-            This deletes it and sets up a new key. Other devices will need to be set up again.
-          </Text>
-        </View>
-        <TextInput style={styles.input} placeholder="Type DELETE to confirm" autoCapitalize="characters" value={resetText} onChangeText={setResetText} />
-        {error ? <Text style={styles.error}>{friendlyErrorMessage(error)}</Text> : null}
-        <Pressable
-          style={[styles.dangerButton, (busy || resetText !== 'DELETE') && styles.disabled]}
-          disabled={busy || resetText !== 'DELETE'}
-          onPress={async () => {
-            setBusy(true)
-            try {
-              await resetCloudData()
-            } catch {
-              // shown via `error`
-            } finally {
-              setBusy(false)
-            }
-          }}
-        >
-          <Text style={styles.buttonText}>Delete cloud data and start over</Text>
-        </Pressable>
-        <Pressable onPress={() => setMethod('approve')}>
-          <Text style={styles.link}>Back</Text>
-        </Pressable>
-      </>
+      <StartOverView
+        reason="Without a signed-in device or your recovery key, nobody — including Artha — can decrypt what's in the cloud."
+        onBack={() => setMethod('approve')}
+      />
     )
   }
 
