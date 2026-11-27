@@ -17,7 +17,7 @@ param location string = resourceGroup().location
 param googleClientId string = ''
 
 @description('Application (client) id of the Microsoft Entra app registration used for Microsoft sign-in (not a secret). Leave empty to disable Microsoft sign-in. Its secret goes in Key Vault as microsoft-client-secret.')
-param microsoftClientId string = ''
+param microsoftClientId string = 'd6a58938-02c3-4980-83e2-0dc0f534e393' // "Artha sign-in" app registration (personal tenant)
 
 @description('Allow sign-in redirects back to Expo Go (exp://<LAN address>) for mobile development. Set to false once the mobile app ships as a standalone build.')
 param allowExpoGoRedirects bool = true
