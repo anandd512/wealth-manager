@@ -25,13 +25,13 @@ export function createAccount(input: AccountInput): Account {
     .prepare(
       `INSERT INTO accounts
         (name, category, subtype, institution, currency, is_liability, current_value,
-         ticker, quantity, last_price, last_price_at, account_number, ifsc_code,
+         quantity, account_number, ifsc_code,
          debit_card_number, debit_card_network, debit_card_expiry_month, debit_card_expiry_year,
          debit_card_cvv, debit_card_name_on_card, principal_amount, interest_rate, tenure_months,
          emi_amount, loan_start_date, document_path, document_original_name, purchase_price, purchase_date,
          ownership_pct, last_updated, notes, created_at, sync_id)
        VALUES (@name, @category, @subtype, @institution, @currency, @is_liability, @current_value,
-               @ticker, @quantity, @last_price, @last_price_at, @account_number, @ifsc_code,
+               @quantity, @account_number, @ifsc_code,
                @debit_card_number, @debit_card_network, @debit_card_expiry_month, @debit_card_expiry_year,
                @debit_card_cvv, @debit_card_name_on_card, @principal_amount, @interest_rate, @tenure_months,
                @emi_amount, @loan_start_date, @document_path, @document_original_name, @purchase_price, @purchase_date,
@@ -53,7 +53,7 @@ export function updateAccount(id: number, input: Partial<AccountInput>): Account
       `UPDATE accounts SET
         name=@name, category=@category, subtype=@subtype, institution=@institution,
         currency=@currency, is_liability=@is_liability, current_value=@current_value,
-        ticker=@ticker, quantity=@quantity, last_price=@last_price, last_price_at=@last_price_at,
+        quantity=@quantity,
         account_number=@account_number, ifsc_code=@ifsc_code,
         debit_card_number=@debit_card_number, debit_card_network=@debit_card_network,
         debit_card_expiry_month=@debit_card_expiry_month, debit_card_expiry_year=@debit_card_expiry_year,
@@ -114,7 +114,7 @@ export function getValueHistory(accountId: number): ValueHistoryRow[] {
 }
 
 // Sets current_value from whichever value_history entry is most recent (by date),
-// without touching last_price/last_price_at or inserting another history row.
+// without inserting another history row.
 // Called after any check-in / history edit / history delete so current_value always
 // reflects the latest known entry, even if that edit changed which entry is newest.
 // Exported so sync.ts can call it after pulling a remote value_history change —

@@ -1,6 +1,6 @@
 {
   "name": "artha",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Local-first personal net worth and insurance tracker",
   "main": "./out/main/index.js",
   "author": "Anand Deshpande",
